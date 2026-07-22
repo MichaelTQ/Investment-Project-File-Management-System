@@ -1,14 +1,17 @@
 [project]
-entrypoint = "index.html"
-requires = [ "python-3.12" ]
-template = "native-static"
-version = "0.0.21"
+requires = [ "nodejs-24" ]
+project_type = "web"
+template = "nextjs"
+version = "0.0.32"
 appliedPatches = [ ]
 
 [dev]
-build = [ ]
-run = [ "sh", "-c", "python -m http.server ${DEPLOY_RUN_PORT} --bind 0.0.0.0" ]
+build = [ "bash", "./scripts/prepare.sh" ]
+run = [ "bash", "./scripts/dev.sh" ]
+validate = [ "bash", "./scripts/validate.sh" ]
+deps = [ "git" ]
 
 [deploy]
-build = [ ]
-run = [ "sh", "-c", "python -m http.server ${DEPLOY_RUN_PORT} --bind 0.0.0.0" ]
+build = [ "bash", "./scripts/build.sh" ]
+run = [ "bash", "./scripts/start.sh" ]
+deps = [ "git" ]
