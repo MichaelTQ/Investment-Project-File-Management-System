@@ -15,3 +15,8 @@ deps = [ "git" ]
 build = [ "bash", "./scripts/build.sh" ]
 run = [ "bash", "./scripts/start.sh" ]
 deps = [ "git" ]
+
+[preview]
+# 明确指定使用 Next.js，不使用默认的静态文件服务器
+type = "nextjs"
+command = "bash ./scripts/dev.sh"
