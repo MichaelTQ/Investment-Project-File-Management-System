@@ -4,6 +4,41 @@ import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-struct
 
 export const runtime = 'nodejs';
 
+// 关键词匹配详情
+interface KeywordMatchDetail {
+  categoryName: string;
+  folderPath: string[];
+  score: number;
+  matchedKeywords: string[];
+  fileNameMatches: string[];
+  contentMatches: string[];
+}
+
+// 分类过程详情
+interface ClassifyProcess {
+  step1_keywordMatch: {
+    totalCategories: number;
+    matchedCategories: number;
+    details: KeywordMatchDetail[];
+    bestMatch?: KeywordMatchDetail;
+    threshold: number;
+    passed: boolean;
+  };
+  step2_llmAnalysis?: {
+    triggered: boolean;
+    reason: string;
+    result?: {
+      categoryName: string;
+      confidence: number;
+      reasoning: string;
+    };
+  };
+  finalDecision: {
+    method: 'keyword' | 'llm' | 'fallback' | 'none';
+    explanation: string;
+  };
+}
+
 // 文件分类结果接口
 interface ClassifyResult {
   fileName: string;
@@ -12,29 +47,52 @@ interface ClassifyResult {
   confidence: number;
   reasoning: string;
   contentPreview?: string;
+  process: ClassifyProcess;
 }
 
 // 关键词匹配函数 - 先进行快速关键词匹配
-function matchByKeywords(fileName: string, contentText: string): { category: FlatFileCategory; score: number }[] {
-  const results: { category: FlatFileCategory; score: number }[] = [];
+function matchByKeywords(fileName: string, contentText: string): { 
+  category: FlatFileCategory; 
+  score: number;
+  matchedKeywords: string[];
+  fileNameMatches: string[];
+  contentMatches: string[];
+}[] {
+  const results: { 
+    category: FlatFileCategory; 
+    score: number;
+    matchedKeywords: string[];
+    fileNameMatches: string[];
+    contentMatches: string[];
+  }[] = [];
   const lowerFileName = fileName.toLowerCase();
   const lowerContent = contentText.toLowerCase();
 
   for (const category of FLAT_FILE_CATEGORIES) {
     let score = 0;
+    const matchedKeywords: string[] = [];
+    const fileNameMatches: string[] = [];
+    const contentMatches: string[] = [];
     
     // 文件名匹配关键词
     for (const keyword of category.keywords) {
-      if (lowerFileName.includes(keyword.toLowerCase())) {
+      const lowerKeyword = keyword.toLowerCase();
+      if (lowerFileName.includes(lowerKeyword)) {
         score += 3; // 文件名匹配权重更高
+        matchedKeywords.push(keyword);
+        fileNameMatches.push(keyword);
       }
-      if (lowerContent.includes(keyword.toLowerCase())) {
+      if (lowerContent.includes(lowerKeyword)) {
         score += 1; // 内容匹配
+        if (!matchedKeywords.includes(keyword)) {
+          matchedKeywords.push(keyword);
+        }
+        contentMatches.push(keyword);
       }
     }
     
     if (score > 0) {
-      results.push({ category, score });
+      results.push({ category, score, matchedKeywords, fileNameMatches, contentMatches });
     }
   }
 
@@ -134,10 +192,6 @@ export async function POST(request: NextRequest) {
     // 提取请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
 
-    // 创建临时 URL 用于 FetchClient 解析
-    // 由于 FetchClient 需要一个 URL，我们需要先将文件上传到临时位置
-    // 这里我们使用另一种方式：直接读取文件内容
-
     let contentText = '';
     let contentPreview = '';
 
@@ -146,16 +200,11 @@ export async function POST(request: NextRequest) {
       const buffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(buffer);
       
-      // 对于文本文件，直接解码
-      // 对于二进制文件（如 PDF、Word），需要使用 FetchClient
       const extension = fileName.split('.').pop()?.toLowerCase();
       
       if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension || '')) {
-        // 纯文本文件直接解码
         contentText = new TextDecoder('utf-8').decode(uint8Array);
       } else {
-        // 对于二进制文档，使用 FetchClient
-        // 创建 Data URL
         const mimeType = getMimeType(extension || '');
         const base64 = Buffer.from(uint8Array).toString('base64');
         const dataUrl = `data:${mimeType};base64,${base64}`;
@@ -165,54 +214,89 @@ export async function POST(request: NextRequest) {
 
         try {
           const fetchResponse = await fetchClient.fetch(dataUrl);
-          
-          // 提取文本内容
           const textItems = fetchResponse.content.filter(item => item.type === 'text');
           contentText = textItems.map(item => item.text || '').join('\n');
         } catch (fetchError) {
           console.error('FetchClient error:', fetchError);
-          // 如果 FetchClient 失败，尝试使用文件名进行分类
           contentText = fileName;
         }
       }
 
-      // 截取内容预览
       contentPreview = contentText.slice(0, 500) + (contentText.length > 500 ? '...' : '');
 
     } catch (readError) {
       console.error('File read error:', readError);
-      contentText = fileName; // 至少使用文件名进行分类
+      contentText = fileName;
     }
 
     // 第一步：关键词快速匹配
     const keywordMatches = matchByKeywords(fileName, contentText);
+    
+    // 构建关键词匹配详情
+    const keywordMatchDetails: KeywordMatchDetail[] = keywordMatches.slice(0, 5).map(m => ({
+      categoryName: m.category.fileName,
+      folderPath: m.category.folderPath,
+      score: m.score,
+      matchedKeywords: m.matchedKeywords,
+      fileNameMatches: m.fileNameMatches,
+      contentMatches: m.contentMatches
+    }));
+
+    const process: ClassifyProcess = {
+      step1_keywordMatch: {
+        totalCategories: FLAT_FILE_CATEGORIES.length,
+        matchedCategories: keywordMatches.length,
+        details: keywordMatchDetails,
+        bestMatch: keywordMatchDetails[0],
+        threshold: 5,
+        passed: keywordMatches.length > 0 && keywordMatches[0].score >= 5
+      },
+      finalDecision: {
+        method: 'none',
+        explanation: ''
+      }
+    };
 
     let result: ClassifyResult;
 
     // 如果关键词匹配置信度高，直接返回
     if (keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
       const bestMatch = keywordMatches[0];
+      process.finalDecision = {
+        method: 'keyword',
+        explanation: `关键词匹配得分 ${bestMatch.score} 分，超过阈值 5 分，直接使用关键词匹配结果`
+      };
+      
       result = {
         fileName,
         fileSize,
         category: bestMatch.category,
-        confidence: Math.min(bestMatch.score * 10, 95), // 最高 95%
-        reasoning: `文件名和内容匹配关键词："${bestMatch.category.keywords.filter(kw => 
-          fileName.toLowerCase().includes(kw.toLowerCase()) || 
-          contentText.toLowerCase().includes(kw.toLowerCase())
-        ).join('、')}"，归类到「${bestMatch.category.fileName}」`,
-        contentPreview
+        confidence: Math.min(bestMatch.score * 10, 95),
+        reasoning: `文件名和内容匹配关键词："${bestMatch.matchedKeywords.join('、')}"，归类到「${bestMatch.category.fileName}」`,
+        contentPreview,
+        process
       };
     } else {
       // 第二步：使用 LLM 进行智能分析
+      process.step2_llmAnalysis = {
+        triggered: true,
+        reason: `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 5 分），需要 AI 智能分析`
+      };
+      
       const llmResult = await classifyWithLLM(fileName, contentText, customHeaders);
+      
+      process.step2_llmAnalysis.result = llmResult;
 
       if (llmResult.categoryName && llmResult.confidence > 30) {
-        // 找到对应的分类
         const matchedCategory = FLAT_FILE_CATEGORIES.find(
           cat => cat.fileName === llmResult.categoryName || 
                  cat.keywords.some(kw => llmResult.categoryName.includes(kw))
         );
+
+        process.finalDecision = {
+          method: 'llm',
+          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置`
+        };
 
         result = {
           fileName,
@@ -220,27 +304,38 @@ export async function POST(request: NextRequest) {
           category: matchedCategory || keywordMatches[0]?.category || null,
           confidence: llmResult.confidence,
           reasoning: llmResult.reasoning,
-          contentPreview
+          contentPreview,
+          process
         };
       } else if (keywordMatches.length > 0) {
-        // 使用关键词匹配的最佳结果
+        process.finalDecision = {
+          method: 'fallback',
+          explanation: `AI 分析置信度不足（${llmResult.confidence}%），降级使用关键词匹配的最佳结果`
+        };
+        
         result = {
           fileName,
           fileSize,
           category: keywordMatches[0].category,
           confidence: keywordMatches[0].score * 10,
           reasoning: `根据关键词匹配，归类到「${keywordMatches[0].category.fileName}」`,
-          contentPreview
+          contentPreview,
+          process
         };
       } else {
-        // 无法分类
+        process.finalDecision = {
+          method: 'none',
+          explanation: '关键词匹配和 AI 分析均无法确定分类，需要手动分类'
+        };
+        
         result = {
           fileName,
           fileSize,
           category: null,
           confidence: 0,
           reasoning: '无法确定文件归档位置，请手动分类。文件内容未匹配任何已知分类关键词。',
-          contentPreview
+          contentPreview,
+          process
         };
       }
     }
