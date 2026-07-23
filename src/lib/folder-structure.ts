@@ -1,6 +1,7 @@
 /**
  * 投资项目档案管理文件夹结构定义
  * 基于《国创致远-投资项目档案管理》文档
+ * 支持按项目维度组织
  */
 
 export interface FolderNode {
@@ -17,7 +18,7 @@ export interface FileTemplate {
   description?: string;
 }
 
-// 完整的文件夹结构定义
+// 完整的文件夹结构定义（文件类型模板，不含项目维度）
 export const FOLDER_STRUCTURE: FolderNode = {
   id: 'root',
   name: '投资项目档案',
@@ -234,3 +235,31 @@ export function flattenFolderStructure(node: FolderNode, path: string[] = []): F
 
 // 获取扁平化的文件分类列表
 export const FLAT_FILE_CATEGORIES = flattenFolderStructure(FOLDER_STRUCTURE);
+
+// ============ 项目相关接口 ============
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+  fileCount: number;
+}
+
+// 归档文件记录
+export interface ArchivedFile {
+  id: string;
+  originalName: string;
+  archivedName: string;
+  projectId: string;
+  projectName: string;
+  categoryId: string;
+  categoryName: string;
+  folderPath: string[];
+  fileSize: number;
+  mimeType: string;
+  archivedAt: string;
+  confidence: number;
+  reasoning: string;
+}

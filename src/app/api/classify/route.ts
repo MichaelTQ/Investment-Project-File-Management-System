@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLMClient, FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
+import { archiveFile, getProjects } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 
@@ -48,18 +49,24 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  archived?: {
+    id: string;
+    archivedName: string;
+    projectName: string;
+    folderPath: string[];
+  };
 }
 
-// 关键词匹配函数 - 先进行快速关键词匹配
-function matchByKeywords(fileName: string, contentText: string): { 
-  category: FlatFileCategory; 
+// 关键词匹配函数
+function matchByKeywords(fileName: string, contentText: string): {
+  category: FlatFileCategory;
   score: number;
   matchedKeywords: string[];
   fileNameMatches: string[];
   contentMatches: string[];
 }[] {
-  const results: { 
-    category: FlatFileCategory; 
+  const results: {
+    category: FlatFileCategory;
     score: number;
     matchedKeywords: string[];
     fileNameMatches: string[];
@@ -73,30 +80,28 @@ function matchByKeywords(fileName: string, contentText: string): {
     const matchedKeywords: string[] = [];
     const fileNameMatches: string[] = [];
     const contentMatches: string[] = [];
-    
-    // 文件名匹配关键词
+
     for (const keyword of category.keywords) {
       const lowerKeyword = keyword.toLowerCase();
       if (lowerFileName.includes(lowerKeyword)) {
-        score += 3; // 文件名匹配权重更高
+        score += 3;
         matchedKeywords.push(keyword);
         fileNameMatches.push(keyword);
       }
       if (lowerContent.includes(lowerKeyword)) {
-        score += 1; // 内容匹配
+        score += 1;
         if (!matchedKeywords.includes(keyword)) {
           matchedKeywords.push(keyword);
         }
         contentMatches.push(keyword);
       }
     }
-    
+
     if (score > 0) {
       results.push({ category, score, matchedKeywords, fileNameMatches, contentMatches });
     }
   }
 
-  // 按分数排序
   return results.sort((a, b) => b.score - a.score);
 }
 
@@ -109,8 +114,7 @@ async function classifyWithLLM(
   const config = new Config();
   const client = new LLMClient(config, customHeaders);
 
-  // 构建文件类别列表供 LLM 选择
-  const categoryOptions = FLAT_FILE_CATEGORIES.map((cat, index) => 
+  const categoryOptions = FLAT_FILE_CATEGORIES.map((cat, index) =>
     `${index + 1}. ${cat.folderPath.join('/')} / ${cat.fileName} (关键词: ${cat.keywords.join(', ')})`
   ).join('\n');
 
@@ -134,8 +138,8 @@ ${categoryOptions}
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: systemPrompt },
-    { 
-      role: 'user', 
+    {
+      role: 'user',
       content: `请分析以下文件并判断其归档位置：
 
 文件名：${fileName}
@@ -143,7 +147,7 @@ ${categoryOptions}
 文件内容摘要（前2000字）：
 ${contentText.slice(0, 2000)}
 
-请以JSON格式回复你的判断结果。` 
+请以JSON格式回复你的判断结果。`
     }
   ];
 
@@ -153,7 +157,6 @@ ${contentText.slice(0, 2000)}
       temperature: 0.3,
     });
 
-    // 解析 JSON 响应
     const jsonMatch = response.content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -178,6 +181,8 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const projectId = formData.get('projectId') as string;
+    const autoArchive = formData.get('autoArchive') !== 'false'; // 默认自动归档
 
     if (!file) {
       return NextResponse.json(
@@ -196,12 +201,11 @@ export async function POST(request: NextRequest) {
     let contentPreview = '';
 
     try {
-      // 读取文件内容
       const buffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(buffer);
-      
+
       const extension = fileName.split('.').pop()?.toLowerCase();
-      
+
       if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension || '')) {
         contentText = new TextDecoder('utf-8').decode(uint8Array);
       } else {
@@ -231,8 +235,7 @@ export async function POST(request: NextRequest) {
 
     // 第一步：关键词快速匹配
     const keywordMatches = matchByKeywords(fileName, contentText);
-    
-    // 构建关键词匹配详情
+
     const keywordMatchDetails: KeywordMatchDetail[] = keywordMatches.slice(0, 5).map(m => ({
       categoryName: m.category.fileName,
       folderPath: m.category.folderPath,
@@ -266,7 +269,7 @@ export async function POST(request: NextRequest) {
         method: 'keyword',
         explanation: `关键词匹配得分 ${bestMatch.score} 分，超过阈值 5 分，直接使用关键词匹配结果`
       };
-      
+
       result = {
         fileName,
         fileSize,
@@ -282,15 +285,15 @@ export async function POST(request: NextRequest) {
         triggered: true,
         reason: `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 5 分），需要 AI 智能分析`
       };
-      
+
       const llmResult = await classifyWithLLM(fileName, contentText, customHeaders);
-      
+
       process.step2_llmAnalysis.result = llmResult;
 
       if (llmResult.categoryName && llmResult.confidence > 30) {
         const matchedCategory = FLAT_FILE_CATEGORIES.find(
-          cat => cat.fileName === llmResult.categoryName || 
-                 cat.keywords.some(kw => llmResult.categoryName.includes(kw))
+          cat => cat.fileName === llmResult.categoryName ||
+            cat.keywords.some(kw => llmResult.categoryName.includes(kw))
         );
 
         process.finalDecision = {
@@ -312,7 +315,7 @@ export async function POST(request: NextRequest) {
           method: 'fallback',
           explanation: `AI 分析置信度不足（${llmResult.confidence}%），降级使用关键词匹配的最佳结果`
         };
-        
+
         result = {
           fileName,
           fileSize,
@@ -327,7 +330,7 @@ export async function POST(request: NextRequest) {
           method: 'none',
           explanation: '关键词匹配和 AI 分析均无法确定分类，需要手动分类'
         };
-        
+
         result = {
           fileName,
           fileSize,
@@ -340,12 +343,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 自动归档
+    if (autoArchive && projectId && result.category) {
+      try {
+        const projects = getProjects();
+        const project = projects.find(p => p.id === projectId);
+
+        if (project) {
+          const buffer = await file.arrayBuffer();
+          const extension = fileName.split('.').pop()?.toLowerCase() || '';
+          const mimeType = getMimeType(extension);
+
+          const archived = archiveFile(
+            Buffer.from(buffer),
+            fileName,
+            projectId,
+            project.name,
+            result.category.folderId,
+            result.category.fileName,
+            result.category.folderPath,
+            mimeType,
+            result.confidence,
+            result.reasoning
+          );
+
+          result.archived = {
+            id: archived.id,
+            archivedName: archived.archivedName,
+            projectName: project.name,
+            folderPath: archived.folderPath
+          };
+        }
+      } catch (archiveError) {
+        console.error('Archive error:', archiveError);
+      }
+    }
+
     return NextResponse.json(result);
 
   } catch (error) {
     console.error('Classification error:', error);
     return NextResponse.json(
-      { 
+      {
         error: '文件处理失败',
         details: error instanceof Error ? error.message : '未知错误'
       },
