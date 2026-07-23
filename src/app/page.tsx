@@ -336,28 +336,125 @@ function CreateProjectDialog({ onCreated }: { onCreated: (project: Project) => v
   );
 }
 
+// ============ 归档文件树节点类型 ============
+interface ArchiveTreeNode {
+  name: string;
+  path: string;
+  type: 'folder' | 'file';
+  children?: ArchiveTreeNode[];
+  file?: {
+    id: string;
+    originalName: string;
+    archivedName: string;
+    categoryName: string;
+    fileSize: number;
+    mimeType: string;
+    archivedAt: string;
+    confidence: number;
+  };
+}
+
+// ============ 归档文件树组件 ============
+function ArchiveTreeItem({ node, level, onDownload, onDelete, refreshKey }: {
+  node: ArchiveTreeNode;
+  level: number;
+  onDownload: (fileId: string) => void;
+  onDelete: (fileId: string) => void;
+  refreshKey: number;
+}) {
+  const [isOpen, setIsOpen] = useState(level < 2);
+  const hasChildren = node.children && node.children.length > 0;
+  const fileCount = node.children?.filter(c => c.type === 'file').length || 0;
+  const totalChildren = node.children?.length || 0;
+
+  if (node.type === 'file' && node.file) {
+    return (
+      <div
+        className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 transition-colors group"
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+      >
+        <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium truncate" title={node.file.archivedName}>{node.file.archivedName}</p>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span>{(node.file.fileSize / 1024).toFixed(1)} KB</span>
+            <span>·</span>
+            <span>{new Date(node.file.archivedAt).toLocaleDateString('zh-CN')}</span>
+            <span>·</span>
+            <span>置信度 {node.file.confidence}%</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDownload(node.file!.id)} title="下载">
+            <Download className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => onDelete(node.file!.id)} title="删除">
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="select-none">
+      <div
+        className="flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+        {isOpen ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+        <span className="text-xs font-medium truncate">{node.name}</span>
+        {fileCount > 0 && <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">{fileCount}</Badge>}
+      </div>
+      {isOpen && hasChildren && (
+        <div>
+          {node.children!.map((child, idx) => (
+            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} refreshKey={refreshKey} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ 归档文件列表 ============
 function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
+  const [tree, setTree] = useState<ArchiveTreeNode[]>([]);
   const [files, setFiles] = useState<ArchivedFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
     setLoading(true);
-    fetch(`/api/archive?projectId=${projectId}`)
+    fetch(`/api/archive?projectId=${projectId}&tree=true`)
       .then(r => r.json())
-      .then(data => setFiles(data.files || []))
+      .then(data => {
+        setTree(data.tree || []);
+        setFiles(data.files || []);
+      })
       .finally(() => setLoading(false));
   }, [projectId, refreshKey]);
 
-  const handleDownload = async (file: ArchivedFile) => {
-    window.open(`/api/archive?download=${file.id}`, '_blank');
+  const handleDownload = (fileId: string) => {
+    window.open(`/api/archive?download=${fileId}`, '_blank');
   };
 
-  const handleDelete = async (file: ArchivedFile) => {
+  const handleDelete = async (fileId: string) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
     if (!confirm(`确定删除「${file.archivedName}」？`)) return;
-    await fetch(`/api/archive?id=${file.id}`, { method: 'DELETE' });
-    setFiles(prev => prev.filter(f => f.id !== file.id));
+    await fetch(`/api/archive?id=${fileId}`, { method: 'DELETE' });
+    setFiles(prev => prev.filter(f => f.id !== fileId));
+    setTree(prev => removeFileFromTree(prev, fileId));
+  };
+
+  const handleDownloadAll = () => {
+    setDownloadingAll(true);
+    window.open(`/api/archive/download-all?projectId=${projectId}`, '_blank');
+    setTimeout(() => setDownloadingAll(false), 1500);
   };
 
   if (loading) {
@@ -380,36 +477,54 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
   }
 
   return (
-    <div className="space-y-2">
-      {files.map((file) => (
-        <div key={file.id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors group">
-          <FileIcon className="h-8 w-8 text-primary shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate" title={file.archivedName}>{file.archivedName}</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {file.folderPath.join(' / ')} / {file.categoryName}
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-muted-foreground">{(file.fileSize / 1024).toFixed(1)} KB</span>
-              <span className="text-xs text-muted-foreground">|</span>
-              <span className="text-xs text-muted-foreground">置信度 {file.confidence}%</span>
-              <span className="text-xs text-muted-foreground">|</span>
-              <Clock className="h-3 w-3 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{new Date(file.archivedAt).toLocaleDateString('zh-CN')}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDownload(file)} title="下载">
-              <Download className="h-4 w-4" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(file)} title="删除">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      ))}
+    <div>
+      {/* 一键下载全部按钮 */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-muted-foreground">共 {files.length} 个文件</span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={handleDownloadAll}
+          disabled={downloadingAll}
+        >
+          {downloadingAll ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
+          一键下载全部
+        </Button>
+      </div>
+      {/* 树形结构 */}
+      <div className="border rounded-lg p-2 bg-muted/20">
+        {tree.map((node, idx) => (
+          <ArchiveTreeItem
+            key={`${node.path}-${idx}`}
+            node={node}
+            level={0}
+            onDownload={handleDownload}
+            onDelete={handleDelete}
+            refreshKey={refreshKey}
+          />
+        ))}
+      </div>
     </div>
   );
+}
+
+// 从树中移除文件节点
+function removeFileFromTree(nodes: ArchiveTreeNode[], fileId: string): ArchiveTreeNode[] {
+  return nodes
+    .map(node => {
+      if (node.type === 'file' && node.file?.id === fileId) return null;
+      if (node.children) {
+        node.children = removeFileFromTree(node.children, fileId);
+      }
+      return node;
+    })
+    .filter((n): n is ArchiveTreeNode => n !== null)
+    .filter(n => n.type === 'file' || (n.children && n.children.length > 0));
 }
 
 // ============ 主页面 ============

@@ -1,1 +1,98 @@
-[]
+[
+  {
+    "id": "file-1784792272542-zfiwz8",
+    "originalName": "NDA.pdf",
+    "archivedName": "保密协议-君柔-20260723.pdf",
+    "projectId": "proj-1784792230241-ribcy2",
+    "projectName": "君柔",
+    "categoryId": "pre-project",
+    "categoryName": "保密协议",
+    "folderPath": [
+      "投资项目档案",
+      "基金投资及投资执行",
+      "立项前"
+    ],
+    "fileSize": 2963732,
+    "mimeType": "application/pdf",
+    "archivedAt": "2026-07-23T07:37:52.542Z",
+    "confidence": 95,
+    "reasoning": "文件名NDA是保密协议（Non-Disclosure Agreement）的标准缩写，符合投资项目档案/基金投资及投资执行/立项前 / 保密协议分类的关键词要求，因此归类至此。"
+  },
+  {
+    "id": "file-1784792303198-74txno",
+    "originalName": "君柔科技_立项会纪要.pdf",
+    "archivedName": "立项申请书-君柔-20260723.pdf",
+    "projectId": "proj-1784792230241-ribcy2",
+    "projectName": "君柔",
+    "categoryId": "project-initiation",
+    "categoryName": "立项申请书",
+    "folderPath": [
+      "投资项目档案",
+      "基金投资及投资执行",
+      "项目立项"
+    ],
+    "fileSize": 187793,
+    "mimeType": "application/pdf",
+    "archivedAt": "2026-07-23T07:38:23.198Z",
+    "confidence": 95,
+    "reasoning": "文件名包含\"立项\"和\"纪要\"关键词，符合投资项目档案/基金投资及投资执行/项目立项 / 立项评审纪要的分类要求，与该分类的关键词匹配度高。"
+  },
+  {
+    "id": "file-1784792419173-5ta1jj",
+    "originalName": "君柔-风控尽调报告.pdf",
+    "archivedName": "法律尽调报告-君柔-20260723.pdf",
+    "projectId": "proj-1784792230241-ribcy2",
+    "projectName": "君柔",
+    "categoryId": "due-diligence",
+    "categoryName": "法律尽调报告",
+    "folderPath": [
+      "投资项目档案",
+      "基金投资及投资执行",
+      "尽职调查"
+    ],
+    "fileSize": 347172,
+    "mimeType": "application/pdf",
+    "archivedAt": "2026-07-23T07:40:19.173Z",
+    "confidence": 70,
+    "reasoning": "文件名为风控尽调报告，风控通常包含法律风险相关尽调，符合法律尽调报告的尽调报告类型，归类到法律尽调报告下，因未明确说明具体是法律还是财务风控，置信度为70。"
+  },
+  {
+    "id": "file-1784792486810-4ue8m9",
+    "originalName": "1营业执照.pdf",
+    "archivedName": "营业执照-君柔-20260723.pdf",
+    "projectId": "proj-1784792230241-ribcy2",
+    "projectName": "君柔",
+    "categoryId": "decision-meeting",
+    "categoryName": "营业执照",
+    "folderPath": [
+      "投资项目档案",
+      "基金投资及投资执行",
+      "投资决策",
+      "上会材料"
+    ],
+    "fileSize": 883733,
+    "mimeType": "application/pdf",
+    "archivedAt": "2026-07-23T07:41:26.810Z",
+    "confidence": 100,
+    "reasoning": "文件名包含关键词“营业执照”，完全匹配投资项目档案/基金投资及投资执行/投资决策/上会材料 / 营业执照的归档要求，因此归档到此位置。"
+  },
+  {
+    "id": "file-1784793031591-2t8ax2",
+    "originalName": "国创致远-投资项目档案管理(1).docx",
+    "archivedName": "档案移交表-测试项目-某科技公司A轮-20260723.docx",
+    "projectId": "proj-1784792987271-bu72du",
+    "projectName": "测试项目-某科技公司A轮",
+    "categoryId": "exit-implementation",
+    "categoryName": "档案移交表",
+    "folderPath": [
+      "投资项目档案",
+      "项目退出",
+      "退出执行"
+    ],
+    "fileSize": 15692,
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "archivedAt": "2026-07-23T07:50:31.591Z",
+    "confidence": 30,
+    "reasoning": "根据关键词匹配，归类到「档案移交表」"
+  }
+]
