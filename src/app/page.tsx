@@ -17,9 +17,47 @@ import {
   ChevronRight,
   ChevronDown,
   Loader2,
-  ArrowRight
+  ArrowRight,
+  Brain,
+  Search,
+  Zap
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory } from '@/lib/folder-structure';
+
+// 关键词匹配详情
+interface KeywordMatchDetail {
+  categoryName: string;
+  folderPath: string[];
+  score: number;
+  matchedKeywords: string[];
+  fileNameMatches: string[];
+  contentMatches: string[];
+}
+
+// 分类过程详情
+interface ClassifyProcess {
+  step1_keywordMatch: {
+    totalCategories: number;
+    matchedCategories: number;
+    details: KeywordMatchDetail[];
+    bestMatch?: KeywordMatchDetail;
+    threshold: number;
+    passed: boolean;
+  };
+  step2_llmAnalysis?: {
+    triggered: boolean;
+    reason: string;
+    result?: {
+      categoryName: string;
+      confidence: number;
+      reasoning: string;
+    };
+  };
+  finalDecision: {
+    method: 'keyword' | 'llm' | 'fallback' | 'none';
+    explanation: string;
+  };
+}
 
 interface ClassifyResult {
   fileName: string;
@@ -28,6 +66,7 @@ interface ClassifyResult {
   confidence: number;
   reasoning: string;
   contentPreview?: string;
+  process: ClassifyProcess;
 }
 
 // 文件夹树组件
@@ -161,6 +200,132 @@ function UploadZone({ onFileUpload }: { onFileUpload: (files: FileList) => void 
   );
 }
 
+// 分类过程展示组件
+function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  return (
+    <div className="mt-3 border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between p-3 bg-muted/50 hover:bg-muted transition-colors text-left"
+      >
+        <div className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-primary" />
+          <span className="text-sm font-medium">查看分类过程</span>
+          <Badge variant="outline" className="text-xs">
+            {process.finalDecision.method === 'keyword' ? '关键词匹配' : 
+             process.finalDecision.method === 'llm' ? 'AI 分析' : 
+             process.finalDecision.method === 'fallback' ? '降级匹配' : '未分类'}
+          </Badge>
+        </div>
+        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      </button>
+      
+      {isExpanded && (
+        <div className="p-4 space-y-4 bg-background">
+          {/* 步骤1：关键词匹配 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded ${process.step1_keywordMatch.passed ? 'bg-green-100' : 'bg-amber-100'}`}>
+                <Search className={`h-4 w-4 ${process.step1_keywordMatch.passed ? 'text-green-600' : 'text-amber-600'}`} />
+              </div>
+              <span className="text-sm font-medium">步骤 1：关键词匹配</span>
+              {process.step1_keywordMatch.passed ? (
+                <Badge className="bg-green-100 text-green-700 text-xs">通过</Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs">未通过</Badge>
+              )}
+            </div>
+            <div className="pl-8 space-y-2 text-sm">
+              <p className="text-muted-foreground">
+                扫描 <span className="font-medium text-foreground">{process.step1_keywordMatch.totalCategories}</span> 个文件类别，
+                匹配到 <span className="font-medium text-foreground">{process.step1_keywordMatch.matchedCategories}</span> 个
+              </p>
+              <p className="text-muted-foreground">
+                阈值：<span className="font-medium">{process.step1_keywordMatch.threshold} 分</span>
+                {process.step1_keywordMatch.bestMatch && (
+                  <>，最高得分：<span className="font-medium">{process.step1_keywordMatch.bestMatch.score} 分</span></>
+                )}
+              </p>
+              
+              {process.step1_keywordMatch.details.length > 0 && (
+                <div className="space-y-1 mt-2">
+                  <p className="text-xs text-muted-foreground">匹配详情（前 5 名）：</p>
+                  {process.step1_keywordMatch.details.slice(0, 5).map((detail, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs bg-muted/50 p-2 rounded">
+                      <span className="font-medium text-foreground min-w-[120px]">{detail.categoryName}</span>
+                      <span className="text-muted-foreground">得分: {detail.score}</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="text-muted-foreground">
+                        文件名匹配: {detail.fileNameMatches.length > 0 ? detail.fileNameMatches.join(', ') : '无'}
+                      </span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="text-muted-foreground">
+                        内容匹配: {detail.contentMatches.length > 0 ? detail.contentMatches.join(', ') : '无'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <Separator />
+          
+          {/* 步骤2：LLM 分析 */}
+          {process.step2_llmAnalysis && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className={`p-1.5 rounded ${process.step2_llmAnalysis.result ? 'bg-blue-100' : 'bg-muted'}`}>
+                  <Brain className={`h-4 w-4 ${process.step2_llmAnalysis.result ? 'text-blue-600' : 'text-muted-foreground'}`} />
+                </div>
+                <span className="text-sm font-medium">步骤 2：AI 智能分析</span>
+                {process.step2_llmAnalysis.result ? (
+                  <Badge className="bg-blue-100 text-blue-700 text-xs">
+                    置信度 {process.step2_llmAnalysis.result.confidence}%
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs">未触发</Badge>
+                )}
+              </div>
+              <div className="pl-8 space-y-2 text-sm">
+                <p className="text-muted-foreground">
+                  {process.step2_llmAnalysis.triggered 
+                    ? process.step2_llmAnalysis.reason 
+                    : '关键词匹配已通过，无需 AI 分析'}
+                </p>
+                {process.step2_llmAnalysis.result && (
+                  <div className="bg-blue-50 p-3 rounded text-sm">
+                    <p className="font-medium text-blue-900">AI 判断结果：</p>
+                    <p className="text-blue-700 mt-1">分类：{process.step2_llmAnalysis.result.categoryName}</p>
+                    <p className="text-blue-700">理由：{process.step2_llmAnalysis.result.reasoning}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          <Separator />
+          
+          {/* 最终决策 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded bg-primary/10">
+                <CheckCircle2 className="h-4 w-4 text-primary" />
+              </div>
+              <span className="text-sm font-medium">最终决策</span>
+            </div>
+            <div className="pl-8 text-sm">
+              <p className="text-muted-foreground">{process.finalDecision.explanation}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 分类结果项
 function ClassifyResultItem({ result }: { result: ClassifyResult }) {
   return (
@@ -211,6 +376,9 @@ function ClassifyResultItem({ result }: { result: ClassifyResult }) {
                 {result.contentPreview}
               </div>
             )}
+            
+            {/* 分类过程展示 */}
+            {result.process && <ClassifyProcessPanel process={result.process} />}
           </div>
         </div>
       </CardContent>
@@ -254,7 +422,20 @@ export default function Home() {
           fileSize: file.size,
           category: null,
           confidence: 0,
-          reasoning: '文件处理失败，请重试'
+          reasoning: '文件处理失败，请重试',
+          process: {
+            step1_keywordMatch: {
+              totalCategories: 0,
+              matchedCategories: 0,
+              details: [],
+              threshold: 5,
+              passed: false
+            },
+            finalDecision: {
+              method: 'none' as const,
+              explanation: '文件处理失败'
+            }
+          }
         }]);
       }
 
