@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
-  Plus, Trash2, Download, Archive, Building2, Clock, FileIcon, X
+  Plus, Trash2, Download, Archive, Building2, Clock, FileIcon, X,
+  ChevronLeft, History
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -249,7 +250,6 @@ function ClassifyResultItem({ result }: { result: ClassifyResult }) {
                   <span className="text-xs text-muted-foreground">置信度 {result.confidence}%</span>
                 </div>
                 <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{result.reasoning}</p>
-                {/* 归档信息 */}
                 {result.archived && (
                   <div className="flex items-center gap-2 text-sm bg-green-50 p-2 rounded">
                     <Archive className="h-4 w-4 text-green-600" />
@@ -355,17 +355,15 @@ interface ArchiveTreeNode {
 }
 
 // ============ 归档文件树组件 ============
-function ArchiveTreeItem({ node, level, onDownload, onDelete, refreshKey }: {
+function ArchiveTreeItem({ node, level, onDownload, onDelete }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
   onDelete: (fileId: string) => void;
-  refreshKey: number;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
   const fileCount = node.children?.filter(c => c.type === 'file').length || 0;
-  const totalChildren = node.children?.length || 0;
 
   if (node.type === 'file' && node.file) {
     return (
@@ -411,7 +409,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, refreshKey }: {
       {isOpen && hasChildren && (
         <div>
           {node.children!.map((child, idx) => (
-            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} refreshKey={refreshKey} />
+            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} />
           ))}
         </div>
       )}
@@ -439,7 +437,7 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
   }, [projectId, refreshKey]);
 
   const handleDownload = (fileId: string) => {
-    window.open(`/api/archive?download=${fileId}`, '_blank');
+    window.open(`/api/archive?download=${fileId}&id=${fileId}`, '_blank');
   };
 
   const handleDelete = async (fileId: string) => {
@@ -478,7 +476,6 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
 
   return (
     <div>
-      {/* 一键下载全部按钮 */}
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs text-muted-foreground">共 {files.length} 个文件</span>
         <Button
@@ -496,7 +493,6 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
           一键下载全部
         </Button>
       </div>
-      {/* 树形结构 */}
       <div className="border rounded-lg p-2 bg-muted/20">
         {tree.map((node, idx) => (
           <ArchiveTreeItem
@@ -505,7 +501,6 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
             level={0}
             onDownload={handleDownload}
             onDelete={handleDelete}
-            refreshKey={refreshKey}
           />
         ))}
       </div>
@@ -527,6 +522,133 @@ function removeFileFromTree(nodes: ArchiveTreeNode[], fileId: string): ArchiveTr
     .filter(n => n.type === 'file' || (n.children && n.children.length > 0));
 }
 
+// ============ 分析记录面板 ============
+interface AnalysisRecord {
+  id: string;
+  originalName: string;
+  archivedName: string;
+  projectName: string;
+  categoryName: string;
+  folderPath: string[];
+  fileSize: number;
+  confidence: number;
+  archivedAt: string;
+}
+
+function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
+  const [records, setRecords] = useState<AnalysisRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+
+  useEffect(() => {
+    if (!projectId) return;
+    setLoading(true);
+    fetch(`/api/archive?projectId=${projectId}`)
+      .then(r => r.json())
+      .then(data => {
+        setRecords(data.files || []);
+      })
+      .finally(() => setLoading(false));
+  }, [projectId, refreshKey]);
+
+  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
+  const pagedRecords = records.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-sm text-muted-foreground">加载分析记录...</span>
+      </div>
+    );
+  }
+
+  if (records.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
+        <p className="text-sm">暂无分析记录</p>
+        <p className="text-xs mt-1">上传并分类文件后将在此显示记录</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs text-muted-foreground">共 {records.length} 条记录</span>
+      </div>
+      <div className="space-y-2">
+        {pagedRecords.map((record) => (
+          <div
+            key={record.id}
+            className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:bg-muted/30 transition-colors"
+          >
+            <div className="p-1.5 rounded bg-primary/10 shrink-0 mt-0.5">
+              <FileText className="h-4 w-4 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-medium truncate" title={record.originalName}>
+                  {record.originalName}
+                </span>
+                <Badge variant="outline" className="text-[10px] shrink-0">
+                  {(record.fileSize / 1024).toFixed(1)} KB
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ArrowRight className="h-3 w-3 shrink-0" />
+                <span className="font-mono text-[11px] truncate" title={record.archivedName}>
+                  {record.archivedName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1">
+                  <Folder className="h-3 w-3" />
+                  {record.folderPath.join(' / ')}
+                </span>
+                <span>·</span>
+                <span className="flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  {new Date(record.archivedAt).toLocaleString('zh-CN', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                  })}
+                </span>
+                <span>·</span>
+                <span>置信度 {record.confidence}%</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* 分页 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t">
+          <Button
+            variant="outline" size="sm"
+            disabled={page === 0}
+            onClick={() => setPage(p => p - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {page + 1} / {totalPages}
+          </span>
+          <Button
+            variant="outline" size="sm"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(p => p + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ 主页面 ============
 export default function Home() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -538,6 +660,12 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
+  const [projectPage, setProjectPage] = useState(0);
+  const PROJECT_PAGE_SIZE = 5;
+
+  // 新增项目动画
+  const [newProjectId, setNewProjectId] = useState<string | null>(null);
+  const projectListRef = useRef<HTMLDivElement>(null);
 
   // 加载项目列表
   useEffect(() => {
@@ -552,8 +680,12 @@ export default function Home() {
   }, []);
 
   const handleProjectCreated = (project: Project) => {
-    setProjects(prev => [...prev, project]);
+    setProjects(prev => [project, ...prev]);
     setSelectedProjectId(project.id);
+    setProjectPage(0);
+    // 触发动画
+    setNewProjectId(project.id);
+    setTimeout(() => setNewProjectId(null), 600);
   };
 
   const handleDeleteProject = async (id: string) => {
@@ -564,6 +696,10 @@ export default function Home() {
       const remaining = projects.filter(p => p.id !== id);
       setSelectedProjectId(remaining[0]?.id || '');
     }
+    // 调整页码
+    const newTotal = projects.length - 1;
+    const maxPage = Math.max(0, Math.ceil(newTotal / PROJECT_PAGE_SIZE) - 1);
+    if (projectPage > maxPage) setProjectPage(maxPage);
   };
 
   const handleFileUpload = useCallback(async (files: FileList) => {
@@ -611,9 +747,20 @@ export default function Home() {
 
     setIsProcessing(false);
     setArchiveRefreshKey(prev => prev + 1);
+    // 刷新项目列表以更新文件计数
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => setProjects(data.projects || []));
   }, [selectedProjectId]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+
+  // 项目分页
+  const totalProjectPages = Math.max(1, Math.ceil(projects.length / PROJECT_PAGE_SIZE));
+  const pagedProjects = projects.slice(
+    projectPage * PROJECT_PAGE_SIZE,
+    (projectPage + 1) * PROJECT_PAGE_SIZE
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -655,30 +802,64 @@ export default function Home() {
                     <p className="text-xs mt-1">请先创建一个项目</p>
                   </div>
                 ) : (
-                  <ScrollArea className="max-h-48">
-                    <div className="space-y-1">
-                      {projects.map(project => (
-                        <div
-                          key={project.id}
-                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-colors group ${selectedProjectId === project.id ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
-                          onClick={() => setSelectedProjectId(project.id)}
-                        >
-                          <Building2 className="h-4 w-4 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{project.name}</p>
-                            <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
-                          </div>
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive shrink-0"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
+                  <>
+                    <ScrollArea className="max-h-48">
+                      <div className="space-y-1" ref={projectListRef}>
+                        {pagedProjects.map(project => (
+                          <div
+                            key={project.id}
+                            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all duration-300 group ${
+                              selectedProjectId === project.id
+                                ? 'bg-primary/10 text-primary'
+                                : 'hover:bg-muted'
+                            } ${
+                              newProjectId === project.id
+                                ? 'animate-in slide-in-from-top-2 fade-in duration-500 bg-primary/5 ring-1 ring-primary/20'
+                                : ''
+                            }`}
+                            onClick={() => setSelectedProjectId(project.id)}
                           >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
+                            <Building2 className="h-4 w-4 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{project.name}</p>
+                              <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
+                            </div>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive shrink-0 transition-opacity"
+                              onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                    {/* 项目分页 */}
+                    {totalProjectPages > 1 && (
+                      <div className="flex items-center justify-center gap-1 mt-2 pt-2 border-t">
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-7 w-7"
+                          disabled={projectPage === 0}
+                          onClick={() => setProjectPage(p => p - 1)}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground px-1">
+                          {projectPage + 1} / {totalProjectPages}
+                        </span>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-7 w-7"
+                          disabled={projectPage >= totalProjectPages - 1}
+                          onClick={() => setProjectPage(p => p + 1)}
+                        >
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -772,8 +953,9 @@ export default function Home() {
             )}
           </div>
 
-          {/* Right: Archived Files */}
-          <div className="lg:col-span-4">
+          {/* Right: Archived Files + Analysis History */}
+          <div className="lg:col-span-4 space-y-4">
+            {/* Archived Files */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -787,12 +969,39 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <ScrollArea className="h-[calc(100vh-300px)] min-h-[300px]">
+                <ScrollArea className="max-h-[360px]">
                   {selectedProjectId ? (
                     <ArchivedFilesList projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">未选择项目</p>
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Analysis History */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <History className="h-5 w-5 text-primary" />
+                  分析记录
+                </CardTitle>
+                <CardDescription>
+                  {selectedProject
+                    ? `文件上传时间、原始名称与归档后名称`
+                    : '请选择一个项目查看分析记录'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <ScrollArea className="max-h-[360px]">
+                  {selectedProjectId ? (
+                    <AnalysisHistoryPanel projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">未选择项目</p>
                     </div>
                   )}

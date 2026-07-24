@@ -392,46 +392,47 @@ export async function getAllFileDownloadStreams(
 // ============ 树形结构 ============
 
 export function buildArchiveTree(files: ArchivedFile[]): FolderTreeNode[] {
-  const root: Record<string, FolderTreeNode> = {};
+  const rootChildren: FolderTreeNode[] = [];
 
   for (const file of files) {
     const path = file.folderPath;
-    let currentLevel = root;
+    let currentChildren = rootChildren;
 
     for (let i = 0; i < path.length; i++) {
       const segment = path[i];
       const fullPath = path.slice(0, i + 1).join("/");
 
-      if (!currentLevel[segment]) {
-        currentLevel[segment] = {
+      // 在当前层级查找或创建文件夹节点
+      let node = currentChildren.find(
+        (c) => c.type === "folder" && c.name === segment
+      ) as FolderTreeNode | undefined;
+
+      if (!node) {
+        node = {
           name: segment,
           path: fullPath,
           type: "folder",
           children: [],
         };
+        currentChildren.push(node);
       }
 
       if (i === path.length - 1) {
         // 最后一层，添加文件
-        currentLevel[segment].children!.push({
+        node.children!.push({
           name: file.archivedName,
           path: `${fullPath}/${file.archivedName}`,
           type: "file",
           file,
         });
       } else {
-        currentLevel =
-          currentLevel[segment].children!.reduce((acc, child) => {
-            if (child.type === "folder") {
-              acc[child.name] = child;
-            }
-            return acc;
-          }, {} as Record<string, FolderTreeNode>);
+        // 进入下一层
+        currentChildren = node.children!;
       }
     }
   }
 
-  return Object.values(root);
+  return rootChildren;
 }
 
 // ============ 工具函数 ============
