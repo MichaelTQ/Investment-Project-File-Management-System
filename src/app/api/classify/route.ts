@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { LLMClient, FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
-import { archiveFile, getProjects } from '@/lib/storage';
+import { archiveFile, getProject } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 
@@ -346,26 +346,25 @@ export async function POST(request: NextRequest) {
     // 自动归档
     if (autoArchive && projectId && result.category) {
       try {
-        const projects = getProjects();
-        const project = projects.find(p => p.id === projectId);
+        const project = await getProject(projectId);
 
         if (project) {
           const buffer = await file.arrayBuffer();
           const extension = fileName.split('.').pop()?.toLowerCase() || '';
           const mimeType = getMimeType(extension);
 
-          const archived = archiveFile(
-            Buffer.from(buffer),
-            fileName,
+          const archived = await archiveFile({
+            fileBuffer: Buffer.from(buffer),
+            originalName: fileName,
             projectId,
-            project.name,
-            result.category.folderId,
-            result.category.fileName,
-            result.category.folderPath,
+            projectName: project.name,
+            categoryId: result.category.folderId,
+            categoryName: result.category.fileName,
+            folderPath: result.category.folderPath,
             mimeType,
-            result.confidence,
-            result.reasoning
-          );
+            confidence: result.confidence,
+            reasoning: result.reasoning,
+          });
 
           result.archived = {
             id: archived.id,
@@ -375,7 +374,8 @@ export async function POST(request: NextRequest) {
           };
         }
       } catch (archiveError) {
-        console.error('Archive error:', archiveError);
+        console.error('Archive error:', archiveError instanceof Error ? archiveError.message : String(archiveError));
+        console.error('Archive error stack:', archiveError instanceof Error ? archiveError.stack : '');
       }
     }
 
