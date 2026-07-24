@@ -1,7 +1,7 @@
 # 投资项目档案管理系统
 
 ## 项目概览
-基于 Next.js 16 的智能投资项目档案管理系统，支持文件上传、自动分类和归档建议。遵循《国创致远-投资项目档案管理》文档规范。
+基于 Next.js 16 的智能投资项目档案管理系统，支持文件上传、自动分类和归档建议。遵循《国创致远-投资项目档案管理》文档规范。采用 Supabase（数据库）+ S3 对象存储实现跨设备同步。
 
 ## 技术栈
 - **框架**: Next.js 16 (App Router)
@@ -9,39 +9,67 @@
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **样式**: Tailwind CSS 4
 - **AI 能力**: coze-coding-dev-sdk (LLM + FetchClient)
+- **数据库**: Supabase (Drizzle ORM)
+- **文件存储**: S3 兼容对象存储 (coze-coding-dev-sdk StorageClient)
 
 ## 文件结构
 ```
 src/
 ├── app/
-│   ├── api/classify/route.ts  # 文件分类 API
-│   ├── layout.tsx              # 根布局
-│   └── page.tsx                # 主页面
-├── components/ui/              # shadcn/ui 组件库
+│   ├── api/
+│   │   ├── classify/route.ts        # 文件分类 + 自动归档 API
+│   │   ├── projects/route.ts        # 项目管理 CRUD API
+│   │   ├── archive/route.ts         # 归档文件查询/下载/删除 API
+│   │   └── archive/download-all/route.ts  # 一键下载 ZIP API
+│   ├── layout.tsx                    # 根布局
+│   └── page.tsx                      # 主页面（三栏布局）
+├── components/ui/                    # shadcn/ui 组件库
 ├── lib/
-│   ├── folder-structure.ts     # 文件夹结构定义
-│   └── utils.ts                # 工具函数
-└── hooks/                      # React Hooks
+│   ├── folder-structure.ts           # 文件夹结构定义 + 类型
+│   └── storage.ts                    # 统一存储层（Supabase + S3）
+├── storage/
+│   └── database/
+│       ├── shared/schema.ts          # Drizzle schema（projects, archived_files）
+│       └── supabase-client.ts        # Supabase 客户端初始化
+└── hooks/                            # React Hooks
 ```
 
 ## 核心模块说明
 
 ### folder-structure.ts
-- **FOLDER_STRUCTURE**: 完整的档案管理文件夹树形结构
-- **FLAT_FILE_CATEGORIES**: 扁平化的文件分类列表，便于搜索匹配
+- **FOLDER_STRUCTURE**: 完整的档案管理文件夹树形结构（三级分类）
+- **FLAT_FILE_CATEGORIES**: 扁平化的文件分类列表（50+ 文件类型），便于搜索匹配
 - **FolderNode**: 文件夹节点接口
 - **FileTemplate**: 文件模板接口（含关键词）
+- **Project / ArchivedFile**: 项目与归档文件接口
+
+### storage.ts（统一存储层）
+- **createProject / listProjects / deleteProject**: 项目管理（Supabase）
+- **archiveFile**: 文件归档（上传 S3 → 写入 Supabase）
+- **listArchivedFiles / getArchivedFile / deleteArchivedFile**: 归档文件 CRUD
+- **getFileDownloadUrl / getFileDownloadStream**: 文件下载（S3 签名 URL / 流式）
+- **getAllFileDownloadStreams**: 批量获取文件流（用于 ZIP 打包）
+- **buildArchiveTree**: 将归档文件列表构建为树形结构
 
 ### api/classify/route.ts
 - **POST**: 处理文件上传和智能分类
-- **matchByKeywords()**: 关键词快速匹配函数
+- **matchByKeywords()**: 关键词快速匹配函数（文件名 + 内容）
 - **classifyWithLLM()**: 使用 LLM 进行智能分类
 - 支持 PDF、Word、Excel、PPT、TXT 等格式
+- 支持 `projectId` 和 `autoArchive` 参数，分类后自动归档
+
+### page.tsx（主页面组件）
+- **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
+- **项目管理**: 支持分页、新增动画、删除确认
+- **归档文件树**: 按三级文件夹结构展示，支持展开/折叠、下载、删除
+- **一键下载全部**: 打包为 ZIP 保留完整文件夹结构
+- **分析记录面板**: 显示上传时间、原始文件名、归档后文件名、分类路径
 
 ## 文件分类逻辑
-1. **关键词匹配**: 先进行快速关键词匹配（文件名 + 内容）
+1. **关键词匹配**: 先进行快速关键词匹配（文件名 + 内容），阈值 5 分
 2. **LLM 分析**: 如果关键词匹配置信度低，调用 LLM 进行智能分析
-3. **结果返回**: 返回分类建议、置信度和判断理由
+3. **降级策略**: LLM 置信度不足时降级使用关键词最佳匹配
+4. **自动归档**: 分类成功后自动上传 S3 并写入 Supabase
 
 ## 文件夹结构（三级分类）
 ```
@@ -69,28 +97,69 @@ src/
 ## API 接口
 
 ### POST /api/classify
-上传文件进行智能分类。
+上传文件进行智能分类并自动归档。
 
 **请求**: `multipart/form-data`
 - `file`: 文件（PDF/Word/Excel/PPT/TXT）
+- `projectId`: 项目 ID（可选）
+- `autoArchive`: 是否自动归档（默认 true）
 
 **响应**:
 ```json
 {
   "fileName": "string",
   "fileSize": number,
-  "category": {
-    "folderPath": ["string"],
-    "folderId": "string",
-    "fileName": "string",
-    "keywords": ["string"],
-    "description": "string"
-  },
+  "category": { "folderPath": ["string"], "folderId": "string", "fileName": "string", "keywords": ["string"], "description": "string" },
   "confidence": number,
   "reasoning": "string",
-  "contentPreview": "string"
+  "contentPreview": "string",
+  "process": { "step1_keywordMatch": {...}, "step2_llmAnalysis": {...}, "finalDecision": {...} },
+  "archived": { "id": "string", "archivedName": "string", "projectName": "string", "folderPath": ["string"] }
 }
 ```
+
+### GET/POST/DELETE /api/projects
+项目管理 CRUD。
+
+### GET /api/archive
+- `?projectId=xxx&tree=true` - 获取归档文件树形结构
+- `?download=xxx&id=xxx` - 获取文件下载签名 URL
+- `?id=xxx` - 流式下载单个文件
+
+### GET /api/archive/download-all?projectId=xxx
+一键下载全部归档文件为 ZIP（保留文件夹结构）。
+
+### DELETE /api/archive?id=xxx
+删除归档文件（同时删除 S3 文件和数据库记录）。
+
+## 数据库表
+
+### projects
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | UUID | 主键 |
+| name | text | 项目名称 |
+| description | text | 项目描述 |
+| created_at | timestamptz | 创建时间 |
+| updated_at | timestamptz | 更新时间 |
+
+### archived_files
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | UUID | 主键 |
+| original_name | text | 原始文件名 |
+| archived_name | text | 归档后文件名 |
+| project_id | UUID | 关联项目 |
+| project_name | text | 项目名称 |
+| category_id | text | 分类 ID |
+| category_name | text | 分类名称 |
+| folder_path | jsonb | 文件夹路径数组 |
+| file_size | int8 | 文件大小 |
+| mime_type | text | MIME 类型 |
+| storage_key | text | S3 对象存储 key |
+| confidence | int4 | 分类置信度 |
+| reasoning | text | 分类理由 |
+| archived_at | timestamptz | 归档时间 |
 
 ## 运行命令
 - `pnpm dev`: 启动开发环境
@@ -102,9 +171,14 @@ src/
 ## 环境变量
 - `DEPLOY_RUN_PORT`: 服务监听端口（默认 5000）
 - `COZE_PROJECT_DOMAIN_DEFAULT`: 对外访问域名
+- `COZE_BUCKET_ENDPOINT_URL`: S3 对象存储端点
+- `COZE_BUCKET_NAME`: S3 存储桶名称
 
 ## 依赖说明
-- `coze-coding-dev-sdk`: 提供 LLM 和文件解析能力
+- `coze-coding-dev-sdk`: 提供 LLM、文件解析、对象存储能力
   - `LLMClient`: 大语言模型调用
   - `FetchClient`: 文件内容提取
+  - `S3Storage`: S3 对象存储操作
   - `HeaderUtils`: 请求头提取
+- `@supabase/supabase-js`: Supabase 客户端
+- `drizzle-orm`: 数据库 ORM
