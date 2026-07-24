@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -660,12 +660,8 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
-  const [projectPage, setProjectPage] = useState(0);
-  const PROJECT_PAGE_SIZE = 5;
-
   // 新增项目动画
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
-  const projectListRef = useRef<HTMLDivElement>(null);
 
   // 加载项目列表
   useEffect(() => {
@@ -682,7 +678,6 @@ export default function Home() {
   const handleProjectCreated = (project: Project) => {
     setProjects(prev => [project, ...prev]);
     setSelectedProjectId(project.id);
-    setProjectPage(0);
     // 触发动画
     setNewProjectId(project.id);
     setTimeout(() => setNewProjectId(null), 600);
@@ -696,10 +691,6 @@ export default function Home() {
       const remaining = projects.filter(p => p.id !== id);
       setSelectedProjectId(remaining[0]?.id || '');
     }
-    // 调整页码
-    const newTotal = projects.length - 1;
-    const maxPage = Math.max(0, Math.ceil(newTotal / PROJECT_PAGE_SIZE) - 1);
-    if (projectPage > maxPage) setProjectPage(maxPage);
   };
 
   const handleFileUpload = useCallback(async (files: FileList) => {
@@ -755,13 +746,6 @@ export default function Home() {
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
-  // 项目分页
-  const totalProjectPages = Math.max(1, Math.ceil(projects.length / PROJECT_PAGE_SIZE));
-  const pagedProjects = projects.slice(
-    projectPage * PROJECT_PAGE_SIZE,
-    (projectPage + 1) * PROJECT_PAGE_SIZE
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
       {/* Header */}
@@ -802,64 +786,38 @@ export default function Home() {
                     <p className="text-xs mt-1">请先创建一个项目</p>
                   </div>
                 ) : (
-                  <>
-                    <ScrollArea className="max-h-48">
-                      <div className="space-y-1" ref={projectListRef}>
-                        {pagedProjects.map(project => (
-                          <div
-                            key={project.id}
-                            className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all duration-300 group ${
-                              selectedProjectId === project.id
-                                ? 'bg-primary/10 text-primary'
-                                : 'hover:bg-muted'
-                            } ${
-                              newProjectId === project.id
-                                ? 'animate-in slide-in-from-top-2 fade-in duration-500 bg-primary/5 ring-1 ring-primary/20'
-                                : ''
-                            }`}
-                            onClick={() => setSelectedProjectId(project.id)}
-                          >
-                            <Building2 className="h-4 w-4 shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{project.name}</p>
-                              <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
-                            </div>
-                            <Button
-                              variant="ghost" size="icon"
-                              className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive shrink-0 transition-opacity"
-                              onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-1 pr-1">
+                      {projects.map(project => (
+                        <div
+                          key={project.id}
+                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all duration-300 group ${
+                            selectedProjectId === project.id
+                              ? 'bg-primary/10 text-primary'
+                              : 'hover:bg-muted'
+                          } ${
+                            newProjectId === project.id
+                              ? 'animate-in slide-in-from-top-2 fade-in duration-500 bg-primary/5 ring-1 ring-primary/20'
+                              : ''
+                          }`}
+                          onClick={() => setSelectedProjectId(project.id)}
+                        >
+                          <Building2 className="h-4 w-4 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{project.name}</p>
+                            <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
                           </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                    {/* 项目分页 */}
-                    {totalProjectPages > 1 && (
-                      <div className="flex items-center justify-center gap-1 mt-2 pt-2 border-t">
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-7 w-7"
-                          disabled={projectPage === 0}
-                          onClick={() => setProjectPage(p => p - 1)}
-                        >
-                          <ChevronLeft className="h-3.5 w-3.5" />
-                        </Button>
-                        <span className="text-xs text-muted-foreground px-1">
-                          {projectPage + 1} / {totalProjectPages}
-                        </span>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-7 w-7"
-                          disabled={projectPage >= totalProjectPages - 1}
-                          onClick={() => setProjectPage(p => p + 1)}
-                        >
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </>
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive shrink-0 transition-opacity"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
                 )}
               </CardContent>
             </Card>
