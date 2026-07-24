@@ -538,8 +538,6 @@ interface AnalysisRecord {
 function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
   const [records, setRecords] = useState<AnalysisRecord[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const PAGE_SIZE = 10;
 
   useEffect(() => {
     if (!projectId) return;
@@ -551,9 +549,6 @@ function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; re
       })
       .finally(() => setLoading(false));
   }, [projectId, refreshKey]);
-
-  const totalPages = Math.max(1, Math.ceil(records.length / PAGE_SIZE));
-  const pagedRecords = records.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   if (loading) {
     return (
@@ -580,7 +575,7 @@ function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; re
         <span className="text-xs text-muted-foreground">共 {records.length} 条记录</span>
       </div>
       <div className="space-y-2">
-        {pagedRecords.map((record) => (
+        {records.map((record) => (
           <div
             key={record.id}
             className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:bg-muted/30 transition-colors"
@@ -623,28 +618,6 @@ function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; re
           </div>
         ))}
       </div>
-      {/* 分页 */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t">
-          <Button
-            variant="outline" size="sm"
-            disabled={page === 0}
-            onClick={() => setPage(p => p - 1)}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {page + 1} / {totalPages}
-          </span>
-          <Button
-            variant="outline" size="sm"
-            disabled={page >= totalPages - 1}
-            onClick={() => setPage(p => p + 1)}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -927,7 +900,7 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <ScrollArea className="max-h-[360px]">
+                <ScrollArea className="h-[300px]">
                   {selectedProjectId ? (
                     <ArchivedFilesList projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
@@ -954,7 +927,7 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <ScrollArea className="max-h-[360px]">
+                <ScrollArea className="h-[300px]">
                   {selectedProjectId ? (
                     <AnalysisHistoryPanel projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
