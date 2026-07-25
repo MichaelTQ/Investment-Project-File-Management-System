@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -402,16 +402,26 @@ function MoveFileDialog({
   onMove,
   onCancel,
   moving,
+  existingFiles,
 }: {
   file: ArchivedFile;
   onMove: (categoryId: string, categoryName: string, folderPath: string[]) => void;
   onCancel: () => void;
   moving: boolean;
+  existingFiles: ArchivedFile[];
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [selectedName, setSelectedName] = useState<string>("");
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [newSubfolder, setNewSubfolder] = useState("");
+
+  // 合并 FOLDER_STRUCTURE + 用户新建的文件夹
+  const mergedTree = useMemo(() => {
+    const customPaths = existingFiles
+      .map(f => f.folderPath)
+      .filter(p => p.length > 0);
+    return mergeFolderStructure(FOLDER_STRUCTURE, customPaths);
+  }, [existingFiles]);
 
   const handleSelect = (id: string, name: string, path: string[]) => {
     setSelectedId(id);
@@ -465,7 +475,7 @@ function MoveFileDialog({
 
           <ScrollArea className="h-[260px] border rounded-lg p-2">
             <MoveFolderNode
-              node={FOLDER_STRUCTURE}
+              node={mergedTree}
               level={0}
               selectedId={selectedId}
               onSelect={handleSelect}
@@ -754,10 +764,35 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
           onMove={handleMove}
           onCancel={() => setMoveTargetId(null)}
           moving={moving}
+          existingFiles={files}
         />
       )}
     </div>
   );
+}
+
+// 将归档文件中的实际 folderPath 合并到 FOLDER_STRUCTURE 中，保留用户新建的子文件夹
+function mergeFolderStructure(base: FolderNode, customPaths: string[][]): FolderNode {
+  const merged = JSON.parse(JSON.stringify(base)) as FolderNode;
+
+  for (const path of customPaths) {
+    let currentChildren = merged.children || [];
+
+    for (let i = 1; i < path.length; i++) {
+      const segment = path[i];
+      let found = currentChildren.find(c => c.name === segment);
+
+      if (!found) {
+        found = { name: segment, id: `custom-${path.slice(0, i + 1).join('/')}`, children: [] };
+        currentChildren.push(found);
+      }
+
+      if (!found.children) found.children = [];
+      currentChildren = found.children;
+    }
+  }
+
+  return merged;
 }
 
 // 从树中移除文件节点
