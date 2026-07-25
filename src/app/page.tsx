@@ -531,8 +531,8 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
   if (node.type === 'file' && node.file) {
     return (
       <div
-        className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 transition-colors group"
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        className="flex items-center gap-2 py-1.5 rounded hover:bg-muted/50 transition-colors group"
+        style={{ paddingLeft: `${level * 16 + 8}px`, paddingRight: '8px' }}
       >
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
         <div className="flex-1 min-w-0">
@@ -563,8 +563,8 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
   return (
     <div className="select-none">
       <div
-        className="flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        className="flex items-center gap-1 py-1.5 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+        style={{ paddingLeft: `${level * 16 + 8}px`, paddingRight: '8px' }}
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
