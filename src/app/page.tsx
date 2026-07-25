@@ -518,12 +518,16 @@ function MoveFileDialog({
 }
 
 // ============ 归档文件树组件 ============
-function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
+type CtxMenuItem = { label: string; icon: React.ReactNode; action: () => void; destructive?: boolean };
+type CtxMenuState = { x: number; y: number; items: CtxMenuItem[] } | null;
+
+function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
   onDelete: (fileId: string) => void;
   onMove: (fileId: string) => void;
+  setCtxMenu: (v: CtxMenuState) => void;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
@@ -531,10 +535,20 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
 
   if (node.type === 'file' && node.file) {
     const meta = `${(node.file.fileSize / 1024).toFixed(1)} KB · ${new Date(node.file.archivedAt).toLocaleDateString('zh-CN')} · 置信度 ${node.file.confidence}%`;
+    const fileId = node.file.id;
+    const contextItems = [
+      { label: '移动', icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />, action: () => onMove(fileId) },
+      { label: '下载', icon: <Download className="h-3.5 w-3.5 mr-2" />, action: () => onDownload(fileId) },
+      { label: '删除', icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />, action: () => onDelete(fileId), destructive: true },
+    ];
     return (
       <div
         className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors group"
         style={{ paddingLeft: `${level * 12 + 6}px` }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCtxMenu({ x: e.clientX, y: e.clientY, items: contextItems });
+        }}
       >
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
         <p className="text-xs font-medium truncate flex-1 min-w-0" title={`${node.file.archivedName}\n${meta}`}>{node.file.archivedName}</p>
@@ -545,13 +559,13 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-28">
-            <DropdownMenuItem onClick={() => onMove(node.file!.id)}>
+            <DropdownMenuItem onClick={() => onMove(fileId)}>
               <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />移动
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onDownload(node.file!.id)}>
+            <DropdownMenuItem onClick={() => onDownload(fileId)}>
               <Download className="h-3.5 w-3.5 mr-2" />下载
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(node.file!.id)}>
+            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(fileId)}>
               <Trash2 className="h-3.5 w-3.5 mr-2" />删除
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -575,7 +589,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
       {isOpen && hasChildren && (
         <div>
           {node.children!.map((child, idx) => (
-            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} onMove={onMove} />
+            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} onMove={onMove} setCtxMenu={setCtxMenu} />
           ))}
         </div>
       )}
@@ -591,6 +605,7 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
 
   const moveTarget = moveTargetId ? files.find(f => f.id === moveTargetId) : null;
 
@@ -700,9 +715,35 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
             onDownload={handleDownload}
             onDelete={handleDelete}
             onMove={setMoveTargetId}
+            setCtxMenu={setCtxMenu}
           />
         ))}
       </div>
+
+      {/* Right-click Context Menu */}
+      {ctxMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setCtxMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+        >
+          <div
+            className="absolute bg-popover border rounded-md shadow-md py-1 min-w-[100px]"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {ctxMenu.items.map((item, i) => (
+              <button
+                key={i}
+                className={`w-full flex items-center px-3 py-1.5 text-xs hover:bg-muted transition-colors ${item.destructive ? 'text-destructive' : ''}`}
+                onClick={() => { item.action(); setCtxMenu(null); }}
+              >
+                {item.icon}{item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Move File Dialog */}
       {moveTarget && (
