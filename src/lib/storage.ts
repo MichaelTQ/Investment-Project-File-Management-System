@@ -171,6 +171,35 @@ export async function deleteProject(id: string): Promise<void> {
   await db.from("projects").delete().eq("id", id);
 }
 
+// ============ 文件名去重 ============
+
+async function dedupeArchivedName(
+  baseName: string,
+  projectId: string
+): Promise<string> {
+  const db = getDb();
+  const { data } = await db
+    .from("archived_files")
+    .select("archived_name")
+    .eq("project_id", projectId)
+    .like("archived_name", `${baseName}%`);
+
+  if (!data || data.length === 0) return baseName;
+
+  const existingNames = new Set(data.map((f: { archived_name: string }) => f.archived_name));
+  if (!existingNames.has(baseName)) return baseName;
+
+  const dotIdx = baseName.lastIndexOf(".");
+  const prefix = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName;
+  const ext = dotIdx > 0 ? baseName.slice(dotIdx) : "";
+
+  let counter = 1;
+  while (existingNames.has(`${prefix}-${counter}${ext}`)) {
+    counter++;
+  }
+  return `${prefix}-${counter}${ext}`;
+}
+
 // ============ 文件归档 ============
 
 export async function archiveFile(params: {
@@ -188,10 +217,11 @@ export async function archiveFile(params: {
   const db = getDb();
   const s3 = getS3Storage();
 
-  // 1. 生成归档文件名
+  // 1. 生成归档文件名（去重）
   const ext = params.originalName.split(".").pop() ?? "";
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const archivedName = `${params.categoryName}-${params.projectName}-${dateStr}.${ext}`;
+  const baseName = `${params.categoryName}-${params.projectName}-${dateStr}.${ext}`;
+  const archivedName = await dedupeArchivedName(baseName, params.projectId);
 
   // 2. 上传到 S3 对象存储
   const folderPrefix = params.folderPath.join("/");
@@ -256,13 +286,47 @@ export async function moveArchivedFile(
   target: { categoryId: string; categoryName: string; folderPath: string[] }
 ): Promise<ArchivedFile | null> {
   const db = getDb();
+
+  // 查找当前文件信息
+  const { data: currentFile } = await db
+    .from("archived_files")
+    .select("archived_name, project_id")
+    .eq("id", fileId)
+    .single();
+
+  // 检查目标路径下是否存在同名文件，如有则重命名
+  let archivedName = currentFile?.archived_name ?? "";
+  if (currentFile) {
+    const { data: existingFiles } = await db
+      .from("archived_files")
+      .select("id, archived_name")
+      .eq("project_id", currentFile.project_id)
+      .eq("folder_path", target.folderPath)
+      .like("archived_name", `${archivedName}%`);
+
+    if (existingFiles && existingFiles.length > 0) {
+      const sameName = existingFiles.find(
+        (f: { id: string; archived_name: string }) =>
+          f.archived_name === archivedName && f.id !== fileId
+      );
+      if (sameName) {
+        archivedName = await dedupeArchivedName(archivedName, currentFile.project_id);
+      }
+    }
+  }
+
+  const updateData: Record<string, unknown> = {
+    category_id: target.categoryId,
+    category_name: target.categoryName,
+    folder_path: target.folderPath,
+  };
+  if (archivedName !== currentFile?.archived_name) {
+    updateData.archived_name = archivedName;
+  }
+
   const { data, error } = await db
     .from("archived_files")
-    .update({
-      category_id: target.categoryId,
-      category_name: target.categoryName,
-      folder_path: target.folderPath,
-    })
+    .update(updateData)
     .eq("id", fileId)
     .select()
     .single();
