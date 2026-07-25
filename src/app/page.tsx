@@ -486,8 +486,10 @@ function MoveFileDialog({
               placeholder="输入子文件夹名称，留空则移动到选中的分类"
               value={newSubfolder}
               onChange={(e) => setNewSubfolder(e.target.value)}
+              maxLength={100}
               className="h-8 text-sm"
             />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{newSubfolder.length}/100</span>
             {newSubfolder.trim() && (
               <div className="text-xs text-muted-foreground">
                 目标路径：{(() => {
