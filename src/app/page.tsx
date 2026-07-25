@@ -111,7 +111,7 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
 
   return (
     <div
-      className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all ${disabled ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
+      className={`relative border-2 border-dashed rounded-lg p-4 md:p-8 text-center transition-all ${disabled ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) onFileUpload(e.dataTransfer.files); }}
@@ -235,7 +235,7 @@ function ClassifyResultItem({ result }: { result: ClassifyResult }) {
             {result.category ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <AlertCircle className="h-5 w-5 text-amber-600" />}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <p className="font-medium truncate">{result.fileName}</p>
               <span className="text-xs text-muted-foreground shrink-0">{(result.fileSize / 1024).toFixed(1)} KB</span>
             </div>
@@ -556,7 +556,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
             <span>置信度 {node.file.confidence}%</span>
           </div>
         </div>
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0">
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMove(node.file!.id)} title="移动">
             <ArrowRightLeft className="h-3 w-3" />
           </Button>
@@ -685,12 +685,12 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <span className="text-xs text-muted-foreground">共 {files.length} 个文件</span>
         <Button
           variant="outline"
           size="sm"
-          className="gap-1.5"
+          className="gap-1.5 shrink-0"
           onClick={handleDownloadAll}
           disabled={downloadingAll}
         >
@@ -946,8 +946,8 @@ export default function Home() {
         <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">投资项目档案管理系统</h1>
-              <p className="text-sm text-muted-foreground">智能文件分类 · 自动归档 · 按项目管理</p>
+              <h1 className="text-lg md:text-2xl font-bold">投资项目档案管理系统</h1>
+              <p className="text-xs md:text-sm text-muted-foreground">智能文件分类 · 自动归档 · 按项目管理</p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-sm">国创致远</Badge>
@@ -957,14 +957,14 @@ export default function Home() {
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4 lg:gap-6">
           {/* Left Sidebar: Folder Structure + Projects */}
-          <div className="lg:col-span-3 space-y-4">
+          <div className="md:col-span-2 lg:col-span-3 space-y-4">
             {/* Project Selection */}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg flex items-center gap-2">
+                  <CardTitle className="text-base md:text-lg flex items-center gap-2">
                     <Building2 className="h-5 w-5 text-primary" />
                     项目管理
                   </CardTitle>
@@ -979,7 +979,7 @@ export default function Home() {
                     <p className="text-xs mt-1">请先创建一个项目</p>
                   </div>
                 ) : (
-                  <ScrollArea className="h-[200px]">
+                  <ScrollArea className="h-[160px] md:h-[200px]">
                     <div className="space-y-1 pr-1">
                       {projects.map(project => (
                         <div
@@ -1018,14 +1018,14 @@ export default function Home() {
             {/* Folder Structure */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <Folder className="h-5 w-5 text-primary" />
                   文件夹结构
                 </CardTitle>
                 <CardDescription>基于《国创致远-投资项目档案管理》文档</CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
-                <ScrollArea className="h-[calc(100vh-520px)] min-h-[200px]">
+                <ScrollArea className="h-[calc(100vh-440px)] min-h-[160px] max-h-[400px]">
                   <FolderTree node={FOLDER_STRUCTURE} selectedFolder={selectedFolder} onSelectFolder={setSelectedFolder} />
                 </ScrollArea>
               </CardContent>
@@ -1033,11 +1033,11 @@ export default function Home() {
           </div>
 
           {/* Middle: Upload + Results */}
-          <div className="lg:col-span-5 space-y-6">
+          <div className="md:col-span-4 lg:col-span-5 space-y-4">
             {/* Upload Section */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <Upload className="h-5 w-5 text-primary" />
                   文件上传
                 </CardTitle>
@@ -1065,7 +1065,7 @@ export default function Home() {
             {results.length > 0 && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg flex items-center gap-2">
+                  <CardTitle className="text-base md:text-lg flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5 text-green-500" />
                     分类结果
                   </CardTitle>
@@ -1092,7 +1092,7 @@ export default function Home() {
                       3. 文件自动归档到项目文件夹
                     </p>
                     <Separator className="my-4" />
-                    <div className="grid grid-cols-4 gap-4 text-center">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
                       <div><div className="text-2xl font-bold text-primary">50+</div><div className="text-xs text-muted-foreground">文件类型</div></div>
                       <div><div className="text-2xl font-bold text-primary">AI</div><div className="text-xs text-muted-foreground">智能分析</div></div>
                       <div><div className="text-2xl font-bold text-primary">自动</div><div className="text-xs text-muted-foreground">归档命名</div></div>
@@ -1105,11 +1105,11 @@ export default function Home() {
           </div>
 
           {/* Right: Archived Files + Analysis History */}
-          <div className="lg:col-span-4 space-y-4">
+          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-4">
             {/* Archived Files */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
+            <Card className="flex-1 min-h-0 flex flex-col">
+              <CardHeader className="pb-3 shrink-0">
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <Archive className="h-5 w-5 text-primary" />
                   已归档文件
                 </CardTitle>
@@ -1119,8 +1119,8 @@ export default function Home() {
                     : '请选择一个项目查看归档文件'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-0">
-                <ScrollArea className="h-[300px]">
+              <CardContent className="pt-0 flex-1 min-h-0">
+                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
                   {selectedProjectId ? (
                     <ArchivedFilesList projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
@@ -1134,9 +1134,9 @@ export default function Home() {
             </Card>
 
             {/* Analysis History */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
+            <Card className="flex-1 min-h-0 flex flex-col">
+              <CardHeader className="pb-3 shrink-0">
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <History className="h-5 w-5 text-primary" />
                   分析记录
                 </CardTitle>
@@ -1146,8 +1146,8 @@ export default function Home() {
                     : '请选择一个项目查看分析记录'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-0">
-                <ScrollArea className="h-[300px]">
+              <CardContent className="pt-0 flex-1 min-h-0">
+                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
                   {selectedProjectId ? (
                     <AnalysisHistoryPanel projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
