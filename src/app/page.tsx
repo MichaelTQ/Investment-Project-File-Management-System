@@ -14,7 +14,7 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, FileIcon, X,
-  ChevronLeft, History
+  ChevronLeft, History, ArrowRightLeft
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -354,12 +354,138 @@ interface ArchiveTreeNode {
   };
 }
 
+// ============ 移动文件对话框 ============
+
+interface MoveTarget {
+  categoryId: string;
+  categoryName: string;
+  folderPath: string[];
+  label: string;
+}
+
+function getMoveTargets(node: FolderNode, parentPath: string[] = []): MoveTarget[] {
+  const currentPath = [...parentPath, node.name];
+  const targets: MoveTarget[] = [];
+
+  if (node.children) {
+    for (const child of node.children) {
+      if (child.children) {
+        targets.push(...getMoveTargets(child, currentPath));
+      } else if (child.files && child.files.length > 0) {
+        targets.push({
+          categoryId: child.id,
+          categoryName: child.name,
+          folderPath: currentPath,
+          label: `${currentPath.join(' / ')} / ${child.name}`,
+        });
+      }
+    }
+  }
+
+  return targets;
+}
+
+const MOVE_TARGETS = getMoveTargets(FOLDER_STRUCTURE);
+
+function MoveFileDialog({
+  file,
+  onMove,
+  onCancel,
+  moving,
+}: {
+  file: ArchivedFile;
+  onMove: (categoryId: string, categoryName: string, folderPath: string[]) => void;
+  onCancel: () => void;
+  moving: boolean;
+}) {
+  const [selectedId, setSelectedId] = useState<string>("");
+
+  return (
+    <Dialog open={true} onOpenChange={() => onCancel()}>
+      <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5" />
+            移动归档文件
+          </DialogTitle>
+          <DialogDescription>
+            将「<span className="font-medium text-foreground">{file.archivedName}</span>」移动到新的分类文件夹
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="text-xs text-muted-foreground mb-2">
+          当前位置：{file.folderPath.join(' / ')} / {file.categoryName}
+        </div>
+
+        <ScrollArea className="flex-1 border rounded-lg p-3 max-h-[400px]">
+          <div className="space-y-0.5">
+            {MOVE_TARGETS.map((target) => (
+              <label
+                key={target.categoryId}
+                className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
+                  selectedId === target.categoryId
+                    ? 'bg-primary/10 text-primary'
+                    : 'hover:bg-muted'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="moveTarget"
+                  value={target.categoryId}
+                  checked={selectedId === target.categoryId}
+                  onChange={() => setSelectedId(target.categoryId)}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                    selectedId === target.categoryId
+                      ? 'border-primary'
+                      : 'border-muted-foreground/30'
+                  }`}
+                >
+                  {selectedId === target.categoryId && (
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                  )}
+                </div>
+                <span className="text-sm truncate">{target.label}</span>
+              </label>
+            ))}
+          </div>
+        </ScrollArea>
+
+        <DialogFooter className="mt-4">
+          <Button variant="outline" onClick={onCancel} disabled={moving}>
+            取消
+          </Button>
+          <Button
+            onClick={() => {
+              const target = MOVE_TARGETS.find(t => t.categoryId === selectedId);
+              if (target) onMove(target.categoryId, target.categoryName, target.folderPath);
+            }}
+            disabled={!selectedId || moving}
+          >
+            {moving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                移动中...
+              </>
+            ) : (
+              '确认移动'
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============ 归档文件树组件 ============
-function ArchiveTreeItem({ node, level, onDownload, onDelete }: {
+function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
   onDelete: (fileId: string) => void;
+  onMove: (fileId: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
@@ -383,6 +509,9 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete }: {
           </div>
         </div>
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMove(node.file!.id)} title="移动">
+            <ArrowRightLeft className="h-3 w-3" />
+          </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDownload(node.file!.id)} title="下载">
             <Download className="h-3 w-3" />
           </Button>
@@ -409,7 +538,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete }: {
       {isOpen && hasChildren && (
         <div>
           {node.children!.map((child, idx) => (
-            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} />
+            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} onMove={onMove} />
           ))}
         </div>
       )}
@@ -423,6 +552,10 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
   const [files, setFiles] = useState<ArchivedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+
+  const moveTarget = moveTargetId ? files.find(f => f.id === moveTargetId) : null;
 
   useEffect(() => {
     if (!projectId) return;
@@ -447,6 +580,34 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     await fetch(`/api/archive?id=${fileId}`, { method: 'DELETE' });
     setFiles(prev => prev.filter(f => f.id !== fileId));
     setTree(prev => removeFileFromTree(prev, fileId));
+  };
+
+  const handleMove = async (targetCategoryId: string, targetCategoryName: string, targetFolderPath: string[]) => {
+    if (!moveTarget) return;
+    setMoving(true);
+    try {
+      const res = await fetch('/api/archive', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: moveTarget.id,
+          categoryId: targetCategoryId,
+          categoryName: targetCategoryName,
+          folderPath: targetFolderPath,
+        }),
+      });
+      if (!res.ok) throw new Error('移动失败');
+      // 刷新列表
+      const refreshRes = await fetch(`/api/archive?projectId=${projectId}&tree=true`);
+      const data = await refreshRes.json();
+      setTree(data.tree || []);
+      setFiles(data.files || []);
+      setMoveTargetId(null);
+    } catch (err) {
+      alert('移动文件失败，请重试');
+    } finally {
+      setMoving(false);
+    }
   };
 
   const handleDownloadAll = () => {
@@ -501,9 +662,20 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
             level={0}
             onDownload={handleDownload}
             onDelete={handleDelete}
+            onMove={setMoveTargetId}
           />
         ))}
       </div>
+
+      {/* Move File Dialog */}
+      {moveTarget && (
+        <MoveFileDialog
+          file={moveTarget}
+          onMove={handleMove}
+          onCancel={() => setMoveTargetId(null)}
+          moving={moving}
+        />
+      )}
     </div>
   );
 }

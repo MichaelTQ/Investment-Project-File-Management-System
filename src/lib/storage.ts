@@ -249,6 +249,45 @@ export async function archiveFile(params: {
   };
 }
 
+// ============ 文件移动 ============
+
+export async function moveArchivedFile(
+  fileId: string,
+  target: { categoryId: string; categoryName: string; folderPath: string[] }
+): Promise<ArchivedFile | null> {
+  const db = getDb();
+  const { data, error } = await db
+    .from("archived_files")
+    .update({
+      category_id: target.categoryId,
+      category_name: target.categoryName,
+      folder_path: target.folderPath,
+    })
+    .eq("id", fileId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`移动文件失败: ${error.message}`);
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    originalName: data.original_name,
+    archivedName: data.archived_name,
+    projectId: data.project_id,
+    projectName: data.project_name,
+    categoryId: data.category_id,
+    categoryName: data.category_name,
+    folderPath: data.folder_path,
+    fileSize: data.file_size,
+    mimeType: data.mime_type,
+    archivedAt: data.archived_at,
+    confidence: data.confidence,
+    reasoning: data.reasoning ?? "",
+    storageKey: data.storage_key,
+  };
+}
+
 // ============ 文件查询 ============
 
 export async function listArchivedFiles(
