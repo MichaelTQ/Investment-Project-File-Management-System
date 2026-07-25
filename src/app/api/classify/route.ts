@@ -204,12 +204,15 @@ export async function POST(request: NextRequest) {
       const buffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(buffer);
 
-      const extension = fileName.split('.').pop()?.toLowerCase();
+      const extension = fileName.split('.').pop()?.toLowerCase() || '';
 
-      if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension || '')) {
+      if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension)) {
         contentText = new TextDecoder('utf-8').decode(uint8Array);
+      } else if (isImageFile(extension)) {
+        // 图片文件：使用文件名作为分类依据，附加图片格式信息
+        contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}`;
       } else {
-        const mimeType = getMimeType(extension || '');
+        const mimeType = getMimeType(extension);
         const base64 = Buffer.from(uint8Array).toString('base64');
         const dataUrl = `data:${mimeType};base64,${base64}`;
 
@@ -406,8 +409,20 @@ function getMimeType(extension: string): string {
     'txt': 'text/plain',
     'csv': 'text/csv',
     'json': 'application/json',
-    'xml': 'application/xml'
+    'xml': 'application/xml',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'bmp': 'image/bmp',
+    'svg': 'image/svg+xml',
   };
 
   return mimeTypes[extension] || 'application/octet-stream';
+}
+
+// 判断是否为图片格式
+function isImageFile(extension: string): boolean {
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(extension);
 }
