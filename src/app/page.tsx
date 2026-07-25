@@ -356,38 +356,45 @@ interface ArchiveTreeNode {
 
 // ============ 移动文件对话框 ============
 
-interface MoveTarget {
-  categoryId: string;
-  categoryName: string;
-  folderPath: string[];
-  label: string;
+// 移动对话框中的文件夹树选择节点
+function MoveFolderNode({ node, level, selectedId, onSelect, path }: {
+  node: FolderNode; level: number; selectedId: string; onSelect: (id: string, name: string, path: string[]) => void; path: string[];
+}) {
+  const [isOpen, setIsOpen] = useState(level < 2);
+  const hasChildren = node.children && node.children.length > 0;
+  const isSelected = selectedId === node.id;
+  const currentPath = [...path, node.name];
+
+  return (
+    <div className="select-none">
+      <div
+        className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
+        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelect(node.id, node.name, currentPath); }}
+      >
+        {hasChildren ? (
+          isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        ) : (<span className="w-4 shrink-0" />)}
+        {isSelected ? (
+          <div className="w-4 h-4 rounded-full border-2 border-primary flex items-center justify-center shrink-0">
+            <div className="w-2 h-2 rounded-full bg-primary" />
+          </div>
+        ) : (
+          <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 flex items-center justify-center shrink-0" />
+        )}
+        <Folder className={`h-4 w-4 shrink-0 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+        <span className={`text-sm truncate ${isSelected ? 'font-medium' : ''}`}>{node.name}</span>
+      </div>
+      {isOpen && hasChildren && (
+        <div>
+          {node.children!.map(child => (
+            <MoveFolderNode key={child.id} node={child} level={level + 1} selectedId={selectedId} onSelect={onSelect} path={currentPath} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
-
-function getMoveTargets(node: FolderNode, parentPath: string[] = []): MoveTarget[] {
-  const currentPath = [...parentPath, node.name];
-  const targets: MoveTarget[] = [];
-
-  if (node.children) {
-    for (const child of node.children) {
-      if (child.children && child.children.length > 0) {
-        targets.push(...getMoveTargets(child, currentPath));
-      } else {
-        // 叶子节点（无论是否有 files 模板，都作为可移动目标）
-        // folderPath 必须包含叶子自身，与 classify 归档时 folderPath 格式一致
-        targets.push({
-          categoryId: child.id ?? child.name,
-          categoryName: child.name,
-          folderPath: [...currentPath, child.name],
-          label: `${currentPath.join(' / ')} / ${child.name}`,
-        });
-      }
-    }
-  }
-
-  return targets;
-}
-
-const MOVE_TARGETS = getMoveTargets(FOLDER_STRUCTURE);
 
 function MoveFileDialog({
   file,
@@ -401,28 +408,41 @@ function MoveFileDialog({
   moving: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
+  const [selectedName, setSelectedName] = useState<string>("");
+  const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [newSubfolder, setNewSubfolder] = useState("");
+
+  const handleSelect = (id: string, name: string, path: string[]) => {
+    setSelectedId(id);
+    setSelectedName(name);
+    setSelectedPath(path);
+    setNewSubfolder("");
+  };
 
   // 计算最终目标
   const getFinalTarget = () => {
-    const target = MOVE_TARGETS.find(t => t.categoryId === selectedId);
-    if (!target) return null;
-
+    if (!selectedId) return null;
     if (newSubfolder.trim()) {
-      // 在选中的分类下新建子文件夹，路径追加新文件夹名
       const subName = newSubfolder.trim();
       return {
-        categoryId: `${target.categoryId}-${subName}`,
+        categoryId: `${selectedId}-${subName}`,
         categoryName: subName,
-        folderPath: [...target.folderPath, subName],
+        folderPath: [...selectedPath, subName],
       };
     }
     return {
-      categoryId: target.categoryId,
-      categoryName: target.categoryName,
-      folderPath: target.folderPath,
+      categoryId: selectedId,
+      categoryName: selectedName,
+      folderPath: selectedPath,
     };
   };
+
+  // 目标路径预览
+  const targetPreview = selectedId
+    ? (newSubfolder.trim()
+      ? `${selectedPath.join(' / ')} / ${newSubfolder.trim()}`
+      : selectedPath.join(' / '))
+    : '';
 
   return (
     <Dialog open={true} onOpenChange={() => onCancel()}>
@@ -438,43 +458,17 @@ function MoveFileDialog({
         </DialogHeader>
 
         <div className="text-xs text-muted-foreground mb-2">
-          当前位置：{file.folderPath.join(' / ')} / {file.categoryName}
+          当前位置：{file.folderPath.join(' / ')}
         </div>
 
-        <ScrollArea className="h-[260px] border rounded-lg p-3">
-          <div className="space-y-0.5">
-            {MOVE_TARGETS.map((target) => (
-              <label
-                key={target.categoryId}
-                className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-colors ${
-                  selectedId === target.categoryId
-                    ? 'bg-primary/10 text-primary'
-                    : 'hover:bg-muted'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="moveTarget"
-                  value={target.categoryId}
-                  checked={selectedId === target.categoryId}
-                  onChange={() => { setSelectedId(target.categoryId); setNewSubfolder(""); }}
-                  className="sr-only"
-                />
-                <div
-                  className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    selectedId === target.categoryId
-                      ? 'border-primary'
-                      : 'border-muted-foreground/30'
-                  }`}
-                >
-                  {selectedId === target.categoryId && (
-                    <div className="w-2 h-2 rounded-full bg-primary" />
-                  )}
-                </div>
-                <span className="text-sm truncate">{target.label}</span>
-              </label>
-            ))}
-          </div>
+        <ScrollArea className="h-[260px] border rounded-lg p-2">
+          <MoveFolderNode
+            node={FOLDER_STRUCTURE}
+            level={0}
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            path={[]}
+          />
         </ScrollArea>
 
         {selectedId && (
@@ -489,15 +483,10 @@ function MoveFileDialog({
               maxLength={100}
               className="h-8 text-sm"
             />
-            <span className="text-xs text-muted-foreground whitespace-nowrap">{newSubfolder.length}/100</span>
-            {newSubfolder.trim() && (
-              <div className="text-xs text-muted-foreground">
-                目标路径：{(() => {
-                  const t = MOVE_TARGETS.find(t => t.categoryId === selectedId);
-                  return t ? `${t.folderPath.join(' / ')} / ${newSubfolder.trim()}` : '';
-                })()}
-              </div>
-            )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">目标路径：{targetPreview}</span>
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{newSubfolder.length}/100</span>
+            </div>
           </div>
         )}
 
