@@ -373,10 +373,11 @@ function getMoveTargets(node: FolderNode, parentPath: string[] = []): MoveTarget
         targets.push(...getMoveTargets(child, currentPath));
       } else {
         // 叶子节点（无论是否有 files 模板，都作为可移动目标）
+        // folderPath 必须包含叶子自身，与 classify 归档时 folderPath 格式一致
         targets.push({
           categoryId: child.id ?? child.name,
           categoryName: child.name,
-          folderPath: currentPath,
+          folderPath: [...currentPath, child.name],
           label: `${currentPath.join(' / ')} / ${child.name}`,
         });
       }
@@ -408,12 +409,12 @@ function MoveFileDialog({
     if (!target) return null;
 
     if (newSubfolder.trim()) {
-      // 在选中的分类下新建子文件夹
+      // 在选中的分类下新建子文件夹，路径追加新文件夹名
       const subName = newSubfolder.trim();
       return {
         categoryId: `${target.categoryId}-${subName}`,
         categoryName: subName,
-        folderPath: [...target.folderPath, target.categoryName],
+        folderPath: [...target.folderPath, subName],
       };
     }
     return {
@@ -491,7 +492,7 @@ function MoveFileDialog({
               <div className="text-xs text-muted-foreground">
                 目标路径：{(() => {
                   const t = MOVE_TARGETS.find(t => t.categoryId === selectedId);
-                  return t ? `${t.folderPath.join(' / ')} / ${t.categoryName} / ${newSubfolder.trim()}` : '';
+                  return t ? `${t.folderPath.join(' / ')} / ${newSubfolder.trim()}` : '';
                 })()}
               </div>
             )}
