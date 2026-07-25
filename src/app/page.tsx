@@ -10,11 +10,12 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, FileIcon, X,
-  ChevronLeft, History, ArrowRightLeft
+  ChevronLeft, History, ArrowRightLeft, MoreHorizontal
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -72,7 +73,7 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
     <div className="select-none">
       <div
         className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelectFolder(node.id); }}
       >
         {hasChildren ? (
@@ -369,7 +370,7 @@ function MoveFolderNode({ node, level, selectedId, onSelect, path }: {
     <div className="select-none">
       <div
         className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelect(node.id, node.name, currentPath); }}
       >
         {hasChildren ? (
@@ -529,33 +530,32 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
   const fileCount = node.children?.filter(c => c.type === 'file').length || 0;
 
   if (node.type === 'file' && node.file) {
+    const meta = `${(node.file.fileSize / 1024).toFixed(1)} KB · ${new Date(node.file.archivedAt).toLocaleDateString('zh-CN')} · 置信度 ${node.file.confidence}%`;
     return (
       <div
-        className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 transition-colors group"
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors group"
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
       >
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium truncate" title={node.file.archivedName}>{node.file.archivedName}</p>
-          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-            <span>{(node.file.fileSize / 1024).toFixed(1)} KB</span>
-            <span>·</span>
-            <span>{new Date(node.file.archivedAt).toLocaleDateString('zh-CN')}</span>
-            <span>·</span>
-            <span>置信度 {node.file.confidence}%</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onMove(node.file!.id)} title="移动">
-            <ArrowRightLeft className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDownload(node.file!.id)} title="下载">
-            <Download className="h-3 w-3" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => onDelete(node.file!.id)} title="删除">
-            <Trash2 className="h-3 w-3" />
-          </Button>
-        </div>
+        <p className="text-xs font-medium truncate flex-1 min-w-0" title={`${node.file.archivedName}\n${meta}`}>{node.file.archivedName}</p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0 opacity-60 group-hover:opacity-100">
+              <MoreHorizontal className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-28">
+            <DropdownMenuItem onClick={() => onMove(node.file!.id)}>
+              <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />移动
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDownload(node.file!.id)}>
+              <Download className="h-3.5 w-3.5 mr-2" />下载
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(node.file!.id)}>
+              <Trash2 className="h-3.5 w-3.5 mr-2" />删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     );
   }
@@ -563,8 +563,8 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove }: {
   return (
     <div className="select-none">
       <div
-        className="flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-        style={{ paddingLeft: `${level * 16 + 8}px` }}
+        className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
