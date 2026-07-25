@@ -369,11 +369,12 @@ function getMoveTargets(node: FolderNode, parentPath: string[] = []): MoveTarget
 
   if (node.children) {
     for (const child of node.children) {
-      if (child.children) {
+      if (child.children && child.children.length > 0) {
         targets.push(...getMoveTargets(child, currentPath));
-      } else if (child.files && child.files.length > 0) {
+      } else {
+        // 叶子节点（无论是否有 files 模板，都作为可移动目标）
         targets.push({
-          categoryId: child.id,
+          categoryId: child.id ?? child.name,
           categoryName: child.name,
           folderPath: currentPath,
           label: `${currentPath.join(' / ')} / ${child.name}`,
@@ -399,6 +400,28 @@ function MoveFileDialog({
   moving: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
+  const [newSubfolder, setNewSubfolder] = useState("");
+
+  // 计算最终目标
+  const getFinalTarget = () => {
+    const target = MOVE_TARGETS.find(t => t.categoryId === selectedId);
+    if (!target) return null;
+
+    if (newSubfolder.trim()) {
+      // 在选中的分类下新建子文件夹
+      const subName = newSubfolder.trim();
+      return {
+        categoryId: `${target.categoryId}-${subName}`,
+        categoryName: subName,
+        folderPath: [...target.folderPath, target.categoryName],
+      };
+    }
+    return {
+      categoryId: target.categoryId,
+      categoryName: target.categoryName,
+      folderPath: target.folderPath,
+    };
+  };
 
   return (
     <Dialog open={true} onOpenChange={() => onCancel()}>
@@ -417,7 +440,7 @@ function MoveFileDialog({
           当前位置：{file.folderPath.join(' / ')} / {file.categoryName}
         </div>
 
-        <ScrollArea className="flex-1 border rounded-lg p-3 max-h-[400px]">
+        <ScrollArea className="flex-1 border rounded-lg p-3 max-h-[300px]">
           <div className="space-y-0.5">
             {MOVE_TARGETS.map((target) => (
               <label
@@ -433,7 +456,7 @@ function MoveFileDialog({
                   name="moveTarget"
                   value={target.categoryId}
                   checked={selectedId === target.categoryId}
-                  onChange={() => setSelectedId(target.categoryId)}
+                  onChange={() => { setSelectedId(target.categoryId); setNewSubfolder(""); }}
                   className="sr-only"
                 />
                 <div
@@ -453,13 +476,35 @@ function MoveFileDialog({
           </div>
         </ScrollArea>
 
+        {selectedId && (
+          <div className="mt-3 space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              新建子文件夹（可选，在选中的分类下创建）
+            </Label>
+            <Input
+              placeholder="输入子文件夹名称，留空则移动到选中的分类"
+              value={newSubfolder}
+              onChange={(e) => setNewSubfolder(e.target.value)}
+              className="h-8 text-sm"
+            />
+            {newSubfolder.trim() && (
+              <div className="text-xs text-muted-foreground">
+                目标路径：{(() => {
+                  const t = MOVE_TARGETS.find(t => t.categoryId === selectedId);
+                  return t ? `${t.folderPath.join(' / ')} / ${t.categoryName} / ${newSubfolder.trim()}` : '';
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onCancel} disabled={moving}>
             取消
           </Button>
           <Button
             onClick={() => {
-              const target = MOVE_TARGETS.find(t => t.categoryId === selectedId);
+              const target = getFinalTarget();
               if (target) onMove(target.categoryId, target.categoryName, target.folderPath);
             }}
             disabled={!selectedId || moving}
