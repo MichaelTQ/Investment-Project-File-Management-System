@@ -118,7 +118,7 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
     >
       <input
         type="file" multiple
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx"
+        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg"
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         onChange={(e) => { if (e.target.files && e.target.files.length > 0) onFileUpload(e.target.files); }}
       />
@@ -128,7 +128,7 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
         </div>
         <div>
           <p className="font-medium">拖拽文件到此处或点击上传</p>
-          <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、TXT 格式</p>
+          <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、TXT、图片（JPG/PNG/GIF/WebP/SVG）等格式</p>
         </div>
       </div>
     </div>
