@@ -458,38 +458,40 @@ function MoveFileDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="text-xs text-muted-foreground mb-2">
-          当前位置：{file.folderPath.join(' / ')}
-        </div>
-
-        <ScrollArea className="h-[260px] border rounded-lg p-2">
-          <MoveFolderNode
-            node={FOLDER_STRUCTURE}
-            level={0}
-            selectedId={selectedId}
-            onSelect={handleSelect}
-            path={[]}
-          />
-        </ScrollArea>
-
-        {selectedId && (
-          <div className="mt-3 space-y-1.5">
-            <Label className="text-xs text-muted-foreground">
-              新建子文件夹（可选，在选中的分类下创建）
-            </Label>
-            <Input
-              placeholder="输入子文件夹名称，留空则移动到选中的分类"
-              value={newSubfolder}
-              onChange={(e) => setNewSubfolder(e.target.value)}
-              maxLength={100}
-              className="h-8 text-sm"
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">目标路径：{targetPreview}</span>
-              <span className="text-xs text-muted-foreground whitespace-nowrap">{newSubfolder.length}/100</span>
-            </div>
+        <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
+          <div className="text-xs text-muted-foreground mb-2">
+            当前位置：{file.folderPath.join(' / ')}
           </div>
-        )}
+
+          <div className="border rounded-lg p-2 mb-3">
+            <MoveFolderNode
+              node={FOLDER_STRUCTURE}
+              level={0}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              path={[]}
+            />
+          </div>
+
+          {selectedId && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                新建子文件夹（可选，在选中的分类下创建）
+              </Label>
+              <Input
+                placeholder="输入子文件夹名称，留空则移动到选中的分类"
+                value={newSubfolder}
+                onChange={(e) => setNewSubfolder(e.target.value)}
+                maxLength={100}
+                className="h-8 text-sm"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">目标路径：{targetPreview}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{newSubfolder.length}/100</span>
+              </div>
+            </div>
+          )}
+        </ScrollArea>
 
         <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onCancel} disabled={moving}>
