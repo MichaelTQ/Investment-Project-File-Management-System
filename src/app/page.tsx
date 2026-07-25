@@ -440,7 +440,7 @@ function MoveFileDialog({
           当前位置：{file.folderPath.join(' / ')} / {file.categoryName}
         </div>
 
-        <ScrollArea className="flex-1 border rounded-lg p-3 max-h-[300px]">
+        <ScrollArea className="h-[280px] border rounded-lg p-3">
           <div className="space-y-0.5">
             {MOVE_TARGETS.map((target) => (
               <label
