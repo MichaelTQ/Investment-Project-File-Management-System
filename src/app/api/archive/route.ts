@@ -3,6 +3,7 @@ import {
   listArchivedFiles,
   getArchivedFile,
   deleteArchivedFile,
+  moveArchivedFile,
   getFileDownloadUrl,
   getFileDownloadStream,
   buildArchiveTree,
@@ -69,6 +70,30 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "删除文件失败" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/archive - 移动归档文件到新分类
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id, categoryId, categoryName, folderPath } = body;
+
+    if (!id || !categoryId || !categoryName || !folderPath || !Array.isArray(folderPath)) {
+      return NextResponse.json({ error: "缺少必要参数: id, categoryId, categoryName, folderPath" }, { status: 400 });
+    }
+
+    const result = await moveArchivedFile(id, { categoryId, categoryName, folderPath });
+    if (!result) {
+      return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, file: result });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "移动文件失败" },
       { status: 500 }
     );
   }
