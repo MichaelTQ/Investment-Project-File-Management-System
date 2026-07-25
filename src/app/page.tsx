@@ -426,7 +426,7 @@ function MoveFileDialog({
 
   return (
     <Dialog open={true} onOpenChange={() => onCancel()}>
-      <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5" />
@@ -441,7 +441,7 @@ function MoveFileDialog({
           当前位置：{file.folderPath.join(' / ')} / {file.categoryName}
         </div>
 
-        <ScrollArea className="h-[280px] border rounded-lg p-3">
+        <ScrollArea className="flex-1 min-h-0 border rounded-lg p-3">
           <div className="space-y-0.5">
             {MOVE_TARGETS.map((target) => (
               <label
