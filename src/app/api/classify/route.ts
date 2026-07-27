@@ -118,6 +118,7 @@ function matchByKeywords(fileName: string, contentText: string): {
 async function classifyWithLLM(
   fileName: string,
   contentText: string,
+  projectName: string,
   customHeaders: Record<string, string>,
   imageDataUrl?: string
 ): Promise<{
@@ -133,43 +134,81 @@ async function classifyWithLLM(
     `${index + 1}. ${cat.folderPath.join('/')} / ${cat.fileName} (关键词: ${cat.keywords.join(', ')})`
   ).join('\n');
 
-  const systemPrompt = `你是一个专业的投资项目档案分类助手。你的任务是根据文件名和文件内容，判断该文件应该归类到哪个文件夹中。
+  const systemPrompt = `你是一个专业的投资项目档案分类与命名助手。
+
+你的任务包括：
+1. 根据文件名、文件文字内容以及可能提供的图片，判断文件所属的档案分类
+2. 为文件生成一个准确、清晰、方便检索的建议档案标题
 
 以下是可选的归档位置：
 ${categoryOptions}
 
-请根据以下规则进行判断：
-1. 首先检查文件名是否包含特定关键词
-2. 然后分析文件文字内容，判断文件类型和主题
-3. 如果提供了图片，必须分析图片中的场景、物体和可见文字，不能只根据文件名判断
-4. 选择最匹配的归档位置
-5. 根据文件实际内容生成一个简洁、明确的建议档案标题
-6. 给出置信度（0-100）和判断理由；图片分类理由应说明观察到的视觉依据
+请严格从以上分类中选择，不得自行创造新的分类。
 
-建议档案标题必须遵守以下规则：
-1. 不包含项目名称、归档日期和文件扩展名
-2. 不使用 / \\ : * ? " < > | 等非法字符
-3. 不超过50个字符
-4. 无法提炼更具体标题时，使用所选分类名称
+【分类规则】
+1. 综合判断文件名、正文主题、文件结构和可见图片内容
+2. 文件名只能作为线索，不能在文件内容与文件名冲突时盲目采用文件名
+3. 如果提供图片，需要分析图片中的场景、主体、物体、印章、证件和可见文字
+4. 选择语义最匹配的归档位置
+5. 无法充分判断时降低置信度，不得编造内容
 
-你必须以JSON格式回复，格式如下：
+【建议档案标题规则】
+建议标题应当比分类名称更具体，但保持简洁，优先提取：
+1. 文件涉及的主体名称，例如目标公司、被投企业、交易对方、基金或项目主体
+2. 文件对应的业务期间，例如“2025年度”“2026年上半年”“2024-2026年”
+3. 文件的具体事项，例如“A轮增资”“苏州工厂实地调研”“重大风险事件”
+4. 文件类型，例如“财务尽调报告”“增资协议”“投委会决议”“投后管理报告”
+5. 文件中明确出现的版本或状态，例如“签署版”“最终版”“修订版”
+
+推荐标题结构：
+主体名称 + 业务期间或关键事项 + 文件类型 + 明确的版本信息
+
+标题示例：
+星云科技-2025年度财务尽调报告
+远航医疗-A轮增资协议-签署版
+华辰新能源-2026年上半年投后管理报告
+星云科技-苏州工厂实地调研照片
+远航医疗-重大风险事件处置方案
+
+生成标题时必须遵守：
+1. 标题只能使用文件中真实存在的信息，不得猜测公司名称、年份、轮次、地点或版本
+2. 公司全称过长时，可以使用文件中明确出现的标准简称
+3. 如果主体名称与当前项目名称“${projectName || '未提供'}”高度重复，可以不在建议标题中重复，因为系统会在最终文件名中自动添加项目名称
+4. 如果文件涉及的主体与当前项目名称不同，应当保留该主体名称
+5. 业务年份指文件内容对应的年份，不是上传时间或归档时间
+6. 不包含系统归档日期和文件扩展名
+7. 不使用 / \\ : * ? " < > | 等非法字符
+8. 不机械复制“扫描件”“新建文档”“最终最终版”等无意义内容
+9. 建议控制在15至40个字符，最长不得超过50个字符
+10. 无法提取更具体信息时，使用所选分类名称
+
+【输出要求】
+只输出一个合法JSON对象，不要使用Markdown代码块，不要添加任何额外说明。
+
+格式必须为：
 {
-  "categoryIndex": 数字（对应上面的编号）,
-  "confidence": 数字（0-100）,
-  "reasoning": "判断理由",
+  "categoryIndex": 对应归档位置的数字编号,
+  "confidence": 0到100之间的数字,
+  "reasoning": "说明分类依据，包括文件名、正文或图片中的关键信息",
   "suggestedArchiveTitle": "建议档案标题"
 }`;
 
-  const userPrompt = `请分析以下文件并判断其归档位置：
+  const userPrompt = `请分析以下文件，选择归档分类并生成建议档案标题。
 
-文件名：${fileName}
+当前项目名称：
+${projectName || '未提供'}
 
-文件内容摘要（前2000字）：
+原始文件名：
+${fileName}
+
+提取到的文件内容（前2000字）：
 ${contentText.slice(0, 2000)}
 
-${imageDataUrl ? '已附上原始图片。请结合画面内容、可见文字和文件名进行分类，并在理由中说明你从图片中观察到的依据。' : ''}
+${imageDataUrl
+    ? '已附上原始图片。请结合图片中的场景、主体、物体、印章、证件和可见文字进行判断，并在理由中说明视觉依据。'
+    : '本次没有提供图片，请根据文件名和提取到的文字判断。'}
 
-请以JSON格式回复你的判断结果。`;
+请严格按照系统要求，只返回JSON对象。`;
 
   const userContent: Message['content'] = imageDataUrl
     ? [
@@ -239,6 +278,7 @@ export async function POST(request: NextRequest) {
 
     const fileName = file.name;
     const fileSize = file.size;
+    const project = projectId ? await getProject(projectId) : null;
 
     // 提取请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
@@ -344,6 +384,7 @@ export async function POST(request: NextRequest) {
       const llmResult = await classifyWithLLM(
         fileName,
         contentText,
+        project?.name || '',
         customHeaders,
         imageDataUrl
       );
@@ -417,8 +458,6 @@ export async function POST(request: NextRequest) {
       !result.requiresArchiveConfirmation
     ) {
       try {
-        const project = await getProject(projectId);
-
         if (project) {
           const buffer = await file.arrayBuffer();
           const extension = fileName.split('.').pop()?.toLowerCase() || '';
