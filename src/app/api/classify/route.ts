@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LLMClient, FetchClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import {
+  LLMClient,
+  FetchClient,
+  Config,
+  HeaderUtils,
+  type Message,
+} from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
 import { archiveFile, getProject } from '@/lib/storage';
 
@@ -109,7 +115,8 @@ function matchByKeywords(fileName: string, contentText: string): {
 async function classifyWithLLM(
   fileName: string,
   contentText: string,
-  customHeaders: Record<string, string>
+  customHeaders: Record<string, string>,
+  imageDataUrl?: string
 ): Promise<{ categoryName: string; confidence: number; reasoning: string }> {
   const config = new Config();
   const client = new LLMClient(config, customHeaders);
@@ -125,9 +132,10 @@ ${categoryOptions}
 
 请根据以下规则进行判断：
 1. 首先检查文件名是否包含特定关键词
-2. 然后分析文件内容，判断文件类型和主题
-3. 选择最匹配的归档位置
-4. 给出置信度（0-100）和判断理由
+2. 然后分析文件文字内容，判断文件类型和主题
+3. 如果提供了图片，必须分析图片中的场景、物体和可见文字，不能只根据文件名判断
+4. 选择最匹配的归档位置
+5. 给出置信度（0-100）和判断理由；图片分类理由应说明观察到的视觉依据
 
 你必须以JSON格式回复，格式如下：
 {
@@ -136,18 +144,35 @@ ${categoryOptions}
   "reasoning": "判断理由"
 }`;
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: `请分析以下文件并判断其归档位置：
+  const userPrompt = `请分析以下文件并判断其归档位置：
 
 文件名：${fileName}
 
 文件内容摘要（前2000字）：
 ${contentText.slice(0, 2000)}
 
-请以JSON格式回复你的判断结果。`
+${imageDataUrl ? '已附上原始图片。请结合画面内容、可见文字和文件名进行分类，并在理由中说明你从图片中观察到的依据。' : ''}
+
+请以JSON格式回复你的判断结果。`;
+
+  const userContent: Message['content'] = imageDataUrl
+    ? [
+        { type: 'text', text: userPrompt },
+        {
+          type: 'image_url',
+          image_url: {
+            url: imageDataUrl,
+            detail: 'high',
+          },
+        },
+      ]
+    : userPrompt;
+
+  const messages: Message[] = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: userContent,
     }
   ];
 
@@ -199,6 +224,7 @@ export async function POST(request: NextRequest) {
 
     let contentText = '';
     let contentPreview = '';
+    let imageDataUrl: string | undefined;
 
     try {
       const buffer = await file.arrayBuffer();
@@ -209,8 +235,11 @@ export async function POST(request: NextRequest) {
       if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension)) {
         contentText = new TextDecoder('utf-8').decode(uint8Array);
       } else if (isImageFile(extension)) {
-        // 图片文件：使用文件名作为分类依据，附加图片格式信息
-        contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}`;
+        // 图片文件：保留原图 Data URL，稍后交给多模态 LLM 分析视觉内容
+        const mimeType = getMimeType(extension);
+        const base64 = Buffer.from(uint8Array).toString('base64');
+        imageDataUrl = `data:${mimeType};base64,${base64}`;
+        contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}。请结合原始图片的场景、物体和可见文字进行分类。`;
       } else {
         const mimeType = getMimeType(extension);
         const base64 = Buffer.from(uint8Array).toString('base64');
@@ -255,7 +284,7 @@ export async function POST(request: NextRequest) {
         details: keywordMatchDetails,
         bestMatch: keywordMatchDetails[0],
         threshold: 5,
-        passed: keywordMatches.length > 0 && keywordMatches[0].score >= 5
+        passed: !imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5
       },
       finalDecision: {
         method: 'none',
@@ -266,7 +295,7 @@ export async function POST(request: NextRequest) {
     let result: ClassifyResult;
 
     // 如果关键词匹配置信度高，直接返回
-    if (keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
+    if (!imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
       const bestMatch = keywordMatches[0];
       process.finalDecision = {
         method: 'keyword',
@@ -286,10 +315,17 @@ export async function POST(request: NextRequest) {
       // 第二步：使用 LLM 进行智能分析
       process.step2_llmAnalysis = {
         triggered: true,
-        reason: `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 5 分），需要 AI 智能分析`
+        reason: imageDataUrl
+          ? '检测到图片文件，需要 AI 分析画面内容和可见文字'
+          : `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 5 分），需要 AI 智能分析`
       };
 
-      const llmResult = await classifyWithLLM(fileName, contentText, customHeaders);
+      const llmResult = await classifyWithLLM(
+        fileName,
+        contentText,
+        customHeaders,
+        imageDataUrl
+      );
 
       process.step2_llmAnalysis.result = llmResult;
 
