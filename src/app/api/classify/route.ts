@@ -295,7 +295,8 @@ export async function POST(request: NextRequest) {
     let result: ClassifyResult;
 
     // 如果关键词匹配置信度高，直接返回
-    if (!imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
+    if(0){
+    //if (!imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
       const bestMatch = keywordMatches[0];
       process.finalDecision = {
         method: 'keyword',
