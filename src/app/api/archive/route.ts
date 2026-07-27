@@ -1,13 +1,100 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   listArchivedFiles,
-  getArchivedFile,
   deleteArchivedFile,
   moveArchivedFile,
   getFileDownloadUrl,
   getFileDownloadStream,
   buildArchiveTree,
+  archiveFile,
+  getProject,
 } from "@/lib/storage";
+import { FLAT_FILE_CATEGORIES } from "@/lib/folder-structure";
+
+export const runtime = "nodejs";
+
+// POST /api/archive - 用户确认 AI 建议名称后归档文件
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const projectId = String(formData.get("projectId") ?? "");
+    const categoryId = String(formData.get("categoryId") ?? "");
+    const categoryName = String(formData.get("categoryName") ?? "");
+    const archiveTitle = String(formData.get("archiveTitle") ?? "").trim();
+    const reasoning = String(formData.get("reasoning") ?? "");
+    const parsedConfidence = Number(formData.get("confidence") ?? 0);
+
+    let folderPath: string[] = [];
+    try {
+      const parsedFolderPath = JSON.parse(
+        String(formData.get("folderPath") ?? "[]")
+      );
+      if (Array.isArray(parsedFolderPath)) {
+        folderPath = parsedFolderPath.filter(
+          (segment): segment is string => typeof segment === "string"
+        );
+      }
+    } catch {
+      return NextResponse.json({ error: "归档路径格式错误" }, { status: 400 });
+    }
+
+    if (!(file instanceof File) || !projectId || !categoryId || !categoryName) {
+      return NextResponse.json(
+        { error: "缺少文件、项目或分类信息" },
+        { status: 400 }
+      );
+    }
+
+    const category = FLAT_FILE_CATEGORIES.find(
+      (item) =>
+        item.folderId === categoryId &&
+        item.fileName === categoryName &&
+        JSON.stringify(item.folderPath) === JSON.stringify(folderPath)
+    );
+    if (!category) {
+      return NextResponse.json({ error: "无效的归档分类" }, { status: 400 });
+    }
+
+    const project = await getProject(projectId);
+    if (!project) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+
+    const confidence = Number.isFinite(parsedConfidence)
+      ? Math.max(0, Math.min(100, Math.round(parsedConfidence)))
+      : 0;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const archived = await archiveFile({
+      fileBuffer: buffer,
+      originalName: file.name,
+      projectId,
+      projectName: project.name,
+      categoryId: category.folderId,
+      categoryName: category.fileName,
+      folderPath: category.folderPath,
+      mimeType: file.type || "application/octet-stream",
+      confidence,
+      reasoning,
+      archiveTitle: archiveTitle || category.fileName,
+    });
+
+    return NextResponse.json({
+      success: true,
+      archived: {
+        id: archived.id,
+        archivedName: archived.archivedName,
+        projectName: archived.projectName,
+        folderPath: archived.folderPath,
+      },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "归档文件失败" },
+      { status: 500 }
+    );
+  }
+}
 
 // GET /api/archive - 获取归档文件列表
 export async function GET(request: NextRequest) {
