@@ -38,6 +38,7 @@ interface ClassifyProcess {
       categoryName: string;
       confidence: number;
       reasoning: string;
+      suggestedArchiveTitle: string;
     };
   };
   finalDecision: {
@@ -55,6 +56,8 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  suggestedArchiveTitle?: string;
+  requiresArchiveConfirmation?: boolean;
   archived?: {
     id: string;
     archivedName: string;
@@ -117,7 +120,12 @@ async function classifyWithLLM(
   contentText: string,
   customHeaders: Record<string, string>,
   imageDataUrl?: string
-): Promise<{ categoryName: string; confidence: number; reasoning: string }> {
+): Promise<{
+  categoryName: string;
+  confidence: number;
+  reasoning: string;
+  suggestedArchiveTitle: string;
+}> {
   const config = new Config();
   const client = new LLMClient(config, customHeaders);
 
@@ -135,13 +143,21 @@ ${categoryOptions}
 2. 然后分析文件文字内容，判断文件类型和主题
 3. 如果提供了图片，必须分析图片中的场景、物体和可见文字，不能只根据文件名判断
 4. 选择最匹配的归档位置
-5. 给出置信度（0-100）和判断理由；图片分类理由应说明观察到的视觉依据
+5. 根据文件实际内容生成一个简洁、明确的建议档案标题
+6. 给出置信度（0-100）和判断理由；图片分类理由应说明观察到的视觉依据
+
+建议档案标题必须遵守以下规则：
+1. 不包含项目名称、归档日期和文件扩展名
+2. 不使用 / \\ : * ? " < > | 等非法字符
+3. 不超过50个字符
+4. 无法提炼更具体标题时，使用所选分类名称
 
 你必须以JSON格式回复，格式如下：
 {
   "categoryIndex": 数字（对应上面的编号）,
   "confidence": 数字（0-100）,
-  "reasoning": "判断理由"
+  "reasoning": "判断理由",
+  "suggestedArchiveTitle": "建议档案标题"
 }`;
 
   const userPrompt = `请分析以下文件并判断其归档位置：
@@ -188,7 +204,11 @@ ${imageDataUrl ? '已附上原始图片。请结合画面内容、可见文字�
       return {
         categoryName: FLAT_FILE_CATEGORIES[parsed.categoryIndex - 1]?.fileName || '',
         confidence: parsed.confidence || 50,
-        reasoning: parsed.reasoning || 'AI分析判断'
+        reasoning: parsed.reasoning || 'AI分析判断',
+        suggestedArchiveTitle:
+          typeof parsed.suggestedArchiveTitle === 'string'
+            ? parsed.suggestedArchiveTitle.trim()
+            : ''
       };
     }
   } catch (error) {
@@ -198,7 +218,8 @@ ${imageDataUrl ? '已附上原始图片。请结合画面内容、可见文字�
   return {
     categoryName: '',
     confidence: 0,
-    reasoning: 'AI分类失败'
+    reasoning: 'AI分类失败',
+    suggestedArchiveTitle: ''
   };
 }
 
@@ -334,20 +355,24 @@ export async function POST(request: NextRequest) {
           cat => cat.fileName === llmResult.categoryName ||
             cat.keywords.some(kw => llmResult.categoryName.includes(kw))
         );
+        const finalCategory = matchedCategory || keywordMatches[0]?.category || null;
 
         process.finalDecision = {
           method: 'llm',
-          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置`
+          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置；请确认或修改建议名称后归档`
         };
 
         result = {
           fileName,
           fileSize,
-          category: matchedCategory || keywordMatches[0]?.category || null,
+          category: finalCategory,
           confidence: llmResult.confidence,
           reasoning: llmResult.reasoning,
           contentPreview,
-          process
+          process,
+          suggestedArchiveTitle:
+            llmResult.suggestedArchiveTitle || finalCategory?.fileName || '',
+          requiresArchiveConfirmation: Boolean(finalCategory)
         };
       } else if (keywordMatches.length > 0) {
         process.finalDecision = {
@@ -362,7 +387,9 @@ export async function POST(request: NextRequest) {
           confidence: keywordMatches[0].score * 10,
           reasoning: `根据关键词匹配，归类到「${keywordMatches[0].category.fileName}」`,
           contentPreview,
-          process
+          process,
+          suggestedArchiveTitle: keywordMatches[0].category.fileName,
+          requiresArchiveConfirmation: true
         };
       } else {
         process.finalDecision = {
@@ -383,7 +410,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 自动归档
-    if (autoArchive && projectId && result.category) {
+    if (
+      autoArchive &&
+      projectId &&
+      result.category &&
+      !result.requiresArchiveConfirmation
+    ) {
       try {
         const project = await getProject(projectId);
 

@@ -14,8 +14,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
-  Plus, Trash2, Download, Archive, Building2, Clock, FileIcon, X,
-  ChevronLeft, History, ArrowRightLeft, MoreHorizontal
+  Plus, Trash2, Download, Archive, Building2, Clock, X,
+  History, ArrowRightLeft, MoreHorizontal
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -41,7 +41,12 @@ interface ClassifyProcess {
   step2_llmAnalysis?: {
     triggered: boolean;
     reason: string;
-    result?: { categoryName: string; confidence: number; reasoning: string; };
+    result?: {
+      categoryName: string;
+      confidence: number;
+      reasoning: string;
+      suggestedArchiveTitle: string;
+    };
   };
   finalDecision: {
     method: 'keyword' | 'llm' | 'fallback' | 'none';
@@ -50,6 +55,7 @@ interface ClassifyProcess {
 }
 
 interface ClassifyResult {
+  clientId: string;
   fileName: string;
   fileSize: number;
   category: FlatFileCategory | null;
@@ -57,6 +63,12 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  suggestedArchiveTitle?: string;
+  requiresArchiveConfirmation?: boolean;
+  sourceFile?: File;
+  sourceProjectId?: string;
+  archiveStatus?: 'pending' | 'archiving' | 'archived' | 'cancelled' | 'error';
+  archiveError?: string;
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
 }
 
@@ -207,6 +219,11 @@ function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
                     <p className="font-medium text-blue-900">AI 判断结果：</p>
                     <p className="text-blue-700 mt-1">分类：{process.step2_llmAnalysis.result.categoryName}</p>
                     <p className="text-blue-700">理由：{process.step2_llmAnalysis.result.reasoning}</p>
+                    {process.step2_llmAnalysis.result.suggestedArchiveTitle && (
+                      <p className="text-blue-700">
+                        建议标题：{process.step2_llmAnalysis.result.suggestedArchiveTitle}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -227,7 +244,24 @@ function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
 }
 
 // ============ 分类结果项 ============
-function ClassifyResultItem({ result }: { result: ClassifyResult }) {
+function ClassifyResultItem({
+  result,
+  onConfirmArchive,
+  onCancelArchive,
+}: {
+  result: ClassifyResult;
+  onConfirmArchive: (clientId: string, archiveTitle: string) => void;
+  onCancelArchive: (clientId: string) => void;
+}) {
+  const [archiveTitle, setArchiveTitle] = useState(
+    result.suggestedArchiveTitle || result.category?.fileName || ''
+  );
+  const isArchiving = result.archiveStatus === 'archiving';
+  const needsConfirmation =
+    result.requiresArchiveConfirmation &&
+    !result.archived &&
+    result.archiveStatus !== 'cancelled';
+
   return (
     <Card className={`transition-all ${result.category ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'}`}>
       <CardContent className="p-4">
@@ -258,6 +292,61 @@ function ClassifyResultItem({ result }: { result: ClassifyResult }) {
                       已归档至 <span className="font-medium">{result.archived.projectName}</span> →
                       文件名：<span className="font-mono text-xs">{result.archived.archivedName}</span>
                     </span>
+                  </div>
+                )}
+                {needsConfirmation && (
+                  <div className="space-y-3 rounded border border-amber-200 bg-amber-50 p-3">
+                    <div>
+                      <p className="text-sm font-medium text-amber-900">请确认归档名称</p>
+                      <p className="mt-1 text-xs text-amber-700">
+                        该文件经过 AI 分析，确认或修改标题后才会归档。项目名称、日期、扩展名及重名序号由系统自动补充。
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`archive-title-${result.clientId}`}>
+                        档案标题（不含扩展名）
+                      </Label>
+                      <Input
+                        id={`archive-title-${result.clientId}`}
+                        value={archiveTitle}
+                        maxLength={50}
+                        disabled={isArchiving}
+                        onChange={(event) => setArchiveTitle(event.target.value)}
+                        placeholder={result.category.fileName}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        {archiveTitle.length}/50 字；若目标文件夹中重名，系统会自动添加 -1、-2。
+                      </p>
+                    </div>
+                    {result.archiveError && (
+                      <p className="text-xs text-destructive">{result.archiveError}</p>
+                    )}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isArchiving}
+                        onClick={() => onCancelArchive(result.clientId)}
+                      >
+                        取消归档
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!archiveTitle.trim() || isArchiving}
+                        onClick={() => onConfirmArchive(result.clientId, archiveTitle.trim())}
+                      >
+                        {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
+                        确认归档
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {result.archiveStatus === 'cancelled' && (
+                  <div className="flex items-center gap-2 rounded bg-muted p-2 text-sm text-muted-foreground">
+                    <X className="h-4 w-4" />
+                    已取消归档
                   </div>
                 )}
               </div>
@@ -667,7 +756,7 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
       setTree(data.tree || []);
       setFiles(data.files || []);
       setMoveTargetId(null);
-    } catch (err) {
+    } catch {
       alert('移动文件失败，请重试');
     } finally {
       setMoving(false);
@@ -929,9 +1018,7 @@ export default function Home() {
       .then(r => r.json())
       .then(data => {
         setProjects(data.projects || []);
-        if (data.projects?.length > 0 && !selectedProjectId) {
-          setSelectedProjectId(data.projects[0].id);
-        }
+        setSelectedProjectId(currentId => currentId || data.projects?.[0]?.id || '');
       });
   }, []);
 
@@ -953,9 +1040,99 @@ export default function Home() {
     }
   };
 
+  const handleConfirmArchive = async (clientId: string, archiveTitle: string) => {
+    const pendingResult = results.find(result => result.clientId === clientId);
+    if (
+      !pendingResult?.sourceFile ||
+      !pendingResult.sourceProjectId ||
+      !pendingResult.category
+    ) {
+      setResults(prev => prev.map(result =>
+        result.clientId === clientId
+          ? { ...result, archiveStatus: 'error', archiveError: '待归档文件信息已丢失，请重新上传' }
+          : result
+      ));
+      return;
+    }
+
+    setResults(prev => prev.map(result =>
+      result.clientId === clientId
+        ? { ...result, archiveStatus: 'archiving', archiveError: undefined }
+        : result
+    ));
+
+    try {
+      const formData = new FormData();
+      formData.append('file', pendingResult.sourceFile);
+      formData.append('projectId', pendingResult.sourceProjectId);
+      formData.append('categoryId', pendingResult.category.folderId);
+      formData.append('categoryName', pendingResult.category.fileName);
+      formData.append('folderPath', JSON.stringify(pendingResult.category.folderPath));
+      formData.append('archiveTitle', archiveTitle);
+      formData.append('confidence', String(pendingResult.confidence));
+      formData.append('reasoning', pendingResult.reasoning);
+
+      const response = await fetch('/api/archive', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.archived) {
+        throw new Error(data.error || '归档失败，请重试');
+      }
+
+      setResults(prev => prev.map(result =>
+        result.clientId === clientId
+          ? {
+              ...result,
+              suggestedArchiveTitle: archiveTitle,
+              requiresArchiveConfirmation: false,
+              archiveStatus: 'archived',
+              archiveError: undefined,
+              sourceFile: undefined,
+              archived: data.archived,
+            }
+          : result
+      ));
+      setArchiveRefreshKey(prev => prev + 1);
+      fetch('/api/projects')
+        .then(response => response.json())
+        .then(data => setProjects(data.projects || []));
+    } catch (error) {
+      setResults(prev => prev.map(result =>
+        result.clientId === clientId
+          ? {
+              ...result,
+              archiveStatus: 'error',
+              archiveError: error instanceof Error ? error.message : '归档失败，请重试',
+            }
+          : result
+      ));
+    }
+  };
+
+  const handleCancelArchive = (clientId: string) => {
+    setResults(prev => prev.map(result =>
+      result.clientId === clientId
+        ? {
+            ...result,
+            requiresArchiveConfirmation: false,
+            archiveStatus: 'cancelled',
+            archiveError: undefined,
+            sourceFile: undefined,
+          }
+        : result
+    ));
+  };
+
   const handleFileUpload = useCallback(async (files: FileList) => {
     if (!selectedProjectId) {
       alert('请先选择或创建一个项目');
+      return;
+    }
+    if (results.some(result => result.requiresArchiveConfirmation)) {
+      alert('请先确认或取消当前待归档文件，再上传新一批文件');
       return;
     }
 
@@ -967,6 +1144,7 @@ export default function Home() {
     let processedFiles = 0;
 
     for (const file of Array.from(files)) {
+      const clientId = crypto.randomUUID();
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -981,9 +1159,23 @@ export default function Home() {
         if (!response.ok) throw new Error('分类请求失败');
 
         const result = await response.json();
-        setResults(prev => [...prev, result]);
-      } catch (error) {
+        setResults(prev => [
+          ...prev,
+          {
+            ...result,
+            clientId,
+            sourceFile: result.requiresArchiveConfirmation ? file : undefined,
+            sourceProjectId: selectedProjectId,
+            archiveStatus: result.requiresArchiveConfirmation
+              ? 'pending'
+              : result.archived
+                ? 'archived'
+                : undefined,
+          },
+        ]);
+      } catch {
         setResults(prev => [...prev, {
+          clientId,
           fileName: file.name, fileSize: file.size, category: null, confidence: 0,
           reasoning: '文件处理失败，请重试',
           process: {
@@ -1002,9 +1194,12 @@ export default function Home() {
     fetch('/api/projects')
       .then(r => r.json())
       .then(data => setProjects(data.projects || []));
-  }, [selectedProjectId]);
+  }, [selectedProjectId, results]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const hasPendingArchiveConfirmation = results.some(
+    result => result.requiresArchiveConfirmation
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -1115,7 +1310,15 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <UploadZone onFileUpload={handleFileUpload} disabled={!selectedProjectId} />
+                <UploadZone
+                  onFileUpload={handleFileUpload}
+                  disabled={!selectedProjectId || hasPendingArchiveConfirmation}
+                />
+                {hasPendingArchiveConfirmation && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    请先确认或取消下方 AI 分析文件的归档名称。
+                  </p>
+                )}
                 {isProcessing && (
                   <div className="mt-4 space-y-2">
                     <div className="flex items-center gap-2">
@@ -1139,8 +1342,13 @@ export default function Home() {
                   <CardDescription>已处理 {results.length} 个文件</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {results.map((result, index) => (
-                    <ClassifyResultItem key={index} result={result} />
+                  {results.map((result) => (
+                    <ClassifyResultItem
+                      key={result.clientId}
+                      result={result}
+                      onConfirmArchive={handleConfirmArchive}
+                      onCancelArchive={handleCancelArchive}
+                    />
                   ))}
                 </CardContent>
               </Card>

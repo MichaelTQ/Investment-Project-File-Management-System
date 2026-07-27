@@ -4,8 +4,6 @@
  */
 import { S3Storage } from "coze-coding-dev-sdk";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
-import { projects, archivedFiles } from "@/storage/database/shared/schema";
-import { eq, desc } from "drizzle-orm";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ============ 类型定义 ============
@@ -175,18 +173,24 @@ export async function deleteProject(id: string): Promise<void> {
 
 async function dedupeArchivedName(
   baseName: string,
-  projectId: string
+  projectId: string,
+  folderPath: string[],
+  excludeFileId?: string
 ): Promise<string> {
   const db = getDb();
   const { data } = await db
     .from("archived_files")
-    .select("archived_name")
+    .select("id, archived_name")
     .eq("project_id", projectId)
-    .like("archived_name", `${baseName}%`);
+    .eq("folder_path", folderPath);
 
   if (!data || data.length === 0) return baseName;
 
-  const existingNames = new Set(data.map((f: { archived_name: string }) => f.archived_name));
+  const existingNames = new Set(
+    data
+      .filter((f: { id: string }) => f.id !== excludeFileId)
+      .map((f: { archived_name: string }) => f.archived_name)
+  );
   if (!existingNames.has(baseName)) return baseName;
 
   const dotIdx = baseName.lastIndexOf(".");
@@ -198,6 +202,28 @@ async function dedupeArchivedName(
     counter++;
   }
   return `${prefix}-${counter}${ext}`;
+}
+
+function sanitizeArchiveTitle(
+  title: string | undefined,
+  fallback: string,
+  extension: string
+): string {
+  let sanitized = (title ?? "").trim();
+
+  if (extension && sanitized.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) {
+    sanitized = sanitized.slice(0, -(extension.length + 1));
+  }
+
+  sanitized = sanitized
+    .replace(/[/\\:*?"<>|\u0000-\u001F]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/-+/g, "-")
+    .replace(/^[.\s-]+|[.\s-]+$/g, "")
+    .slice(0, 50)
+    .trim();
+
+  return sanitized || fallback;
 }
 
 // ============ 文件归档 ============
@@ -213,15 +239,27 @@ export async function archiveFile(params: {
   folderPath: string[];
   confidence: number;
   reasoning: string;
+  archiveTitle?: string;
 }): Promise<ArchivedFile> {
   const db = getDb();
   const s3 = getS3Storage();
 
   // 1. 生成归档文件名（去重）
-  const ext = params.originalName.split(".").pop() ?? "";
+  const dotIndex = params.originalName.lastIndexOf(".");
+  const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
+  const extensionSuffix = ext ? `.${ext}` : "";
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const baseName = `${params.categoryName}-${params.projectName}-${dateStr}.${ext}`;
-  const archivedName = await dedupeArchivedName(baseName, params.projectId);
+  const archiveTitle = sanitizeArchiveTitle(
+    params.archiveTitle,
+    params.categoryName,
+    ext
+  );
+  const baseName = `${archiveTitle}-${params.projectName}-${dateStr}${extensionSuffix}`;
+  const archivedName = await dedupeArchivedName(
+    baseName,
+    params.projectId,
+    params.folderPath
+  );
 
   // 2. 上传到 S3 对象存储
   const folderPrefix = params.folderPath.join("/");
@@ -295,25 +333,14 @@ export async function moveArchivedFile(
     .single();
 
   // 检查目标路径下是否存在同名文件，如有则重命名
-  let archivedName = currentFile?.archived_name ?? "";
-  if (currentFile) {
-    const { data: existingFiles } = await db
-      .from("archived_files")
-      .select("id, archived_name")
-      .eq("project_id", currentFile.project_id)
-      .eq("folder_path", target.folderPath)
-      .like("archived_name", `${archivedName}%`);
-
-    if (existingFiles && existingFiles.length > 0) {
-      const sameName = existingFiles.find(
-        (f: { id: string; archived_name: string }) =>
-          f.archived_name === archivedName && f.id !== fileId
-      );
-      if (sameName) {
-        archivedName = await dedupeArchivedName(archivedName, currentFile.project_id);
-      }
-    }
-  }
+  const archivedName = currentFile
+    ? await dedupeArchivedName(
+        currentFile.archived_name,
+        currentFile.project_id,
+        target.folderPath,
+        fileId
+      )
+    : "";
 
   const updateData: Record<string, unknown> = {
     category_id: target.categoryId,
