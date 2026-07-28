@@ -1430,23 +1430,67 @@ export default function Home() {
       const clientId = crypto.randomUUID();
       let uploadedStorageKey = '';
       try {
-        const uploadResponse = await fetch('/api/uploads', {
-          method: 'POST',
-          headers: {
-            'Content-Type': file.type || 'application/octet-stream',
-            'x-project-id': selectedProjectId,
-            'x-file-name': encodeURIComponent(file.name),
-          },
-          body: file,
-        });
-        const uploadData = await uploadResponse.json().catch(() => null);
-        if (!uploadResponse.ok || !uploadData?.storageKey) {
-          throw new Error(
-            uploadData?.error ||
-            `上传到 S3 失败（HTTP ${uploadResponse.status}）`
-          );
+        const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
+
+        if (file.size > CHUNK_SIZE) {
+          // 大文件：分片上传，每片 2MB，绕过反向代理的 body 大小限制
+          const uploadId = crypto.randomUUID();
+          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+          for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+
+            const chunkRes = await fetch('/api/uploads/chunk', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'x-upload-id': uploadId,
+                'x-chunk-index': String(i),
+                'x-chunk-total': String(totalChunks),
+                'x-project-id': selectedProjectId,
+                'x-file-name': encodeURIComponent(file.name),
+              },
+              body: chunk,
+            });
+
+            const chunkData = await chunkRes.json().catch(() => null);
+            if (!chunkRes.ok) {
+              throw new Error(
+                chunkData?.error ||
+                `分片 ${i + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
+              );
+            }
+
+            if (chunkData.complete) {
+              uploadedStorageKey = chunkData.storageKey;
+            }
+          }
+
+          if (!uploadedStorageKey) {
+            throw new Error('分片上传完成但未返回 storageKey');
+          }
+        } else {
+          // 小文件：直接上传
+          const uploadResponse = await fetch('/api/uploads', {
+            method: 'POST',
+            headers: {
+              'Content-Type': file.type || 'application/octet-stream',
+              'x-project-id': selectedProjectId,
+              'x-file-name': encodeURIComponent(file.name),
+            },
+            body: file,
+          });
+          const uploadData = await uploadResponse.json().catch(() => null);
+          if (!uploadResponse.ok || !uploadData?.storageKey) {
+            throw new Error(
+              uploadData?.error ||
+              `上传到 S3 失败（HTTP ${uploadResponse.status}）`
+            );
+          }
+          uploadedStorageKey = uploadData.storageKey;
         }
-        uploadedStorageKey = uploadData.storageKey;
 
         const response = await fetch('/api/classify', {
           method: 'POST',
