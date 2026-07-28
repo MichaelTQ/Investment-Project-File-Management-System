@@ -276,114 +276,135 @@ function ClassifyResultItem({
     result.archiveStatus !== 'cancelled';
 
   return (
-    <Card className={`transition-all ${result.category ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'}`}>
-      <CardContent className="p-4">
-        <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-lg ${result.category ? 'bg-green-100' : 'bg-amber-100'}`}>
-            {result.category ? <CheckCircle2 className="h-5 w-5 text-green-600" /> : <AlertCircle className="h-5 w-5 text-amber-600" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <p className="font-medium truncate">{result.fileName}</p>
-              <span className="text-xs text-muted-foreground shrink-0">{(result.fileSize / 1024).toFixed(1)} KB</span>
-            </div>
-            {result.category ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-primary font-medium truncate">{result.category.folderPath.join(' / ')} / {result.category.fileName}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Progress value={result.confidence} className="h-1.5 w-24" />
-                  <span className="text-xs text-muted-foreground">置信度 {result.confidence}%</span>
-                </div>
-                {result.archived && (
-                  <div className="flex items-center gap-2 text-sm bg-green-50 p-2 rounded">
-                    <Archive className="h-4 w-4 text-green-600" />
-                    <span className="text-green-700">
-                      已归档至 <span className="font-medium">{result.archived.projectName}</span> →
-                      文件名：<span className="font-mono text-xs">{result.archived.archivedName}</span>
-                    </span>
-                  </div>
-                )}
-                {needsConfirmation && (
-                  <div className="space-y-3 rounded border border-amber-200 bg-amber-50 p-3">
-                    <div>
-                      <p className="text-sm font-medium text-amber-900">请确认归档名称</p>
-                      <p className="mt-1 text-xs text-amber-700">
-                        该文件经过 AI 分析，确认或修改标题后才会归档。扩展名及重名序号由系统自动补充。
-                      </p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor={`archive-title-${result.clientId}`}>
-                        档案标题（不含扩展名）
-                      </Label>
-                      <Input
-                        id={`archive-title-${result.clientId}`}
-                        value={archiveTitle}
-                        maxLength={50}
-                        disabled={isArchiving}
-                        onChange={(event) => setArchiveTitle(event.target.value)}
-                        placeholder={result.category.fileName}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        {archiveTitle.length}/50 字；若目标文件夹中重名，系统会自动添加 -1、-2。
-                      </p>
-                    </div>
-                    {result.archiveError && (
-                      <p className="text-xs text-destructive">{result.archiveError}</p>
-                    )}
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isArchiving}
-                        onClick={() => onCancelArchive(result.clientId)}
-                      >
-                        取消归档
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={!archiveTitle.trim() || isArchiving}
-                        onClick={() => onConfirmArchive(result.clientId, archiveTitle.trim())}
-                      >
-                        {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
-                        确认归档
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                {result.archiveStatus === 'cancelled' && (
-                  <div className="flex items-center gap-2 rounded bg-muted p-2 text-sm text-muted-foreground">
-                    <X className="h-4 w-4" />
-                    已取消归档
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-amber-700">未能确定归档类别，请查看详细分析。</p>
-            )}
-            <div className="mt-3 flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setDetailsOpen(true)}
-              >
-                <Eye className="h-4 w-4" />
-                查看详情
-              </Button>
-            </div>
+    <div
+      className={`w-full min-w-0 overflow-hidden rounded-lg border bg-background ${
+        result.category ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'
+      }`}
+    >
+      <div className="flex min-w-0 items-start gap-2.5 border-b bg-muted/20 p-3">
+        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${result.category ? 'bg-green-100' : 'bg-amber-100'}`}>
+          {result.category
+            ? <CheckCircle2 className="h-4 w-4 text-green-600" />
+            : <AlertCircle className="h-4 w-4 text-amber-600" />}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="break-all text-sm font-medium leading-5">{result.fileName}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
+            <span>·</span>
+            <span>置信度 {result.confidence}%</span>
           </div>
         </div>
-      </CardContent>
+      </div>
+
+      <div className="min-w-0 space-y-3 p-3">
+        {result.category ? (
+          <>
+            <div className="min-w-0">
+              <p className="mb-1 text-xs text-muted-foreground">归档位置</p>
+              <p className="break-words text-sm font-medium leading-5 text-primary">
+                {result.category.folderPath.join(' / ')} / {result.category.fileName}
+              </p>
+            </div>
+
+            <Progress value={result.confidence} className="h-1.5 w-full" />
+
+            {result.archived && (
+              <div className="min-w-0 rounded-md bg-green-50 p-2.5 text-sm text-green-700">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Archive className="h-4 w-4 shrink-0" />
+                  已完成归档
+                </div>
+                <p className="mt-1 break-words text-xs leading-5">
+                  项目：{result.archived.projectName}
+                  <br />
+                  文件名：<span className="font-mono break-all">{result.archived.archivedName}</span>
+                </p>
+              </div>
+            )}
+
+            {needsConfirmation && (
+              <div className="min-w-0 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <div>
+                  <p className="text-sm font-medium text-amber-900">请确认归档名称</p>
+                  <p className="mt-1 text-xs leading-5 text-amber-700">
+                    该文件由 AI 完成分类，确认或修改标题后才会归档。
+                  </p>
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <Label className="text-xs" htmlFor={`archive-title-${result.clientId}`}>
+                    档案标题（不含扩展名）
+                  </Label>
+                  <Input
+                    id={`archive-title-${result.clientId}`}
+                    className="w-full min-w-0 bg-background"
+                    value={archiveTitle}
+                    maxLength={50}
+                    disabled={isArchiving}
+                    onChange={(event) => setArchiveTitle(event.target.value)}
+                    placeholder={result.category.fileName}
+                  />
+                  <p className="break-words text-[11px] leading-4 text-muted-foreground">
+                    {archiveTitle.length}/50 字；扩展名及重名序号由系统自动补充。
+                  </p>
+                </div>
+                {result.archiveError && (
+                  <p className="break-words text-xs text-destructive">{result.archiveError}</p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={isArchiving}
+                    onClick={() => onCancelArchive(result.clientId)}
+                  >
+                    取消归档
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={!archiveTitle.trim() || isArchiving}
+                    onClick={() => onConfirmArchive(result.clientId, archiveTitle.trim())}
+                  >
+                    {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    确认归档
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {result.archiveStatus === 'cancelled' && (
+              <div className="flex items-center gap-2 rounded-md bg-muted p-2.5 text-sm text-muted-foreground">
+                <X className="h-4 w-4 shrink-0" />
+                已取消归档
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="break-words rounded-md bg-amber-50 p-2.5 text-sm leading-5 text-amber-700">
+            未能确定归档类别，请查看详细分析。
+          </p>
+        )}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-center gap-1.5 border"
+          onClick={() => setDetailsOpen(true)}
+        >
+          <Eye className="h-4 w-4" />
+          查看分类详情
+        </Button>
+      </div>
+
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden flex flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle className="pr-6">分类详情：{result.fileName}</DialogTitle>
+            <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
             <DialogDescription>
               查看分类理由、文件内容摘要和完整处理过程
             </DialogDescription>
@@ -391,9 +412,9 @@ function ClassifyResultItem({
           <ScrollArea className="flex-1 min-h-0 pr-4">
             <div className="space-y-4 pb-2">
               <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">分类结果</p>
-                  <p className="mt-1 text-sm font-medium">
+                  <p className="mt-1 break-words text-sm font-medium">
                     {result.category
                       ? `${result.category.folderPath.join(' / ')} / ${result.category.fileName}`
                       : '未能确定归档类别'}
@@ -434,7 +455,7 @@ function ClassifyResultItem({
           </ScrollArea>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
 
@@ -1884,7 +1905,7 @@ export default function Home() {
       <main className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4 lg:gap-6">
           {/* Left Sidebar: Folder Structure + Projects */}
-          <div className="md:col-span-2 lg:col-span-2 space-y-4">
+          <div className="md:col-span-2 lg:col-span-3 space-y-4">
             {/* Project Selection */}
             <Card>
               <CardHeader className="pb-3">
@@ -2035,9 +2056,9 @@ export default function Home() {
           </div>
 
           {/* Right: Classification Results + Analysis History */}
-          <div className="md:col-span-6 lg:col-span-5 flex flex-col gap-4">
+          <div className="md:col-span-6 lg:col-span-4 flex min-w-0 flex-col gap-4">
             {/* Classification Results */}
-            <Card className="flex min-h-0 flex-col">
+            <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="pb-3 shrink-0">
                 <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -2049,10 +2070,10 @@ export default function Home() {
                     : '上传文件后将在此显示本次分类结果'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-0 flex-1 min-h-0">
-                <ScrollArea className="h-[320px] md:h-[50vh] md:min-h-[360px] md:max-h-[560px]">
+              <CardContent className="min-w-0 flex-1 px-3 pt-0">
+                <div className="h-[320px] overflow-y-auto overflow-x-hidden pr-1 md:h-[400px] lg:h-[440px]">
                   {results.length > 0 ? (
-                    <div className="space-y-3 pr-3">
+                    <div className="w-full min-w-0 space-y-3 pb-2">
                       {results.map((result) => (
                         <ClassifyResultItem
                           key={result.clientId}
@@ -2071,7 +2092,7 @@ export default function Home() {
                       )}
                     </div>
                   )}
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
 
