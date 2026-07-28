@@ -14,9 +14,13 @@ import {
   getProject,
   getStoredFileUrl,
   readStoredFile,
+  uploadTempFileFromBuffer,
 } from '@/lib/storage';
 
 export const runtime = 'nodejs';
+
+/** 大文件阈值：超过此大小的 multipart 文件先上传 S3 临时目录，避免 Base64 膨胀导致 502 */
+const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 
 // 关键词匹配详情
 interface KeywordMatchDetail {
@@ -438,6 +442,20 @@ export async function POST(request: NextRequest) {
     try {
       const extension = fileName.split('.').pop()?.toLowerCase() || '';
       const mimeType = suppliedMimeType || getMimeType(extension);
+
+      // 大文件（>5MB）的 multipart 上传：先上传 S3 临时目录，用签名 URL 替代 Base64 Data URL
+      // 避免 Base64 膨胀（12MB → ~17MB 字符串）导致 FetchClient 超时 502
+      const isLargeMultipart = !storageKey && file && fileSize > LARGE_FILE_THRESHOLD;
+      if (isLargeMultipart && projectId) {
+        const tempBuffer = Buffer.from(await file!.arrayBuffer());
+        storageKey = await uploadTempFileFromBuffer({
+          buffer: tempBuffer,
+          fileName,
+          mimeType,
+          projectId,
+        });
+        fileBuffer = tempBuffer; // 缓存 buffer，后续归档时复用
+      }
 
       const ensureFileBuffer = async () => {
         if (!fileBuffer) {

@@ -78,6 +78,21 @@ export async function uploadTemporaryFile(params: {
   });
 }
 
+/** 将 Buffer 上传到 S3 临时目录，返回 storageKey。用于大文件 multipart 上传避免 Base64 膨胀。 */
+export async function uploadTempFileFromBuffer(params: {
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string;
+  projectId: string;
+}): Promise<string> {
+  const s3 = getS3Storage();
+  return s3.uploadFile({
+    fileContent: params.buffer,
+    fileName: `uploads/${params.projectId}/${crypto.randomUUID()}-${params.fileName}`,
+    contentType: params.mimeType,
+  });
+}
+
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
   return getS3Storage().readFile({ fileKey: storageKey });
 }
