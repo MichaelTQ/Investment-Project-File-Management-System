@@ -1861,6 +1861,14 @@ export default function Home() {
                           <Building2 className="h-4 w-4 shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{project.name}</p>
+                            {project.description && (
+                              <p
+                                className="text-xs text-muted-foreground truncate"
+                                title={project.description}
+                              >
+                                {project.description}
+                              </p>
+                            )}
                             <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
                           </div>
                           <Button
@@ -1932,58 +1940,8 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Results */}
-            {results.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                    分类结果
-                  </CardTitle>
-                  <CardDescription>已处理 {results.length} 个文件</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {results.map((result) => (
-                    <ClassifyResultItem
-                      key={result.clientId}
-                      result={result}
-                      onConfirmArchive={handleConfirmArchive}
-                      onCancelArchive={handleCancelArchive}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Empty State */}
-            {results.length === 0 && !isProcessing && (
-              <Card className="bg-muted/30">
-                <CardContent className="p-6">
-                  <div className="text-center space-y-3">
-                    <div className="text-4xl">📁</div>
-                    <h3 className="font-semibold">开始使用</h3>
-                    <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                      1. 创建或选择一个投资项目<br />
-                      2. 上传文件，系统自动分类<br />
-                      3. 文件自动归档到项目文件夹
-                    </p>
-                    <Separator className="my-4" />
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                      <div><div className="text-2xl font-bold text-primary">50+</div><div className="text-xs text-muted-foreground">文件类型</div></div>
-                      <div><div className="text-2xl font-bold text-primary">AI</div><div className="text-xs text-muted-foreground">智能分析</div></div>
-                      <div><div className="text-2xl font-bold text-primary">自动</div><div className="text-xs text-muted-foreground">归档命名</div></div>
-                      <div><div className="text-2xl font-bold text-primary">100%</div><div className="text-xs text-muted-foreground">自动化</div></div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-
-          {/* Right: Archived Files + Analysis History */}
-          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-4">
             {/* Archived Files */}
-            <Card className="flex-1 min-h-0 flex flex-col">
+            <Card className="flex min-h-0 flex-col">
               <CardHeader className="pb-3 shrink-0">
                 <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <Archive className="h-5 w-5 text-primary" />
@@ -1996,7 +1954,7 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0 flex-1 min-h-0">
-                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
+                <ScrollArea className="h-[280px] md:h-[360px] lg:h-[440px]">
                   {selectedProjectId ? (
                     <ArchivedFilesList
                       projectId={selectedProjectId}
@@ -2004,9 +1962,51 @@ export default function Home() {
                       onFilesChanged={handleArchivedFilesChanged}
                     />
                   ) : (
-                    <div className="text-center py-8 text-muted-foreground">
+                    <div className="text-center py-12 text-muted-foreground">
                       <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       <p className="text-sm">未选择项目</p>
+                    </div>
+                  )}
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right: Classification Results + Analysis History */}
+          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-4">
+            {/* Classification Results */}
+            <Card className="flex min-h-0 flex-col">
+              <CardHeader className="pb-3 shrink-0">
+                <CardTitle className="text-base md:text-lg flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  分类结果
+                </CardTitle>
+                <CardDescription>
+                  {results.length > 0
+                    ? `已处理 ${results.length} 个文件`
+                    : '上传文件后将在此显示本次分类结果'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0 flex-1 min-h-0">
+                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
+                  {results.length > 0 ? (
+                    <div className="space-y-3 pr-3">
+                      {results.map((result) => (
+                        <ClassifyResultItem
+                          key={result.clientId}
+                          result={result}
+                          onConfirmArchive={handleConfirmArchive}
+                          onCancelArchive={handleCancelArchive}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      <p className="text-sm">{isProcessing ? '正在分析文件…' : '暂无分类结果'}</p>
+                      {!isProcessing && (
+                        <p className="text-xs mt-1">先选择项目，再从中栏上传文件</p>
+                      )}
                     </div>
                   )}
                 </ScrollArea>
