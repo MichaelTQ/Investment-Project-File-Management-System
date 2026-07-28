@@ -76,6 +76,8 @@ interface ClassifyResult {
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
   sourceFile?: File;
+  sourceStorageKey?: string;
+  sourceMimeType?: string;
   sourceProjectId?: string;
   archiveStatus?: 'pending' | 'archiving' | 'archived' | 'cancelled' | 'error';
   archiveError?: string;
@@ -1297,7 +1299,7 @@ export default function Home() {
   const handleConfirmArchive = async (clientId: string, archiveTitle: string) => {
     const pendingResult = results.find(result => result.clientId === clientId);
     if (
-      !pendingResult?.sourceFile ||
+      (!pendingResult?.sourceFile && !pendingResult?.sourceStorageKey) ||
       !pendingResult.sourceProjectId ||
       !pendingResult.category
     ) {
@@ -1316,20 +1318,36 @@ export default function Home() {
     ));
 
     try {
-      const formData = new FormData();
-      formData.append('file', pendingResult.sourceFile);
-      formData.append('projectId', pendingResult.sourceProjectId);
-      formData.append('categoryId', pendingResult.category.folderId);
-      formData.append('categoryName', pendingResult.category.fileName);
-      formData.append('folderPath', JSON.stringify(pendingResult.category.folderPath));
-      formData.append('archiveTitle', archiveTitle);
-      formData.append('confidence', String(pendingResult.confidence));
-      formData.append('reasoning', pendingResult.reasoning);
-
-      const response = await fetch('/api/archive', {
-        method: 'POST',
-        body: formData,
-      });
+      const response = pendingResult.sourceStorageKey
+        ? await fetch('/api/archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              storageKey: pendingResult.sourceStorageKey,
+              originalName: pendingResult.fileName,
+              fileSize: pendingResult.fileSize,
+              mimeType: pendingResult.sourceMimeType,
+              projectId: pendingResult.sourceProjectId,
+              categoryId: pendingResult.category.folderId,
+              categoryName: pendingResult.category.fileName,
+              folderPath: pendingResult.category.folderPath,
+              archiveTitle,
+              confidence: pendingResult.confidence,
+              reasoning: pendingResult.reasoning,
+            }),
+          })
+        : await (() => {
+            const formData = new FormData();
+            formData.append('file', pendingResult.sourceFile!);
+            formData.append('projectId', pendingResult.sourceProjectId!);
+            formData.append('categoryId', pendingResult.category!.folderId);
+            formData.append('categoryName', pendingResult.category!.fileName);
+            formData.append('folderPath', JSON.stringify(pendingResult.category!.folderPath));
+            formData.append('archiveTitle', archiveTitle);
+            formData.append('confidence', String(pendingResult.confidence));
+            formData.append('reasoning', pendingResult.reasoning);
+            return fetch('/api/archive', { method: 'POST', body: formData });
+          })();
       const data = await response.json();
 
       if (!response.ok || !data.archived) {
@@ -1345,6 +1363,7 @@ export default function Home() {
               archiveStatus: 'archived',
               archiveError: undefined,
               sourceFile: undefined,
+              sourceStorageKey: undefined,
               archived: data.archived,
             }
           : result
@@ -1367,6 +1386,15 @@ export default function Home() {
   };
 
   const handleCancelArchive = (clientId: string) => {
+    const pendingResult = results.find(result => result.clientId === clientId);
+    if (pendingResult?.sourceStorageKey && pendingResult.sourceProjectId) {
+      const params = new URLSearchParams({
+        storageKey: pendingResult.sourceStorageKey,
+        projectId: pendingResult.sourceProjectId,
+      });
+      void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
+    }
+
     setResults(prev => prev.map(result =>
       result.clientId === clientId
         ? {
@@ -1375,6 +1403,7 @@ export default function Home() {
             archiveStatus: 'cancelled',
             archiveError: undefined,
             sourceFile: undefined,
+            sourceStorageKey: undefined,
           }
         : result
     ));
@@ -1399,17 +1428,38 @@ export default function Home() {
 
     for (const file of Array.from(files)) {
       const clientId = crypto.randomUUID();
+      let uploadedStorageKey = '';
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('projectId', selectedProjectId);
-        formData.append('autoArchive', 'true');
+        const uploadResponse = await fetch('/api/uploads', {
+          method: 'POST',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+            'x-project-id': selectedProjectId,
+            'x-file-name': encodeURIComponent(file.name),
+          },
+          body: file,
+        });
+        const uploadData = await uploadResponse.json().catch(() => null);
+        if (!uploadResponse.ok || !uploadData?.storageKey) {
+          throw new Error(
+            uploadData?.error ||
+            `上传到 S3 失败（HTTP ${uploadResponse.status}）`
+          );
+        }
+        uploadedStorageKey = uploadData.storageKey;
 
         const response = await fetch('/api/classify', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            storageKey: uploadedStorageKey,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type || 'application/octet-stream',
+            projectId: selectedProjectId,
+            autoArchive: true,
+          }),
         });
-
         const result = await response.json().catch(() => null);
         if (!response.ok) {
           const statusHint = response.status === 413
@@ -1431,7 +1481,10 @@ export default function Home() {
           {
             ...result,
             clientId,
-            sourceFile: result.requiresArchiveConfirmation ? file : undefined,
+            sourceStorageKey: result.requiresArchiveConfirmation
+              ? uploadedStorageKey
+              : undefined,
+            sourceMimeType: file.type || 'application/octet-stream',
             sourceProjectId: selectedProjectId,
             archiveStatus: result.requiresArchiveConfirmation
               ? 'pending'
@@ -1440,7 +1493,21 @@ export default function Home() {
                 : undefined,
           },
         ]);
+        if (!result.requiresArchiveConfirmation && !result.archived) {
+          const params = new URLSearchParams({
+            storageKey: uploadedStorageKey,
+            projectId: selectedProjectId,
+          });
+          void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
+        }
       } catch (error) {
+        if (uploadedStorageKey) {
+          const params = new URLSearchParams({
+            storageKey: uploadedStorageKey,
+            projectId: selectedProjectId,
+          });
+          void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
+        }
         const errorMessage = error instanceof Error
           ? error.message
           : '未知错误';

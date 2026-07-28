@@ -8,7 +8,13 @@ import {
   type Message,
 } from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
-import { archiveFile, getProject } from '@/lib/storage';
+import {
+  archiveFile,
+  archiveStoredFile,
+  getProject,
+  getStoredFileUrl,
+  readStoredFile,
+} from '@/lib/storage';
 
 export const runtime = 'nodejs';
 
@@ -370,20 +376,55 @@ ${imageDataUrl
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const projectId = formData.get('projectId') as string;
-    const autoArchive = formData.get('autoArchive') !== 'false'; // 默认自动归档
+    const isJsonRequest = request.headers
+      .get('content-type')
+      ?.includes('application/json');
+    let file: File | null = null;
+    let storageKey = '';
+    let fileName = '';
+    let fileSize = 0;
+    let suppliedMimeType = '';
+    let projectId = '';
+    let autoArchive = true;
 
-    if (!file) {
+    if (isJsonRequest) {
+      const body = await request.json();
+      storageKey = typeof body.storageKey === 'string' ? body.storageKey : '';
+      fileName = typeof body.fileName === 'string' ? body.fileName : '';
+      fileSize = Number(body.fileSize || 0);
+      suppliedMimeType =
+        typeof body.mimeType === 'string' ? body.mimeType : '';
+      projectId = typeof body.projectId === 'string' ? body.projectId : '';
+      autoArchive = body.autoArchive !== false;
+
+      if (
+        !storageKey ||
+        !projectId ||
+        !storageKey.startsWith(`uploads/${projectId}/`)
+      ) {
+        return NextResponse.json(
+          { error: '无效的 S3 临时文件地址' },
+          { status: 400 }
+        );
+      }
+    } else {
+      const formData = await request.formData();
+      const formFile = formData.get('file');
+      file = formFile instanceof File ? formFile : null;
+      projectId = String(formData.get('projectId') || '');
+      autoArchive = formData.get('autoArchive') !== 'false';
+      fileName = file?.name || '';
+      fileSize = file?.size || 0;
+      suppliedMimeType = file?.type || '';
+    }
+
+    if ((!file && !storageKey) || !fileName) {
       return NextResponse.json(
         { error: '未提供文件' },
         { status: 400 }
       );
     }
 
-    const fileName = file.name;
-    const fileSize = file.size;
     const project = projectId ? await getProject(projectId) : null;
 
     // 提取请求头
@@ -392,31 +433,40 @@ export async function POST(request: NextRequest) {
     let contentText = '';
     let contentPreview = '';
     let imageDataUrl: string | undefined;
+    let fileBuffer: Buffer | undefined;
 
     try {
-      const buffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(buffer);
-
       const extension = fileName.split('.').pop()?.toLowerCase() || '';
+      const mimeType = suppliedMimeType || getMimeType(extension);
+
+      const ensureFileBuffer = async () => {
+        if (!fileBuffer) {
+          fileBuffer = storageKey
+            ? await readStoredFile(storageKey)
+            : Buffer.from(await file!.arrayBuffer());
+        }
+        return fileBuffer;
+      };
 
       if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension)) {
-        contentText = new TextDecoder('utf-8').decode(uint8Array);
+        contentText = new TextDecoder('utf-8').decode(await ensureFileBuffer());
       } else if (isImageFile(extension)) {
-        // 图片文件：保留原图 Data URL，稍后交给多模态 LLM 分析视觉内容
-        const mimeType = getMimeType(extension);
-        const base64 = Buffer.from(uint8Array).toString('base64');
-        imageDataUrl = `data:${mimeType};base64,${base64}`;
+        // S3 文件直接使用短期签名 URL，旧流程仍兼容 Data URL。
+        imageDataUrl = storageKey
+          ? await getStoredFileUrl(storageKey)
+          : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
         contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}。请结合原始图片的场景、物体和可见文字进行分类。`;
       } else {
-        const mimeType = getMimeType(extension);
-        const base64 = Buffer.from(uint8Array).toString('base64');
-        const dataUrl = `data:${mimeType};base64,${base64}`;
+        // 已上传文件通过签名 URL 交给解析服务，避免把大文件扩展成 Base64。
+        const sourceUrl = storageKey
+          ? await getStoredFileUrl(storageKey)
+          : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
 
         const fetchConfig = new Config();
         const fetchClient = new FetchClient(fetchConfig, customHeaders);
 
         try {
-          const fetchResponse = await fetchClient.fetch(dataUrl);
+          const fetchResponse = await fetchClient.fetch(sourceUrl);
           const textItems = fetchResponse.content.filter(item => item.type === 'text');
           contentText = textItems.map(item => item.text || '').join('\n');
 
@@ -583,35 +633,43 @@ export async function POST(request: NextRequest) {
       result.category &&
       !result.requiresArchiveConfirmation
     ) {
-      try {
-        if (project) {
-          const buffer = await file.arrayBuffer();
-          const extension = fileName.split('.').pop()?.toLowerCase() || '';
-          const mimeType = getMimeType(extension);
+      if (project) {
+        const extension = fileName.split('.').pop()?.toLowerCase() || '';
+        const mimeType = suppliedMimeType || getMimeType(extension);
+        const archived = storageKey
+          ? await archiveStoredFile({
+              storageKey,
+              originalName: fileName,
+              fileSize,
+              projectId,
+              projectName: project.name,
+              categoryId: result.category.folderId,
+              categoryName: result.category.fileName,
+              folderPath: result.category.folderPath,
+              mimeType,
+              confidence: result.confidence,
+              reasoning: result.reasoning,
+            })
+          : await archiveFile({
+              fileBuffer:
+                fileBuffer || Buffer.from(await file!.arrayBuffer()),
+              originalName: fileName,
+              projectId,
+              projectName: project.name,
+              categoryId: result.category.folderId,
+              categoryName: result.category.fileName,
+              folderPath: result.category.folderPath,
+              mimeType,
+              confidence: result.confidence,
+              reasoning: result.reasoning,
+            });
 
-          const archived = await archiveFile({
-            fileBuffer: Buffer.from(buffer),
-            originalName: fileName,
-            projectId,
-            projectName: project.name,
-            categoryId: result.category.folderId,
-            categoryName: result.category.fileName,
-            folderPath: result.category.folderPath,
-            mimeType,
-            confidence: result.confidence,
-            reasoning: result.reasoning,
-          });
-
-          result.archived = {
-            id: archived.id,
-            archivedName: archived.archivedName,
-            projectName: project.name,
-            folderPath: archived.folderPath
-          };
-        }
-      } catch (archiveError) {
-        console.error('Archive error:', archiveError instanceof Error ? archiveError.message : String(archiveError));
-        console.error('Archive error stack:', archiveError instanceof Error ? archiveError.stack : '');
+        result.archived = {
+          id: archived.id,
+          archivedName: archived.archivedName,
+          projectName: project.name,
+          folderPath: archived.folderPath
+        };
       }
     }
 

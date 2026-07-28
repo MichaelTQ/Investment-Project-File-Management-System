@@ -7,6 +7,7 @@ import {
   getFileDownloadStream,
   buildArchiveTree,
   archiveFile,
+  archiveStoredFile,
   getProject,
 } from "@/lib/storage";
 import { FLAT_FILE_CATEGORIES } from "@/lib/folder-structure";
@@ -16,34 +17,82 @@ export const runtime = "nodejs";
 // POST /api/archive - 用户确认 AI 建议名称后归档文件
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const projectId = String(formData.get("projectId") ?? "");
-    const categoryId = String(formData.get("categoryId") ?? "");
-    const categoryName = String(formData.get("categoryName") ?? "");
-    const archiveTitle = String(formData.get("archiveTitle") ?? "").trim();
-    const reasoning = String(formData.get("reasoning") ?? "");
-    const parsedConfidence = Number(formData.get("confidence") ?? 0);
-
+    const isJsonRequest = request.headers
+      .get("content-type")
+      ?.includes("application/json");
+    let file: File | null = null;
+    let storageKey = "";
+    let originalName = "";
+    let fileSize = 0;
+    let mimeType = "application/octet-stream";
+    let projectId = "";
+    let categoryId = "";
+    let categoryName = "";
+    let archiveTitle = "";
+    let reasoning = "";
+    let parsedConfidence = 0;
     let folderPath: string[] = [];
-    try {
-      const parsedFolderPath = JSON.parse(
-        String(formData.get("folderPath") ?? "[]")
-      );
-      if (Array.isArray(parsedFolderPath)) {
-        folderPath = parsedFolderPath.filter(
-          (segment): segment is string => typeof segment === "string"
+
+    if (isJsonRequest) {
+      const body = await request.json();
+      storageKey = String(body.storageKey || "");
+      originalName = String(body.originalName || "");
+      fileSize = Number(body.fileSize || 0);
+      mimeType = String(body.mimeType || mimeType);
+      projectId = String(body.projectId || "");
+      categoryId = String(body.categoryId || "");
+      categoryName = String(body.categoryName || "");
+      archiveTitle = String(body.archiveTitle || "").trim();
+      reasoning = String(body.reasoning || "");
+      parsedConfidence = Number(body.confidence || 0);
+      folderPath = Array.isArray(body.folderPath)
+        ? body.folderPath.filter(
+            (segment: unknown): segment is string =>
+              typeof segment === "string"
+          )
+        : [];
+    } else {
+      const formData = await request.formData();
+      const formFile = formData.get("file");
+      file = formFile instanceof File ? formFile : null;
+      originalName = file?.name || "";
+      fileSize = file?.size || 0;
+      mimeType = file?.type || mimeType;
+      projectId = String(formData.get("projectId") ?? "");
+      categoryId = String(formData.get("categoryId") ?? "");
+      categoryName = String(formData.get("categoryName") ?? "");
+      archiveTitle = String(formData.get("archiveTitle") ?? "").trim();
+      reasoning = String(formData.get("reasoning") ?? "");
+      parsedConfidence = Number(formData.get("confidence") ?? 0);
+
+      try {
+        const parsedFolderPath = JSON.parse(
+          String(formData.get("folderPath") ?? "[]")
         );
+        if (Array.isArray(parsedFolderPath)) {
+          folderPath = parsedFolderPath.filter(
+            (segment): segment is string => typeof segment === "string"
+          );
+        }
+      } catch {
+        return NextResponse.json({ error: "归档路径格式错误" }, { status: 400 });
       }
-    } catch {
-      return NextResponse.json({ error: "归档路径格式错误" }, { status: 400 });
     }
 
-    if (!(file instanceof File) || !projectId || !categoryId || !categoryName) {
+    if (
+      (!file && !storageKey) ||
+      !originalName ||
+      !projectId ||
+      !categoryId ||
+      !categoryName
+    ) {
       return NextResponse.json(
         { error: "缺少文件、项目或分类信息" },
         { status: 400 }
       );
+    }
+    if (storageKey && !storageKey.startsWith(`uploads/${projectId}/`)) {
+      return NextResponse.json({ error: "无效的 S3 临时文件地址" }, { status: 400 });
     }
 
     const category = FLAT_FILE_CATEGORIES.find(
@@ -64,20 +113,34 @@ export async function POST(request: NextRequest) {
     const confidence = Number.isFinite(parsedConfidence)
       ? Math.max(0, Math.min(100, Math.round(parsedConfidence)))
       : 0;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const archived = await archiveFile({
-      fileBuffer: buffer,
-      originalName: file.name,
-      projectId,
-      projectName: project.name,
-      categoryId: category.folderId,
-      categoryName: category.fileName,
-      folderPath: category.folderPath,
-      mimeType: file.type || "application/octet-stream",
-      confidence,
-      reasoning,
-      archiveTitle: archiveTitle || category.fileName,
-    });
+    const archived = storageKey
+      ? await archiveStoredFile({
+          storageKey,
+          originalName,
+          fileSize,
+          projectId,
+          projectName: project.name,
+          categoryId: category.folderId,
+          categoryName: category.fileName,
+          folderPath: category.folderPath,
+          mimeType,
+          confidence,
+          reasoning,
+          archiveTitle: archiveTitle || category.fileName,
+        })
+      : await archiveFile({
+          fileBuffer: Buffer.from(await file!.arrayBuffer()),
+          originalName,
+          projectId,
+          projectName: project.name,
+          categoryId: category.folderId,
+          categoryName: category.fileName,
+          folderPath: category.folderPath,
+          mimeType,
+          confidence,
+          reasoning,
+          archiveTitle: archiveTitle || category.fileName,
+        });
 
     return NextResponse.json({
       success: true,
