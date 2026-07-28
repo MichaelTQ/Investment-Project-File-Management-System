@@ -791,7 +791,15 @@ interface ArchiveOperationTarget {
   files: ArchivedFile[];
 }
 
-function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
+function ArchivedFilesList({
+  projectId,
+  refreshKey,
+  onFilesChanged,
+}: {
+  projectId: string;
+  refreshKey: number;
+  onFilesChanged: (projectId: string, fileCountDelta: number) => void;
+}) {
   const [tree, setTree] = useState<ArchiveTreeNode[]>([]);
   const [files, setFiles] = useState<ArchivedFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -870,6 +878,7 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
         prev
       ));
       setDeleteTarget(null);
+      onFilesChanged(projectId, -ids.length);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : '删除失败，请重试');
     } finally {
@@ -913,6 +922,7 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
       setTree(data.tree || []);
       setFiles(data.files || []);
       setMoveTarget(null);
+      onFilesChanged(projectId, 0);
     } catch {
       alert('移动文件失败，请重试');
     } finally {
@@ -1243,6 +1253,36 @@ export default function Home() {
     setNewProjectId(project.id);
     setTimeout(() => setNewProjectId(null), 600);
   };
+
+  const handleArchivedFilesChanged = useCallback((
+    changedProjectId: string,
+    fileCountDelta: number
+  ) => {
+    // 先在前端立即更新数量，让用户无需等待网络请求。
+    if (fileCountDelta !== 0) {
+      setProjects(prev => prev.map(project =>
+        project.id === changedProjectId
+          ? {
+              ...project,
+              fileCount: Math.max(0, project.fileCount + fileCountDelta),
+            }
+          : project
+      ));
+    }
+
+    // 同时刷新归档记录，并从数据库重新读取项目计数进行校准。
+    setArchiveRefreshKey(prev => prev + 1);
+    fetch('/api/projects')
+      .then(response => response.json())
+      .then(data => {
+        if (Array.isArray(data.projects)) {
+          setProjects(data.projects);
+        }
+      })
+      .catch(() => {
+        // 保留已经完成的前端即时计数，等待下次刷新再校准。
+      });
+  }, []);
 
   const handleDeleteProject = async (id: string) => {
     if (!confirm('确定删除该项目及其所有归档文件？此操作不可恢复。')) return;
@@ -1611,7 +1651,11 @@ export default function Home() {
               <CardContent className="pt-0 flex-1 min-h-0">
                 <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
                   {selectedProjectId ? (
-                    <ArchivedFilesList projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
+                    <ArchivedFilesList
+                      projectId={selectedProjectId}
+                      refreshKey={archiveRefreshKey}
+                      onFilesChanged={handleArchivedFilesChanged}
+                    />
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-30" />
