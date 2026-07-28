@@ -1478,9 +1478,16 @@ export default function Home() {
   const [deleteProjectTargetId, setDeleteProjectTargetId] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
   const [deleteProjectError, setDeleteProjectError] = useState<string | null>(null);
+  const [renameProjectTargetId, setRenameProjectTargetId] = useState<string | null>(null);
+  const [renameProjectName, setRenameProjectName] = useState('');
+  const [renamingProject, setRenamingProject] = useState(false);
+  const [renameProjectError, setRenameProjectError] = useState<string | null>(null);
 
   const deleteProjectTarget = deleteProjectTargetId
     ? projects.find(project => project.id === deleteProjectTargetId)
+    : null;
+  const renameProjectTarget = renameProjectTargetId
+    ? projects.find(project => project.id === renameProjectTargetId)
     : null;
 
   // 加载项目列表
@@ -1534,6 +1541,66 @@ export default function Home() {
   const handleDeleteProject = (id: string) => {
     setDeleteProjectError(null);
     setDeleteProjectTargetId(id);
+  };
+
+  const handleRenameProject = (project: Project) => {
+    setRenameProjectError(null);
+    setRenameProjectName(project.name);
+    setRenameProjectTargetId(project.id);
+  };
+
+  const confirmRenameProject = async () => {
+    if (!renameProjectTarget) return;
+
+    const name = renameProjectName.trim();
+    if (!name) {
+      setRenameProjectError('项目名称不能为空');
+      return;
+    }
+
+    setRenamingProject(true);
+    setRenameProjectError(null);
+    try {
+      const response = await fetch('/api/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: renameProjectTarget.id,
+          name,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.project) {
+        throw new Error(data?.error || '项目重命名失败，请重试');
+      }
+
+      const renamedProject = data.project as Project;
+      setProjects(prev => prev.map(project =>
+        project.id === renamedProject.id
+          ? { ...project, ...renamedProject }
+          : project
+      ));
+      setResults(prev => prev.map(result =>
+        result.sourceProjectId === renamedProject.id && result.archived
+          ? {
+              ...result,
+              archived: {
+                ...result.archived,
+                projectName: renamedProject.name,
+              },
+            }
+          : result
+      ));
+      setArchiveRefreshKey(prev => prev + 1);
+      setRenameProjectTargetId(null);
+      setRenameProjectName('');
+    } catch (error) {
+      setRenameProjectError(
+        error instanceof Error ? error.message : '项目重命名失败，请重试'
+      );
+    } finally {
+      setRenamingProject(false);
+    }
   };
 
   const confirmDeleteProject = async () => {
@@ -1954,13 +2021,36 @@ export default function Home() {
                             )}
                             <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
                           </div>
-                          <Button
-                            variant="ghost" size="icon"
-                            className="h-6 w-6 opacity-0 group-hover:opacity-100 text-destructive shrink-0 transition-opacity"
-                            onClick={(e) => { e.stopPropagation(); handleDeleteProject(project.id); }}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          <div className="flex shrink-0 items-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="重命名项目"
+                              aria-label={`重命名项目 ${project.name}`}
+                              className="h-7 w-7 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleRenameProject(project);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              title="删除项目"
+                              aria-label={`删除项目 ${project.name}`}
+                              className="h-7 w-7 shrink-0 text-destructive opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDeleteProject(project.id);
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -2125,6 +2215,71 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      <Dialog
+        open={Boolean(renameProjectTarget)}
+        onOpenChange={(open) => {
+          if (!open && !renamingProject) {
+            setRenameProjectTargetId(null);
+            setRenameProjectName('');
+            setRenameProjectError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>重命名项目</DialogTitle>
+            <DialogDescription>
+              修改项目「{renameProjectTarget?.name}」的名称。已归档文件中的项目名称也会同步更新。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="rename-project-name">项目名称</Label>
+            <Input
+              id="rename-project-name"
+              value={renameProjectName}
+              maxLength={255}
+              autoFocus
+              disabled={renamingProject}
+              onChange={(event) => setRenameProjectName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !renamingProject) {
+                  event.preventDefault();
+                  void confirmRenameProject();
+                }
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              S3 文件、文件夹结构和已归档文件名不会改变。
+            </p>
+            {renameProjectError && (
+              <p className="text-sm text-destructive">{renameProjectError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={renamingProject}
+              onClick={() => {
+                setRenameProjectTargetId(null);
+                setRenameProjectName('');
+                setRenameProjectError(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              disabled={!renameProjectName.trim() || renamingProject}
+              onClick={() => void confirmRenameProject()}
+            >
+              {renamingProject && <Loader2 className="h-4 w-4 animate-spin" />}
+              {renamingProject ? '保存中…' : '保存新名称'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={Boolean(deleteProjectTarget)}

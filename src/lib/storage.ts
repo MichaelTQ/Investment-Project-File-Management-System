@@ -249,6 +249,104 @@ export async function getProject(id: string): Promise<Project | null> {
   };
 }
 
+export async function renameProject(
+  id: string,
+  newName: string
+): Promise<Project> {
+  const db = getDb();
+  const name = newName.trim();
+
+  if (!id) throw new Error("缺少项目 ID");
+  if (!name) throw new Error("项目名称不能为空");
+  if (name.length > 255) throw new Error("项目名称不能超过 255 个字符");
+
+  const { data: current, error: currentError } = await db
+    .from("projects")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (currentError || !current) throw new Error("项目不存在");
+
+  const { data: otherProjects, error: duplicateError } = await db
+    .from("projects")
+    .select("id, name")
+    .neq("id", id);
+
+  if (duplicateError) {
+    throw new Error(`检查项目名称失败: ${duplicateError.message}`);
+  }
+
+  const normalizedName = name.toLocaleLowerCase("zh-CN");
+  if (
+    (otherProjects ?? []).some(
+      (project) =>
+        String(project.name).trim().toLocaleLowerCase("zh-CN") === normalizedName
+    )
+  ) {
+    throw new Error("已存在同名项目，请使用其他名称");
+  }
+
+  if (current.name === name) {
+    const { count } = await db
+      .from("archived_files")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", id);
+
+    return {
+      id: current.id,
+      name: current.name,
+      description: current.description ?? "",
+      createdAt: current.created_at,
+      updatedAt: current.updated_at,
+      fileCount: count ?? 0,
+    };
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: projectError } = await db
+    .from("projects")
+    .update({ name, updated_at: now })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (projectError || !updated) {
+    throw new Error(`项目重命名失败: ${projectError?.message ?? "未知错误"}`);
+  }
+
+  const { error: filesError } = await db
+    .from("archived_files")
+    .update({ project_name: name })
+    .eq("project_id", id);
+
+  if (filesError) {
+    // 两张表无法在客户端事务中同时更新；同步失败时尽量恢复原项目名称。
+    await db
+      .from("projects")
+      .update({
+        name: current.name,
+        updated_at: current.updated_at,
+      })
+      .eq("id", id);
+    throw new Error(`同步归档文件的项目名称失败: ${filesError.message}`);
+  }
+
+  const { count } = await db
+    .from("archived_files")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", id);
+
+  return {
+    id: updated.id,
+    name: updated.name,
+    description: updated.description ?? "",
+    createdAt: updated.created_at,
+    updatedAt: updated.updated_at,
+    fileCount: count ?? 0,
+  };
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const db = getDb();
 
