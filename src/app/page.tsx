@@ -402,15 +402,15 @@ function ClassifyResultItem({
       </div>
 
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden flex flex-col">
+        <DialogContent className="flex h-[85dvh] max-h-[760px] max-w-3xl flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
             <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
             <DialogDescription>
               查看分类理由、文件内容摘要和完整处理过程
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0 pr-4">
-            <div className="space-y-4 pb-2">
+          <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
+            <div className="space-y-4 pb-4">
               <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">分类结果</p>
