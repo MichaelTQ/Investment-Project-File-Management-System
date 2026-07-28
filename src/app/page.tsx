@@ -1429,13 +1429,15 @@ export default function Home() {
     for (const file of Array.from(files)) {
       const clientId = crypto.randomUUID();
       let uploadedStorageKey = '';
+      let chunkUploadId = '';
       try {
         const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
 
         if (file.size > CHUNK_SIZE) {
-          // 大文件：分片上传，每片 2MB，绕过反向代理的 body 大小限制
-          const uploadId = crypto.randomUUID();
+          // 大文件：每个 2MB 分片立即存入 S3，最后无状态合并。
+          chunkUploadId = crypto.randomUUID();
           const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+          const chunkKeys: string[] = [];
 
           for (let i = 0; i < totalChunks; i++) {
             const start = i * CHUNK_SIZE;
@@ -1446,7 +1448,7 @@ export default function Home() {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/octet-stream',
-                'x-upload-id': uploadId,
+                'x-upload-id': chunkUploadId,
                 'x-chunk-index': String(i),
                 'x-chunk-total': String(totalChunks),
                 'x-project-id': selectedProjectId,
@@ -1462,15 +1464,33 @@ export default function Home() {
                 `分片 ${i + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
               );
             }
-
-            if (chunkData.complete) {
-              uploadedStorageKey = chunkData.storageKey;
+            if (!chunkData?.chunkKey) {
+              throw new Error(`分片 ${i + 1}/${totalChunks} 未返回 S3 地址`);
             }
+            chunkKeys.push(chunkData.chunkKey);
           }
 
-          if (!uploadedStorageKey) {
-            throw new Error('分片上传完成但未返回 storageKey');
+          const completeResponse = await fetch('/api/uploads/chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'complete',
+              uploadId: chunkUploadId,
+              projectId: selectedProjectId,
+              fileName: encodeURIComponent(file.name),
+              mimeType: file.type || 'application/octet-stream',
+              chunkKeys,
+            }),
+          });
+          const completeData = await completeResponse.json().catch(() => null);
+          if (!completeResponse.ok || !completeData?.storageKey) {
+            throw new Error(
+              completeData?.error ||
+              `合并上传文件失败（HTTP ${completeResponse.status}）`
+            );
           }
+          uploadedStorageKey = completeData.storageKey;
+          chunkUploadId = '';
         } else {
           // 小文件：直接上传
           const uploadResponse = await fetch('/api/uploads', {
@@ -1545,6 +1565,17 @@ export default function Home() {
           void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
         }
       } catch (error) {
+        if (chunkUploadId) {
+          await fetch('/api/uploads/chunk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'abort',
+              uploadId: chunkUploadId,
+              projectId: selectedProjectId,
+            }),
+          }).catch(() => null);
+        }
         if (uploadedStorageKey) {
           const params = new URLSearchParams({
             storageKey: uploadedStorageKey,

@@ -93,6 +93,62 @@ export async function uploadTempFileFromBuffer(params: {
   });
 }
 
+export async function uploadTemporaryChunk(params: {
+  buffer: Buffer;
+  projectId: string;
+  uploadId: string;
+  chunkIndex: number;
+}): Promise<string> {
+  return getS3Storage().uploadFile({
+    fileContent: params.buffer,
+    fileName:
+      `upload-chunks/${params.projectId}/${params.uploadId}/` +
+      `chunk-${params.chunkIndex}.part`,
+    contentType: "application/octet-stream",
+  });
+}
+
+export async function combineTemporaryChunks(params: {
+  chunkKeys: string[];
+  fileName: string;
+  mimeType: string;
+  projectId: string;
+}): Promise<string> {
+  const s3 = getS3Storage();
+
+  async function* readChunks() {
+    for (const key of params.chunkKeys) {
+      yield await s3.readFile({ fileKey: key });
+    }
+  }
+
+  return s3.chunkUploadFile({
+    chunks: readChunks(),
+    fileName:
+      `uploads/${params.projectId}/${crypto.randomUUID()}-${params.fileName}`,
+    contentType: params.mimeType,
+  });
+}
+
+export async function deleteStoredFilesByPrefix(prefix: string): Promise<void> {
+  const s3 = getS3Storage();
+  let continuationToken: string | undefined;
+
+  do {
+    const result = await s3.listFiles({
+      prefix,
+      maxKeys: 1000,
+      continuationToken,
+    });
+    await Promise.all(
+      result.keys.map(key => s3.deleteFile({ fileKey: key }))
+    );
+    continuationToken = result.isTruncated
+      ? result.nextContinuationToken
+      : undefined;
+  } while (continuationToken);
+}
+
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
   return getS3Storage().readFile({ fileKey: storageKey });
 }
