@@ -365,10 +365,7 @@ async function buildArchivedName(params: {
         params.archiveTitle,
         params.categoryName,
         ext
-      )}-${params.projectName}-${new Date()
-        .toISOString()
-        .slice(0, 10)
-        .replace(/-/g, "")}${extensionSuffix}`
+      )}${extensionSuffix}`
     : sanitizeOriginalArchivedName(
         params.originalName,
         `${params.categoryName}${extensionSuffix}`
@@ -570,6 +567,119 @@ export async function moveArchivedFile(
     reasoning: data.reasoning ?? "",
     storageKey: data.storage_key,
   };
+}
+
+// ============ 文件与文件夹重命名 ============
+
+function validateFolderName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("文件夹名称不能为空");
+  if (/[/\\:*?"<>|\u0000-\u001F]/.test(trimmed)) {
+    throw new Error("文件夹名称不能包含 / \\ : * ? \" < > | 等字符");
+  }
+  if (trimmed.length > 100) throw new Error("文件夹名称不能超过 100 个字符");
+  return trimmed;
+}
+
+function pathStartsWith(path: string[], prefix: string[]): boolean {
+  return (
+    path.length >= prefix.length &&
+    prefix.every((segment, index) => path[index] === segment)
+  );
+}
+
+export async function renameArchivedFile(
+  fileId: string,
+  newTitle: string
+): Promise<ArchivedFile | null> {
+  const db = getDb();
+  const current = await getArchivedFile(fileId);
+  if (!current) return null;
+
+  const dotIndex = current.archivedName.lastIndexOf(".");
+  const ext = dotIndex > 0 ? current.archivedName.slice(dotIndex + 1) : "";
+  const extensionSuffix = ext ? `.${ext}` : "";
+  const sanitizedTitle = sanitizeArchiveTitle(
+    newTitle,
+    dotIndex > 0
+      ? current.archivedName.slice(0, dotIndex)
+      : current.archivedName,
+    ext
+  );
+  const archivedName = await dedupeArchivedName(
+    `${sanitizedTitle}${extensionSuffix}`,
+    current.projectId,
+    current.folderPath,
+    fileId
+  );
+
+  const { data, error } = await db
+    .from("archived_files")
+    .update({ archived_name: archivedName })
+    .eq("id", fileId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`重命名文件失败: ${error.message}`);
+  return data ? mapArchivedFile(data) : null;
+}
+
+export async function renameArchivedFolder(params: {
+  projectId: string;
+  sourcePath: string[];
+  newName: string;
+}): Promise<number> {
+  const db = getDb();
+  const newName = validateFolderName(params.newName);
+  const sourcePath = params.sourcePath;
+  if (sourcePath.length < 2) throw new Error("系统根文件夹不能重命名");
+  if (sourcePath[sourcePath.length - 1] === newName) return 0;
+
+  const { data, error } = await db
+    .from("archived_files")
+    .select("*")
+    .eq("project_id", params.projectId);
+  if (error) throw new Error(`读取文件夹内容失败: ${error.message}`);
+
+  const rows = data ?? [];
+  const parentPath = sourcePath.slice(0, -1);
+  const targetRows = rows.filter(row =>
+    pathStartsWith(row.folder_path ?? [], sourcePath)
+  );
+  if (targetRows.length === 0) throw new Error("文件夹不存在或已经为空");
+
+  const siblingExists = rows.some(row => {
+    const folderPath: string[] = row.folder_path ?? [];
+    return (
+      !pathStartsWith(folderPath, sourcePath) &&
+      pathStartsWith(folderPath, parentPath) &&
+      folderPath[parentPath.length] === newName
+    );
+  });
+  if (siblingExists) throw new Error(`同级目录已存在文件夹「${newName}」`);
+
+  for (const row of targetRows) {
+    const oldPath: string[] = row.folder_path;
+    const folderPath = [
+      ...sourcePath.slice(0, -1),
+      newName,
+      ...oldPath.slice(sourcePath.length),
+    ];
+    const updateData: Record<string, unknown> = { folder_path: folderPath };
+    if (oldPath.length === sourcePath.length) {
+      updateData.category_name = newName;
+    }
+
+    const { error: updateError } = await db
+      .from("archived_files")
+      .update(updateData)
+      .eq("id", row.id);
+    if (updateError) {
+      throw new Error(`重命名文件夹失败: ${updateError.message}`);
+    }
+  }
+
+  return targetRows.length;
 }
 
 // ============ 文件查询 ============
