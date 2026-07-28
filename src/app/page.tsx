@@ -1237,6 +1237,13 @@ export default function Home() {
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
   // 新增项目动画
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
+  const [deleteProjectTargetId, setDeleteProjectTargetId] = useState<string | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
+  const [deleteProjectError, setDeleteProjectError] = useState<string | null>(null);
+
+  const deleteProjectTarget = deleteProjectTargetId
+    ? projects.find(project => project.id === deleteProjectTargetId)
+    : null;
 
   // 加载项目列表
   useEffect(() => {
@@ -1286,13 +1293,40 @@ export default function Home() {
       });
   }, []);
 
-  const handleDeleteProject = async (id: string) => {
-    if (!confirm('确定删除该项目及其所有归档文件？此操作不可恢复。')) return;
-    await fetch(`/api/projects?id=${id}`, { method: 'DELETE' });
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (selectedProjectId === id) {
-      const remaining = projects.filter(p => p.id !== id);
-      setSelectedProjectId(remaining[0]?.id || '');
+  const handleDeleteProject = (id: string) => {
+    setDeleteProjectError(null);
+    setDeleteProjectTargetId(id);
+  };
+
+  const confirmDeleteProject = async () => {
+    if (!deleteProjectTarget) return;
+
+    setDeletingProject(true);
+    setDeleteProjectError(null);
+    try {
+      const response = await fetch(
+        `/api/projects?id=${encodeURIComponent(deleteProjectTarget.id)}`,
+        { method: 'DELETE' }
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || '删除项目失败，请重试');
+      }
+
+      const deletedId = deleteProjectTarget.id;
+      const nextSelectedProjectId =
+        projects.find(project => project.id !== deletedId)?.id || '';
+      setProjects(prev => prev.filter(project => project.id !== deletedId));
+      setSelectedProjectId(currentId =>
+        currentId === deletedId ? nextSelectedProjectId : currentId
+      );
+      setDeleteProjectTargetId(null);
+    } catch (error) {
+      setDeleteProjectError(
+        error instanceof Error ? error.message : '删除项目失败，请重试'
+      );
+    } finally {
+      setDeletingProject(false);
     }
   };
 
@@ -1853,6 +1887,50 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      <AlertDialog
+        open={Boolean(deleteProjectTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deletingProject) {
+            setDeleteProjectTargetId(null);
+            setDeleteProjectError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除项目？</AlertDialogTitle>
+            <AlertDialogDescription>
+              你选择了项目「{deleteProjectTarget?.name}」。删除后将同时永久删除该项目中的
+              {' '}<strong>{deleteProjectTarget?.fileCount || 0} 个归档文件</strong>
+              、数据库记录和 S3 文件，此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteProjectError && (
+            <p className="text-sm text-destructive">{deleteProjectError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingProject}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deletingProject}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDeleteProject();
+              }}
+            >
+              {deletingProject ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  删除中...
+                </>
+              ) : (
+                '确认删除项目'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
