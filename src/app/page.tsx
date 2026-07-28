@@ -10,6 +10,16 @@ import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
@@ -707,8 +717,12 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const moveTarget = moveTargetId ? files.find(f => f.id === moveTargetId) : null;
+  const deleteTarget = deleteTargetId ? files.find(f => f.id === deleteTargetId) : null;
 
   useEffect(() => {
     if (!projectId) return;
@@ -726,13 +740,31 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     window.open(`/api/archive?download=${fileId}&id=${fileId}`, '_blank');
   };
 
-  const handleDelete = async (fileId: string) => {
-    const file = files.find(f => f.id === fileId);
-    if (!file) return;
-    if (!confirm(`确定删除「${file.archivedName}」？`)) return;
-    await fetch(`/api/archive?id=${fileId}`, { method: 'DELETE' });
-    setFiles(prev => prev.filter(f => f.id !== fileId));
-    setTree(prev => removeFileFromTree(prev, fileId));
+  const handleDelete = (fileId: string) => {
+    setDeleteError(null);
+    setDeleteTargetId(fileId);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch(`/api/archive?id=${deleteTarget.id}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || '删除失败，请重试');
+      }
+
+      setFiles(prev => prev.filter(f => f.id !== deleteTarget.id));
+      setTree(prev => removeFileFromTree(prev, deleteTarget.id));
+      setDeleteTargetId(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '删除失败，请重试');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleMove = async (targetCategoryId: string, targetCategoryName: string, targetFolderPath: string[]) => {
@@ -856,6 +888,48 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
           existingFiles={files}
         />
       )}
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTargetId(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除归档文件？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将永久删除「{deleteTarget?.archivedName}」的存储文件和归档记录，此操作不可恢复。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && (
+            <p className="text-sm text-destructive">{deleteError}</p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  删除中...
+                </>
+              ) : (
+                '确认删除'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
