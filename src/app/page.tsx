@@ -23,7 +23,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
-  ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
+  ChevronRight, ChevronDown, Loader2, Brain, Search, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
@@ -1410,50 +1410,64 @@ function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; re
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-3">
+    <div className="w-full min-w-0">
+      <div className="mb-3 flex items-center justify-between">
         <span className="text-xs text-muted-foreground">共 {records.length} 条记录</span>
       </div>
-      <div className="space-y-2">
+      <div className="w-full min-w-0 space-y-2">
         {records.map((record) => (
           <div
             key={record.id}
-            className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:bg-muted/30 transition-colors"
+            className="w-full min-w-0 overflow-hidden rounded-lg border bg-background p-3 transition-colors hover:bg-muted/30"
           >
-            <div className="p-1.5 rounded bg-primary/10 shrink-0 mt-0.5">
-              <FileText className="h-4 w-4 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium truncate" title={record.originalName}>
+            <div className="flex min-w-0 items-start gap-2.5">
+              <div className="mt-0.5 shrink-0 rounded bg-primary/10 p-1.5">
+                <FileText className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p
+                  className="break-all text-sm font-medium leading-5"
+                  title={record.originalName}
+                >
                   {record.originalName}
-                </span>
-                <Badge variant="outline" className="text-[10px] shrink-0">
-                  {(record.fileSize / 1024).toFixed(1)} KB
-                </Badge>
+                </p>
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <ArrowRight className="h-3 w-3 shrink-0" />
-                <span className="font-mono text-[11px] truncate" title={record.archivedName}>
+            </div>
+
+            <div className="mt-3 min-w-0 rounded-md bg-muted/50 p-2.5">
+              <p className="text-[11px] text-muted-foreground">归档后名称</p>
+              <p
+                className="mt-1 break-all font-mono text-xs leading-5"
+                title={record.archivedName}
+              >
                   {record.archivedName}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1">
-                  <Folder className="h-3 w-3" />
-                  {record.folderPath.join(' / ')}
-                </span>
-                <span>·</span>
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {new Date(record.archivedAt).toLocaleString('zh-CN', {
-                    year: 'numeric', month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit'
-                  })}
-                </span>
-                <span>·</span>
-                <span>置信度 {record.confidence}%</span>
-              </div>
+              </p>
+            </div>
+
+            <div className="mt-3 min-w-0">
+              <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                <Folder className="h-3 w-3 shrink-0" />
+                归档位置
+              </p>
+              <p className="mt-1 break-words [overflow-wrap:anywhere] text-xs leading-5 text-muted-foreground">
+                {record.folderPath.join(' / ')}
+              </p>
+            </div>
+
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+              <Badge variant="outline" className="shrink-0 text-[10px]">
+                {(record.fileSize / 1024).toFixed(1)} KB
+              </Badge>
+              <span className="flex min-w-0 items-center gap-1">
+                <Clock className="h-3 w-3 shrink-0" />
+                {new Date(record.archivedAt).toLocaleString('zh-CN', {
+                  year: 'numeric', month: '2-digit', day: '2-digit',
+                  hour: '2-digit', minute: '2-digit'
+                })}
+              </span>
+              <Badge variant="secondary" className="shrink-0 text-[10px]">
+                置信度 {record.confidence}%
+              </Badge>
             </div>
           </div>
         ))}
@@ -2187,7 +2201,7 @@ export default function Home() {
             </Card>
 
             {/* Analysis History */}
-            <Card className="flex-1 min-h-0 flex flex-col">
+            <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
               <CardHeader className="pb-3 shrink-0">
                 <CardTitle className="text-base md:text-lg flex items-center gap-2">
                   <History className="h-5 w-5 text-primary" />
@@ -2199,8 +2213,8 @@ export default function Home() {
                     : '请选择一个项目查看分析记录'}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="pt-0 flex-1 min-h-0">
-                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
+              <CardContent className="min-w-0 flex-1 px-3 pt-0">
+                <div className="h-[240px] overflow-y-auto overflow-x-hidden pr-1 md:h-[300px] lg:h-[340px]">
                   {selectedProjectId ? (
                     <AnalysisHistoryPanel projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
                   ) : (
@@ -2209,7 +2223,7 @@ export default function Home() {
                       <p className="text-sm">未选择项目</p>
                     </div>
                   )}
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
           </div>
