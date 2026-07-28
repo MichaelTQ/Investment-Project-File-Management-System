@@ -3,6 +3,8 @@ import {
   listArchivedFiles,
   deleteArchivedFile,
   moveArchivedFile,
+  renameArchivedFile,
+  renameArchivedFolder,
   getFileDownloadUrl,
   getFileDownloadStream,
   buildArchiveTree,
@@ -244,6 +246,50 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
+    if (body.action === "rename-file") {
+      const id = typeof body.id === "string" ? body.id : "";
+      const newTitle =
+        typeof body.newTitle === "string" ? body.newTitle.trim() : "";
+      if (!id || !newTitle) {
+        return NextResponse.json(
+          { error: "缺少文件 ID 或新名称" },
+          { status: 400 }
+        );
+      }
+
+      const file = await renameArchivedFile(id, newTitle);
+      if (!file) {
+        return NextResponse.json({ error: "文件不存在" }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, file });
+    }
+
+    if (body.action === "rename-folder") {
+      const projectId =
+        typeof body.projectId === "string" ? body.projectId : "";
+      const sourcePath = Array.isArray(body.sourcePath)
+        ? body.sourcePath.filter(
+            (segment: unknown): segment is string =>
+              typeof segment === "string"
+          )
+        : [];
+      const newName =
+        typeof body.newName === "string" ? body.newName.trim() : "";
+      if (!projectId || sourcePath.length === 0 || !newName) {
+        return NextResponse.json(
+          { error: "缺少项目、原文件夹路径或新名称" },
+          { status: 400 }
+        );
+      }
+
+      const updatedCount = await renameArchivedFolder({
+        projectId,
+        sourcePath,
+        newName,
+      });
+      return NextResponse.json({ success: true, updatedCount });
+    }
+
     if (Array.isArray(body.moves)) {
       const moves = body.moves.filter(
         (move: unknown): move is {

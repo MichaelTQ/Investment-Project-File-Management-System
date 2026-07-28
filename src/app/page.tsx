@@ -25,7 +25,7 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
-  History, ArrowRightLeft, MoreHorizontal
+  History, ArrowRightLeft, MoreHorizontal, Pencil
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -311,7 +311,7 @@ function ClassifyResultItem({
                     <div>
                       <p className="text-sm font-medium text-amber-900">请确认归档名称</p>
                       <p className="mt-1 text-xs text-amber-700">
-                        该文件经过 AI 分析，确认或修改标题后才会归档。项目名称、日期、扩展名及重名序号由系统自动补充。
+                        该文件经过 AI 分析，确认或修改标题后才会归档。扩展名及重名序号由系统自动补充。
                       </p>
                     </div>
                     <div className="space-y-1.5">
@@ -681,12 +681,13 @@ function collectNodeFileIds(node: ArchiveTreeNode): string[] {
   return node.children?.flatMap(collectNodeFileIds) || [];
 }
 
-function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, setCtxMenu }: {
+function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, onRenameNode, setCtxMenu }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
   onDeleteNode: (node: ArchiveTreeNode) => void;
   onMoveNode: (node: ArchiveTreeNode) => void;
+  onRenameNode: (node: ArchiveTreeNode) => void;
   setCtxMenu: (v: CtxMenuState) => void;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
@@ -697,6 +698,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, se
     const meta = `${(node.file.fileSize / 1024).toFixed(1)} KB · ${new Date(node.file.archivedAt).toLocaleDateString('zh-CN')} · 置信度 ${node.file.confidence}%`;
     const fileId = node.file.id;
     const contextItems = [
+      { label: '重命名', icon: <Pencil className="h-3.5 w-3.5 mr-2" />, action: () => onRenameNode(node) },
       { label: '移动', icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />, action: () => onMoveNode(node) },
       { label: '下载', icon: <Download className="h-3.5 w-3.5 mr-2" />, action: () => onDownload(fileId) },
       { label: '删除', icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />, action: () => onDeleteNode(node), destructive: true },
@@ -719,6 +721,9 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, se
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-28">
+            <DropdownMenuItem onClick={() => onRenameNode(node)}>
+              <Pencil className="h-3.5 w-3.5 mr-2" />重命名
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onMoveNode(node)}>
               <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />移动
             </DropdownMenuItem>
@@ -737,6 +742,10 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, se
   const folderContextItems: CtxMenuItem[] = [
     ...(level > 0
       ? [{
+          label: '重命名文件夹',
+          icon: <Pencil className="h-3.5 w-3.5 mr-2" />,
+          action: () => onRenameNode(node),
+        }, {
           label: '移动文件夹',
           icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />,
           action: () => onMoveNode(node),
@@ -776,6 +785,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, se
               onDownload={onDownload}
               onDeleteNode={onDeleteNode}
               onMoveNode={onMoveNode}
+              onRenameNode={onRenameNode}
               setCtxMenu={setCtxMenu}
             />
           ))}
@@ -812,6 +822,17 @@ function ArchivedFilesList({
   const [deleteTarget, setDeleteTarget] = useState<ArchiveOperationTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ArchiveOperationTarget | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const renameFileName = renameTarget?.isFolder
+    ? ''
+    : (renameTarget?.files[0]?.archivedName || '');
+  const renameFileDotIndex = renameFileName.lastIndexOf('.');
+  const renameFileExtension = renameFileDotIndex > 0
+    ? renameFileName.slice(renameFileDotIndex)
+    : '';
 
   useEffect(() => {
     if (!projectId) return;
@@ -854,6 +875,66 @@ function ArchivedFilesList({
   const handleMoveRequest = (node: ArchiveTreeNode) => {
     const target = getOperationTarget(node);
     if (target) setMoveTarget(target);
+  };
+
+  const handleRenameRequest = (node: ArchiveTreeNode) => {
+    const target = getOperationTarget(node);
+    if (!target) return;
+
+    const dotIndex = target.name.lastIndexOf('.');
+    setRenameValue(
+      !target.isFolder && dotIndex > 0
+        ? target.name.slice(0, dotIndex)
+        : target.name
+    );
+    setRenameError(null);
+    setRenameTarget(target);
+  };
+
+  const confirmRename = async () => {
+    if (!renameTarget || !renameValue.trim()) return;
+
+    setRenaming(true);
+    setRenameError(null);
+    try {
+      const response = await fetch('/api/archive', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          renameTarget.isFolder
+            ? {
+                action: 'rename-folder',
+                projectId,
+                sourcePath: renameTarget.path,
+                newName: renameValue.trim(),
+              }
+            : {
+                action: 'rename-file',
+                id: renameTarget.files[0].id,
+                newTitle: renameValue.trim(),
+              }
+        ),
+      });
+      const responseData = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(responseData?.error || '重命名失败，请重试');
+      }
+
+      const refreshResponse = await fetch(
+        `/api/archive?projectId=${projectId}&tree=true`
+      );
+      const refreshed = await refreshResponse.json();
+      setTree(refreshed.tree || []);
+      setFiles(refreshed.files || []);
+      setRenameTarget(null);
+      onFilesChanged(projectId, 0);
+    } catch (error) {
+      setRenameError(
+        error instanceof Error ? error.message : '重命名失败，请重试'
+      );
+    } finally {
+      setRenaming(false);
+    }
   };
 
   const confirmDelete = async () => {
@@ -985,6 +1066,7 @@ function ArchivedFilesList({
             onDownload={handleDownload}
             onDeleteNode={handleDelete}
             onMoveNode={handleMoveRequest}
+            onRenameNode={handleRenameRequest}
             setCtxMenu={setCtxMenu}
           />
         ))}
@@ -1029,6 +1111,79 @@ function ArchivedFilesList({
           existingFiles={files}
         />
       )}
+
+      <Dialog
+        open={Boolean(renameTarget)}
+        onOpenChange={(open) => {
+          if (!open && !renaming) {
+            setRenameTarget(null);
+            setRenameError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              重命名归档{renameTarget?.isFolder ? '文件夹' : '文件'}
+            </DialogTitle>
+            <DialogDescription>
+              {renameTarget?.isFolder
+                ? `文件夹中的 ${renameTarget.files.length} 个文件会同步移动到新路径。`
+                : `文件扩展名 ${renameFileExtension || '（无）'} 将保持不变。`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="archive-rename">
+              新{renameTarget?.isFolder ? '文件夹' : '文件'}名称
+            </Label>
+            <div className="flex items-center gap-1">
+              <Input
+                id="archive-rename"
+                autoFocus
+                value={renameValue}
+                maxLength={renameTarget?.isFolder ? 100 : 50}
+                disabled={renaming}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && renameValue.trim() && !renaming) {
+                    void confirmRename();
+                  }
+                }}
+              />
+              {!renameTarget?.isFolder && renameFileExtension && (
+                <span className="text-sm text-muted-foreground">
+                  {renameFileExtension}
+                </span>
+              )}
+            </div>
+            {renameError && (
+              <p className="text-sm text-destructive">{renameError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={renaming}
+              onClick={() => setRenameTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              disabled={!renameValue.trim() || renaming}
+              onClick={() => void confirmRename()}
+            >
+              {renaming ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  重命名中...
+                </>
+              ) : (
+                '确认重命名'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={Boolean(deleteTarget)}
