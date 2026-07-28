@@ -333,6 +333,54 @@ function sanitizeArchiveTitle(
   return sanitized || fallback;
 }
 
+function sanitizeOriginalArchivedName(
+  originalName: string,
+  fallback: string
+): string {
+  const leafName = originalName.split(/[/\\]/).pop()?.trim() || "";
+  const sanitized = leafName
+    .replace(/[:*?"<>|\u0000-\u001F]/g, "-")
+    .replace(/^[.\s]+|[.\s]+$/g, "")
+    .slice(0, 500)
+    .trim();
+
+  return sanitized || fallback;
+}
+
+async function buildArchivedName(params: {
+  originalName: string;
+  archiveTitle?: string;
+  categoryName: string;
+  projectName: string;
+  projectId: string;
+  folderPath: string[];
+}): Promise<string> {
+  const dotIndex = params.originalName.lastIndexOf(".");
+  const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
+  const extensionSuffix = ext ? `.${ext}` : "";
+  const hasConfirmedTitle = Boolean(params.archiveTitle?.trim());
+
+  const baseName = hasConfirmedTitle
+    ? `${sanitizeArchiveTitle(
+        params.archiveTitle,
+        params.categoryName,
+        ext
+      )}-${params.projectName}-${new Date()
+        .toISOString()
+        .slice(0, 10)
+        .replace(/-/g, "")}${extensionSuffix}`
+    : sanitizeOriginalArchivedName(
+        params.originalName,
+        `${params.categoryName}${extensionSuffix}`
+      );
+
+  return dedupeArchivedName(
+    baseName,
+    params.projectId,
+    params.folderPath
+  );
+}
+
 // ============ 文件归档 ============
 
 export async function archiveFile(params: {
@@ -351,22 +399,8 @@ export async function archiveFile(params: {
   const db = getDb();
   const s3 = getS3Storage();
 
-  // 1. 生成归档文件名（去重）
-  const dotIndex = params.originalName.lastIndexOf(".");
-  const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
-  const extensionSuffix = ext ? `.${ext}` : "";
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const archiveTitle = sanitizeArchiveTitle(
-    params.archiveTitle,
-    params.categoryName,
-    ext
-  );
-  const baseName = `${archiveTitle}-${params.projectName}-${dateStr}${extensionSuffix}`;
-  const archivedName = await dedupeArchivedName(
-    baseName,
-    params.projectId,
-    params.folderPath
-  );
+  // 1. 关键词分类保留原名；只有提供了确认标题时才执行 LLM 命名。
+  const archivedName = await buildArchivedName(params);
 
   // 2. 上传到 S3 对象存储
   const folderPrefix = params.folderPath.join("/");
@@ -443,21 +477,7 @@ export async function archiveStoredFile(params: {
   const exists = await getS3Storage().fileExists({ fileKey: params.storageKey });
   if (!exists) throw new Error("S3 中的待归档文件不存在，请重新上传");
 
-  const dotIndex = params.originalName.lastIndexOf(".");
-  const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
-  const extensionSuffix = ext ? `.${ext}` : "";
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const archiveTitle = sanitizeArchiveTitle(
-    params.archiveTitle,
-    params.categoryName,
-    ext
-  );
-  const baseName = `${archiveTitle}-${params.projectName}-${dateStr}${extensionSuffix}`;
-  const archivedName = await dedupeArchivedName(
-    baseName,
-    params.projectId,
-    params.folderPath
-  );
+  const archivedName = await buildArchivedName(params);
   const now = new Date().toISOString();
 
   const { data, error } = await db
