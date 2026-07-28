@@ -25,7 +25,7 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, ArrowRight, Brain, Search, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
-  History, ArrowRightLeft, MoreHorizontal, Pencil
+  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
 import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
 
@@ -268,6 +268,7 @@ function ClassifyResultItem({
   const [archiveTitle, setArchiveTitle] = useState(
     result.suggestedArchiveTitle || result.category?.fileName || ''
   );
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const isArchiving = result.archiveStatus === 'archiving';
   const needsConfirmation =
     result.requiresArchiveConfirmation &&
@@ -296,7 +297,6 @@ function ClassifyResultItem({
                   <Progress value={result.confidence} className="h-1.5 w-24" />
                   <span className="text-xs text-muted-foreground">置信度 {result.confidence}%</span>
                 </div>
-                <p className="text-sm text-muted-foreground bg-muted/50 p-2 rounded">{result.reasoning}</p>
                 {result.archived && (
                   <div className="flex items-center gap-2 text-sm bg-green-50 p-2 rounded">
                     <Archive className="h-4 w-4 text-green-600" />
@@ -363,15 +363,77 @@ function ClassifyResultItem({
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">{result.reasoning}</p>
+              <p className="text-sm text-amber-700">未能确定归档类别，请查看详细分析。</p>
             )}
-            {result.contentPreview && (
-              <div className="mt-2 p-2 bg-muted/30 rounded text-xs text-muted-foreground max-h-24 overflow-hidden">{result.contentPreview}</div>
-            )}
-            {result.process && <ClassifyProcessPanel process={result.process} />}
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setDetailsOpen(true)}
+              >
+                <Eye className="h-4 w-4" />
+                查看详情
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="pr-6">分类详情：{result.fileName}</DialogTitle>
+            <DialogDescription>
+              查看分类理由、文件内容摘要和完整处理过程
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 pr-4">
+            <div className="space-y-4 pb-2">
+              <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">分类结果</p>
+                  <p className="mt-1 text-sm font-medium">
+                    {result.category
+                      ? `${result.category.folderPath.join(' / ')} / ${result.category.fileName}`
+                      : '未能确定归档类别'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">分类置信度</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Progress value={result.confidence} className="h-1.5 w-28" />
+                    <span className="text-sm">{result.confidence}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">详细理由</h4>
+                <p className="whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+                  {result.reasoning || '暂无详细理由'}
+                </p>
+              </div>
+
+              {result.contentPreview && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">文件内容摘要</h4>
+                  <div className="whitespace-pre-wrap break-words rounded-lg border p-3 text-sm text-muted-foreground">
+                    {result.contentPreview}
+                  </div>
+                </div>
+              )}
+
+              {result.process && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">分类处理过程</h4>
+                  <ClassifyProcessPanel process={result.process} />
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -1822,7 +1884,7 @@ export default function Home() {
       <main className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-4 lg:gap-6">
           {/* Left Sidebar: Folder Structure + Projects */}
-          <div className="md:col-span-2 lg:col-span-3 space-y-4">
+          <div className="md:col-span-2 lg:col-span-2 space-y-4">
             {/* Project Selection */}
             <Card>
               <CardHeader className="pb-3">
@@ -1973,7 +2035,7 @@ export default function Home() {
           </div>
 
           {/* Right: Classification Results + Analysis History */}
-          <div className="md:col-span-2 lg:col-span-4 flex flex-col gap-4">
+          <div className="md:col-span-6 lg:col-span-5 flex flex-col gap-4">
             {/* Classification Results */}
             <Card className="flex min-h-0 flex-col">
               <CardHeader className="pb-3 shrink-0">
@@ -1988,7 +2050,7 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0 flex-1 min-h-0">
-                <ScrollArea className="h-[200px] md:h-[260px] lg:h-[300px]">
+                <ScrollArea className="h-[320px] md:h-[50vh] md:min-h-[360px] md:max-h-[560px]">
                   {results.length > 0 ? (
                     <div className="space-y-3 pr-3">
                       {results.map((result) => (
