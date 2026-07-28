@@ -36,18 +36,21 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PATCH /api/projects - 重命名项目
+// PATCH /api/projects - 修改项目名称和描述
 export async function PATCH(request: NextRequest) {
   try {
-    const { id, name } = await request.json();
+    const { id, name, description } = await request.json();
     if (typeof id !== "string" || !id.trim()) {
       return NextResponse.json({ error: "缺少项目 ID" }, { status: 400 });
     }
     if (typeof name !== "string" || !name.trim()) {
       return NextResponse.json({ error: "项目名称不能为空" }, { status: 400 });
     }
+    if (description !== undefined && typeof description !== "string") {
+      return NextResponse.json({ error: "项目描述格式不正确" }, { status: 400 });
+    }
 
-    const project = await renameProject(id.trim(), name);
+    const project = await renameProject(id.trim(), name, description);
     return NextResponse.json({ project });
   } catch (error) {
     const message =
@@ -57,7 +60,8 @@ export async function PATCH(request: NextRequest) {
         ? 404
         : message.includes("不能为空") ||
             message.includes("不能超过") ||
-            message.includes("同名")
+            message.includes("同名") ||
+            message.includes("格式不正确")
           ? 400
           : 500;
     return NextResponse.json({ error: message }, { status });

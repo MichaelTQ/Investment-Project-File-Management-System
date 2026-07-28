@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
@@ -1494,6 +1495,7 @@ export default function Home() {
   const [deleteProjectError, setDeleteProjectError] = useState<string | null>(null);
   const [renameProjectTargetId, setRenameProjectTargetId] = useState<string | null>(null);
   const [renameProjectName, setRenameProjectName] = useState('');
+  const [renameProjectDescription, setRenameProjectDescription] = useState('');
   const [renamingProject, setRenamingProject] = useState(false);
   const [renameProjectError, setRenameProjectError] = useState<string | null>(null);
 
@@ -1560,6 +1562,7 @@ export default function Home() {
   const handleRenameProject = (project: Project) => {
     setRenameProjectError(null);
     setRenameProjectName(project.name);
+    setRenameProjectDescription(project.description || '');
     setRenameProjectTargetId(project.id);
   };
 
@@ -1581,6 +1584,7 @@ export default function Home() {
         body: JSON.stringify({
           id: renameProjectTarget.id,
           name,
+          description: renameProjectDescription.trim(),
         }),
       });
       const data = await response.json().catch(() => null);
@@ -1608,6 +1612,7 @@ export default function Home() {
       setArchiveRefreshKey(prev => prev + 1);
       setRenameProjectTargetId(null);
       setRenameProjectName('');
+      setRenameProjectDescription('');
     } catch (error) {
       setRenameProjectError(
         error instanceof Error ? error.message : '项目重命名失败，请重试'
@@ -2040,8 +2045,8 @@ export default function Home() {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              title="重命名项目"
-                              aria-label={`重命名项目 ${project.name}`}
+                              title="编辑项目信息"
+                              aria-label={`编辑项目 ${project.name}`}
                               className="h-7 w-7 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -2236,33 +2241,54 @@ export default function Home() {
           if (!open && !renamingProject) {
             setRenameProjectTargetId(null);
             setRenameProjectName('');
+            setRenameProjectDescription('');
             setRenameProjectError(null);
           }
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>重命名项目</DialogTitle>
+            <DialogTitle>编辑项目信息</DialogTitle>
             <DialogDescription>
-              修改项目「{renameProjectTarget?.name}」的名称。已归档文件中的项目名称也会同步更新。
+              修改项目「{renameProjectTarget?.name}」的名称和描述。名称变化会同步到已归档文件。
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-2">
-            <Label htmlFor="rename-project-name">项目名称</Label>
-            <Input
-              id="rename-project-name"
-              value={renameProjectName}
-              maxLength={255}
-              autoFocus
-              disabled={renamingProject}
-              onChange={(event) => setRenameProjectName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !renamingProject) {
-                  event.preventDefault();
-                  void confirmRenameProject();
-                }
-              }}
-            />
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="rename-project-name">项目名称</Label>
+              <Input
+                id="rename-project-name"
+                value={renameProjectName}
+                maxLength={255}
+                autoFocus
+                disabled={renamingProject}
+                onChange={(event) => setRenameProjectName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !renamingProject) {
+                    event.preventDefault();
+                    void confirmRenameProject();
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="rename-project-description">项目描述（可选）</Label>
+                <span className="text-xs text-muted-foreground">
+                  {renameProjectDescription.length}/2000
+                </span>
+              </div>
+              <Textarea
+                id="rename-project-description"
+                value={renameProjectDescription}
+                maxLength={2000}
+                rows={4}
+                disabled={renamingProject}
+                placeholder="简要描述项目背景、投资阶段或被投企业信息"
+                className="min-h-24 resize-y"
+                onChange={(event) => setRenameProjectDescription(event.target.value)}
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
               S3 文件、文件夹结构和已归档文件名不会改变。
             </p>
@@ -2278,6 +2304,7 @@ export default function Home() {
               onClick={() => {
                 setRenameProjectTargetId(null);
                 setRenameProjectName('');
+                setRenameProjectDescription('');
                 setRenameProjectError(null);
               }}
             >
