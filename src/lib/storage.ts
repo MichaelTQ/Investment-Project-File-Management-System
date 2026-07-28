@@ -5,6 +5,7 @@
 import { S3Storage } from "coze-coding-dev-sdk";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Readable } from "stream";
 
 // ============ 类型定义 ============
 
@@ -59,6 +60,40 @@ function getS3Storage(): S3Storage {
 
 function getDb(): SupabaseClient {
   return getSupabaseClient();
+}
+
+// ============ 临时上传文件 ============
+
+export async function uploadTemporaryFile(params: {
+  stream: Readable;
+  fileName: string;
+  mimeType: string;
+  projectId: string;
+}): Promise<string> {
+  const s3 = getS3Storage();
+  return s3.streamUploadFile({
+    stream: params.stream,
+    fileName: `uploads/${params.projectId}/${crypto.randomUUID()}-${params.fileName}`,
+    contentType: params.mimeType,
+  });
+}
+
+export async function readStoredFile(storageKey: string): Promise<Buffer> {
+  return getS3Storage().readFile({ fileKey: storageKey });
+}
+
+export async function getStoredFileUrl(
+  storageKey: string,
+  expireTime = 3600
+): Promise<string> {
+  return getS3Storage().generatePresignedUrl({
+    key: storageKey,
+    expireTime,
+  });
+}
+
+export async function deleteStoredFile(storageKey: string): Promise<void> {
+  await getS3Storage().deleteFile({ fileKey: storageKey });
 }
 
 // ============ 项目管理 ============
@@ -316,6 +351,72 @@ export async function archiveFile(params: {
     reasoning: data.reasoning ?? "",
     storageKey: data.storage_key,
   };
+}
+
+// 已经上传到 S3 的文件只写入归档索引，不再重复上传文件实体。
+export async function archiveStoredFile(params: {
+  storageKey: string;
+  originalName: string;
+  fileSize: number;
+  mimeType: string;
+  projectId: string;
+  projectName: string;
+  categoryId: string;
+  categoryName: string;
+  folderPath: string[];
+  confidence: number;
+  reasoning: string;
+  archiveTitle?: string;
+}): Promise<ArchivedFile> {
+  const db = getDb();
+  const exists = await getS3Storage().fileExists({ fileKey: params.storageKey });
+  if (!exists) throw new Error("S3 中的待归档文件不存在，请重新上传");
+
+  const dotIndex = params.originalName.lastIndexOf(".");
+  const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
+  const extensionSuffix = ext ? `.${ext}` : "";
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const archiveTitle = sanitizeArchiveTitle(
+    params.archiveTitle,
+    params.categoryName,
+    ext
+  );
+  const baseName = `${archiveTitle}-${params.projectName}-${dateStr}${extensionSuffix}`;
+  const archivedName = await dedupeArchivedName(
+    baseName,
+    params.projectId,
+    params.folderPath
+  );
+  const now = new Date().toISOString();
+
+  const { data, error } = await db
+    .from("archived_files")
+    .insert({
+      original_name: params.originalName,
+      archived_name: archivedName,
+      project_id: params.projectId,
+      project_name: params.projectName,
+      category_id: params.categoryId,
+      category_name: params.categoryName,
+      folder_path: params.folderPath,
+      file_size: params.fileSize,
+      mime_type: params.mimeType,
+      archived_at: now,
+      confidence: params.confidence,
+      reasoning: params.reasoning,
+      storage_key: params.storageKey,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`归档文件失败: ${error.message}`);
+
+  await db
+    .from("projects")
+    .update({ updated_at: now })
+    .eq("id", params.projectId);
+
+  return mapArchivedFile(data);
 }
 
 // ============ 文件移动 ============
