@@ -144,16 +144,31 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// DELETE /api/archive - 删除归档文件
+// DELETE /api/archive - 删除单个或多个归档文件
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
+    let ids = id ? [id] : [];
+
     if (!id) {
+      const body = await request.json().catch(() => null);
+      if (Array.isArray(body?.ids)) {
+        ids = body.ids.filter(
+          (item: unknown): item is string => typeof item === "string" && item.length > 0
+        );
+      }
+    }
+
+    if (ids.length === 0) {
       return NextResponse.json({ error: "缺少文件 ID" }, { status: 400 });
     }
-    await deleteArchivedFile(id);
-    return NextResponse.json({ success: true });
+
+    for (const fileId of [...new Set(ids)]) {
+      await deleteArchivedFile(fileId);
+    }
+
+    return NextResponse.json({ success: true, deletedCount: ids.length });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "删除文件失败" },
@@ -162,10 +177,53 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// PATCH /api/archive - 移动归档文件到新分类
+// PATCH /api/archive - 移动单个或多个归档文件到新分类
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
+    if (Array.isArray(body.moves)) {
+      const moves = body.moves.filter(
+        (move: unknown): move is {
+          id: string;
+          categoryId: string;
+          categoryName: string;
+          folderPath: string[];
+        } => {
+          if (!move || typeof move !== "object") return false;
+          const item = move as Record<string, unknown>;
+          return (
+            typeof item.id === "string" &&
+            typeof item.categoryId === "string" &&
+            typeof item.categoryName === "string" &&
+            Array.isArray(item.folderPath) &&
+            item.folderPath.every(segment => typeof segment === "string")
+          );
+        }
+      );
+
+      if (moves.length === 0 || moves.length !== body.moves.length) {
+        return NextResponse.json({ error: "批量移动参数格式错误" }, { status: 400 });
+      }
+
+      const movedFiles = [];
+      for (const move of moves) {
+        const moved = await moveArchivedFile(move.id, move);
+        if (!moved) {
+          return NextResponse.json(
+            { error: `文件不存在: ${move.id}` },
+            { status: 404 }
+          );
+        }
+        movedFiles.push(moved);
+      }
+
+      return NextResponse.json({
+        success: true,
+        movedCount: movedFiles.length,
+        files: movedFiles,
+      });
+    }
+
     const { id, categoryId, categoryName, folderPath } = body;
 
     if (!id || !categoryId || !categoryName || !folderPath || !Array.isArray(folderPath)) {

@@ -440,6 +440,7 @@ function CreateProjectDialog({ onCreated }: { onCreated: (project: Project) => v
 interface ArchiveTreeNode {
   name: string;
   path: string;
+  folderPath?: string[];
   type: 'folder' | 'file';
   children?: ArchiveTreeNode[];
   file?: {
@@ -457,20 +458,38 @@ interface ArchiveTreeNode {
 // ============ 移动文件对话框 ============
 
 // 移动对话框中的文件夹树选择节点
-function MoveFolderNode({ node, level, selectedId, onSelect, path }: {
-  node: FolderNode; level: number; selectedId: string; onSelect: (id: string, name: string, path: string[]) => void; path: string[];
+function MoveFolderNode({ node, level, selectedId, onSelect, path, blockedPath }: {
+  node: FolderNode;
+  level: number;
+  selectedId: string;
+  onSelect: (id: string, name: string, path: string[]) => void;
+  path: string[];
+  blockedPath?: string[];
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = selectedId === node.id;
   const currentPath = [...path, node.name];
+  const isBlocked = Boolean(
+    blockedPath &&
+    currentPath.length >= blockedPath.length &&
+    blockedPath.every((segment, index) => currentPath[index] === segment)
+  );
 
   return (
     <div className="select-none">
       <div
-        className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
+        className={`flex items-center gap-1 py-1.5 px-2 rounded transition-colors ${
+          isBlocked
+            ? 'cursor-not-allowed opacity-40'
+            : `cursor-pointer ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`
+        }`}
         style={{ paddingLeft: `${level * 12 + 6}px` }}
-        onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelect(node.id, node.name, currentPath); }}
+        onClick={() => {
+          if (isBlocked) return;
+          if (hasChildren) setIsOpen(!isOpen);
+          onSelect(node.id, node.name, currentPath);
+        }}
       >
         {hasChildren ? (
           isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -488,7 +507,15 @@ function MoveFolderNode({ node, level, selectedId, onSelect, path }: {
       {isOpen && hasChildren && (
         <div>
           {node.children!.map(child => (
-            <MoveFolderNode key={child.id} node={child} level={level + 1} selectedId={selectedId} onSelect={onSelect} path={currentPath} />
+            <MoveFolderNode
+              key={child.id}
+              node={child}
+              level={level + 1}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              path={currentPath}
+              blockedPath={blockedPath}
+            />
           ))}
         </div>
       )}
@@ -496,14 +523,22 @@ function MoveFolderNode({ node, level, selectedId, onSelect, path }: {
   );
 }
 
-function MoveFileDialog({
-  file,
+function MoveArchiveDialog({
+  targetName,
+  currentPath,
+  fileCount,
+  isFolder,
+  blockedPath,
   onMove,
   onCancel,
   moving,
   existingFiles,
 }: {
-  file: ArchivedFile;
+  targetName: string;
+  currentPath: string[];
+  fileCount: number;
+  isFolder: boolean;
+  blockedPath?: string[];
   onMove: (categoryId: string, categoryName: string, folderPath: string[]) => void;
   onCancel: () => void;
   moving: boolean;
@@ -548,10 +583,13 @@ function MoveFileDialog({
   };
 
   // 目标路径预览
-  const targetPreview = selectedId
+  const selectedDestination = selectedId
     ? (newSubfolder.trim()
-      ? `${selectedPath.join(' / ')} / ${newSubfolder.trim()}`
-      : selectedPath.join(' / '))
+      ? [...selectedPath, newSubfolder.trim()]
+      : selectedPath)
+    : [];
+  const targetPreview = selectedId
+    ? [...selectedDestination, ...(isFolder ? [targetName] : [])].join(' / ')
     : '';
 
   return (
@@ -560,16 +598,17 @@ function MoveFileDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5" />
-            移动归档文件
+            移动归档{isFolder ? '文件夹' : '文件'}
           </DialogTitle>
           <DialogDescription>
-            将「<span className="font-medium text-foreground">{file.archivedName}</span>」移动到新的分类文件夹
+            将「<span className="font-medium text-foreground">{targetName}</span>」
+            {isFolder ? `及其中 ${fileCount} 个文件` : ''}移动到新的分类文件夹
           </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="flex-1 min-h-0">
           <div className="text-xs text-muted-foreground mb-2">
-            当前位置：{file.folderPath.join(' / ')}
+            当前位置：{currentPath.join(' / ')}
           </div>
 
           <ScrollArea className="h-[260px] border rounded-lg p-2">
@@ -579,6 +618,7 @@ function MoveFileDialog({
               selectedId={selectedId}
               onSelect={handleSelect}
               path={[]}
+              blockedPath={blockedPath}
             />
           </ScrollArea>
 
@@ -632,25 +672,32 @@ function MoveFileDialog({
 type CtxMenuItem = { label: string; icon: React.ReactNode; action: () => void; destructive?: boolean };
 type CtxMenuState = { x: number; y: number; items: CtxMenuItem[] } | null;
 
-function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu }: {
+function collectNodeFileIds(node: ArchiveTreeNode): string[] {
+  if (node.type === 'file') {
+    return node.file ? [node.file.id] : [];
+  }
+  return node.children?.flatMap(collectNodeFileIds) || [];
+}
+
+function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, setCtxMenu }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
-  onDelete: (fileId: string) => void;
-  onMove: (fileId: string) => void;
+  onDeleteNode: (node: ArchiveTreeNode) => void;
+  onMoveNode: (node: ArchiveTreeNode) => void;
   setCtxMenu: (v: CtxMenuState) => void;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
-  const fileCount = node.children?.filter(c => c.type === 'file').length || 0;
+  const fileCount = collectNodeFileIds(node).length;
 
   if (node.type === 'file' && node.file) {
     const meta = `${(node.file.fileSize / 1024).toFixed(1)} KB · ${new Date(node.file.archivedAt).toLocaleDateString('zh-CN')} · 置信度 ${node.file.confidence}%`;
     const fileId = node.file.id;
     const contextItems = [
-      { label: '移动', icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />, action: () => onMove(fileId) },
+      { label: '移动', icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />, action: () => onMoveNode(node) },
       { label: '下载', icon: <Download className="h-3.5 w-3.5 mr-2" />, action: () => onDownload(fileId) },
-      { label: '删除', icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />, action: () => onDelete(fileId), destructive: true },
+      { label: '删除', icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />, action: () => onDeleteNode(node), destructive: true },
     ];
     return (
       <div
@@ -670,13 +717,13 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-28">
-            <DropdownMenuItem onClick={() => onMove(fileId)}>
+            <DropdownMenuItem onClick={() => onMoveNode(node)}>
               <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />移动
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onDownload(fileId)}>
               <Download className="h-3.5 w-3.5 mr-2" />下载
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive" onClick={() => onDelete(fileId)}>
+            <DropdownMenuItem className="text-destructive" onClick={() => onDeleteNode(node)}>
               <Trash2 className="h-3.5 w-3.5 mr-2" />删除
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -685,12 +732,32 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu
     );
   }
 
+  const folderContextItems: CtxMenuItem[] = [
+    ...(level > 0
+      ? [{
+          label: '移动文件夹',
+          icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />,
+          action: () => onMoveNode(node),
+        }]
+      : []),
+    {
+      label: `删除文件夹（${fileCount} 个文件）`,
+      icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />,
+      action: () => onDeleteNode(node),
+      destructive: true,
+    },
+  ];
+
   return (
     <div className="select-none">
       <div
         className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
         style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => setIsOpen(!isOpen)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setCtxMenu({ x: e.clientX, y: e.clientY, items: folderContextItems });
+        }}
       >
         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         {isOpen ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
@@ -700,7 +767,15 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu
       {isOpen && hasChildren && (
         <div>
           {node.children!.map((child, idx) => (
-            <ArchiveTreeItem key={`${child.path}-${idx}`} node={child} level={level + 1} onDownload={onDownload} onDelete={onDelete} onMove={onMove} setCtxMenu={setCtxMenu} />
+            <ArchiveTreeItem
+              key={`${child.path}-${idx}`}
+              node={child}
+              level={level + 1}
+              onDownload={onDownload}
+              onDeleteNode={onDeleteNode}
+              onMoveNode={onMoveNode}
+              setCtxMenu={setCtxMenu}
+            />
           ))}
         </div>
       )}
@@ -709,20 +784,24 @@ function ArchiveTreeItem({ node, level, onDownload, onDelete, onMove, setCtxMenu
 }
 
 // ============ 归档文件列表 ============
+interface ArchiveOperationTarget {
+  name: string;
+  path: string[];
+  isFolder: boolean;
+  files: ArchivedFile[];
+}
+
 function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
   const [tree, setTree] = useState<ArchiveTreeNode[]>([]);
   const [files, setFiles] = useState<ArchivedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
-  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<ArchiveOperationTarget | null>(null);
   const [moving, setMoving] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ArchiveOperationTarget | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  const moveTarget = moveTargetId ? files.find(f => f.id === moveTargetId) : null;
-  const deleteTarget = deleteTargetId ? files.find(f => f.id === deleteTargetId) : null;
 
   useEffect(() => {
     if (!projectId) return;
@@ -740,9 +819,31 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     window.open(`/api/archive?download=${fileId}&id=${fileId}`, '_blank');
   };
 
-  const handleDelete = (fileId: string) => {
+  const getOperationTarget = (node: ArchiveTreeNode): ArchiveOperationTarget | null => {
+    const fileIds = new Set(collectNodeFileIds(node));
+    const targetFiles = files.filter(file => fileIds.has(file.id));
+    if (targetFiles.length === 0) return null;
+
+    return {
+      name: node.type === 'file' ? targetFiles[0].archivedName : node.name,
+      path: node.type === 'file'
+        ? targetFiles[0].folderPath
+        : (node.folderPath || []),
+      isFolder: node.type === 'folder',
+      files: targetFiles,
+    };
+  };
+
+  const handleDelete = (node: ArchiveTreeNode) => {
+    const target = getOperationTarget(node);
+    if (!target) return;
     setDeleteError(null);
-    setDeleteTargetId(fileId);
+    setDeleteTarget(target);
+  };
+
+  const handleMoveRequest = (node: ArchiveTreeNode) => {
+    const target = getOperationTarget(node);
+    if (target) setMoveTarget(target);
   };
 
   const confirmDelete = async () => {
@@ -751,15 +852,24 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     setDeleting(true);
     setDeleteError(null);
     try {
-      const response = await fetch(`/api/archive?id=${deleteTarget.id}`, { method: 'DELETE' });
+      const ids = deleteTarget.files.map(file => file.id);
+      const response = await fetch('/api/archive', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(data?.error || '删除失败，请重试');
       }
 
-      setFiles(prev => prev.filter(f => f.id !== deleteTarget.id));
-      setTree(prev => removeFileFromTree(prev, deleteTarget.id));
-      setDeleteTargetId(null);
+      const deletedIds = new Set(ids);
+      setFiles(prev => prev.filter(file => !deletedIds.has(file.id)));
+      setTree(prev => ids.reduce(
+        (currentTree, fileId) => removeFileFromTree(currentTree, fileId),
+        prev
+      ));
+      setDeleteTarget(null);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : '删除失败，请重试');
     } finally {
@@ -771,23 +881,38 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     if (!moveTarget) return;
     setMoving(true);
     try {
+      const moves = moveTarget.files.map(file => {
+        if (!moveTarget.isFolder) {
+          return {
+            id: file.id,
+            categoryId: targetCategoryId,
+            categoryName: targetCategoryName,
+            folderPath: targetFolderPath,
+          };
+        }
+
+        const relativePath = file.folderPath.slice(moveTarget.path.length);
+        const folderPath = [...targetFolderPath, moveTarget.name, ...relativePath];
+        return {
+          id: file.id,
+          categoryId: `${targetCategoryId}-${folderPath.slice(targetFolderPath.length).join('-')}`,
+          categoryName: folderPath.at(-1) || moveTarget.name,
+          folderPath,
+        };
+      });
       const res = await fetch('/api/archive', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: moveTarget.id,
-          categoryId: targetCategoryId,
-          categoryName: targetCategoryName,
-          folderPath: targetFolderPath,
-        }),
+        body: JSON.stringify({ moves }),
       });
-      if (!res.ok) throw new Error('移动失败');
+      const moveData = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(moveData?.error || '移动失败');
       // 刷新列表
       const refreshRes = await fetch(`/api/archive?projectId=${projectId}&tree=true`);
       const data = await refreshRes.json();
       setTree(data.tree || []);
       setFiles(data.files || []);
-      setMoveTargetId(null);
+      setMoveTarget(null);
     } catch {
       alert('移动文件失败，请重试');
     } finally {
@@ -846,8 +971,8 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
             node={node}
             level={0}
             onDownload={handleDownload}
-            onDelete={handleDelete}
-            onMove={setMoveTargetId}
+            onDeleteNode={handleDelete}
+            onMoveNode={handleMoveRequest}
             setCtxMenu={setCtxMenu}
           />
         ))}
@@ -878,12 +1003,16 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
         </div>
       )}
 
-      {/* Move File Dialog */}
+      {/* Move File or Folder Dialog */}
       {moveTarget && (
-        <MoveFileDialog
-          file={moveTarget}
+        <MoveArchiveDialog
+          targetName={moveTarget.name}
+          currentPath={moveTarget.path}
+          fileCount={moveTarget.files.length}
+          isFolder={moveTarget.isFolder}
+          blockedPath={moveTarget.isFolder ? moveTarget.path : undefined}
           onMove={handleMove}
-          onCancel={() => setMoveTargetId(null)}
+          onCancel={() => setMoveTarget(null)}
           moving={moving}
           existingFiles={files}
         />
@@ -893,16 +1022,27 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
           if (!open && !deleting) {
-            setDeleteTargetId(null);
+            setDeleteTarget(null);
             setDeleteError(null);
           }
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除归档文件？</AlertDialogTitle>
+            <AlertDialogTitle>
+              确认删除归档{deleteTarget?.isFolder ? '文件夹' : '文件'}？
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              将永久删除「{deleteTarget?.archivedName}」的存储文件和归档记录，此操作不可恢复。
+              {deleteTarget?.isFolder ? (
+                <>
+                  你选择了文件夹「{deleteTarget.name}」。删除该文件夹将同时永久删除其中的
+                  {' '}<strong>{deleteTarget.files.length} 个文件</strong>及其归档记录，此操作不可恢复。
+                </>
+              ) : (
+                <>
+                  将永久删除「{deleteTarget?.name}」的存储文件和归档记录，此操作不可恢复。
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteError && (
