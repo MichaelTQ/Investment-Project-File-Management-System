@@ -853,8 +853,8 @@ function ArchivedFilesList({ projectId, refreshKey }: { projectId: string; refre
     setDeleteError(null);
     try {
       const ids = deleteTarget.files.map(file => file.id);
-      const response = await fetch('/api/archive', {
-        method: 'DELETE',
+      const response = await fetch('/api/archive/batch-delete', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       });
