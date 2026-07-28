@@ -251,7 +251,8 @@ export async function getProject(id: string): Promise<Project | null> {
 
 export async function renameProject(
   id: string,
-  newName: string
+  newName: string,
+  newDescription?: string
 ): Promise<Project> {
   const db = getDb();
   const name = newName.trim();
@@ -267,6 +268,14 @@ export async function renameProject(
     .single();
 
   if (currentError || !current) throw new Error("项目不存在");
+
+  const description =
+    typeof newDescription === "string"
+      ? newDescription.trim()
+      : current.description ?? "";
+  if (description.length > 2000) {
+    throw new Error("项目描述不能超过 2000 个字符");
+  }
 
   const { data: otherProjects, error: duplicateError } = await db
     .from("projects")
@@ -287,7 +296,10 @@ export async function renameProject(
     throw new Error("已存在同名项目，请使用其他名称");
   }
 
-  if (current.name === name) {
+  const nameChanged = current.name !== name;
+  const descriptionChanged = (current.description ?? "") !== description;
+
+  if (!nameChanged && !descriptionChanged) {
     const { count } = await db
       .from("archived_files")
       .select("id", { count: "exact", head: true })
@@ -306,7 +318,7 @@ export async function renameProject(
   const now = new Date().toISOString();
   const { data: updated, error: projectError } = await db
     .from("projects")
-    .update({ name, updated_at: now })
+    .update({ name, description, updated_at: now })
     .eq("id", id)
     .select()
     .single();
@@ -315,10 +327,12 @@ export async function renameProject(
     throw new Error(`项目重命名失败: ${projectError?.message ?? "未知错误"}`);
   }
 
-  const { error: filesError } = await db
-    .from("archived_files")
-    .update({ project_name: name })
-    .eq("project_id", id);
+  const { error: filesError } = nameChanged
+    ? await db
+        .from("archived_files")
+        .update({ project_name: name })
+        .eq("project_id", id)
+    : { error: null };
 
   if (filesError) {
     // 两张表无法在客户端事务中同时更新；同步失败时尽量恢复原项目名称。
@@ -326,6 +340,7 @@ export async function renameProject(
       .from("projects")
       .update({
         name: current.name,
+        description: current.description ?? "",
         updated_at: current.updated_at,
       })
       .eq("id", id);
