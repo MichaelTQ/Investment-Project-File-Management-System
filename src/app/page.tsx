@@ -8,6 +8,13 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -28,7 +35,14 @@ import {
   Plus, Trash2, Download, Archive, Building2, Clock, X,
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
-import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory, type Project, type ArchivedFile } from '@/lib/folder-structure';
+import {
+  FLAT_FILE_CATEGORIES,
+  FOLDER_STRUCTURE,
+  type FolderNode,
+  type FlatFileCategory,
+  type Project,
+  type ArchivedFile,
+} from '@/lib/folder-structure';
 
 // 类型定义
 interface KeywordMatchDetail {
@@ -47,12 +61,15 @@ interface ClassifyProcess {
     details: KeywordMatchDetail[];
     bestMatch?: KeywordMatchDetail;
     threshold: number;
+    scoreGap?: number;
+    ambiguous?: boolean;
     passed: boolean;
   };
   step2_llmAnalysis?: {
     triggered: boolean;
     reason: string;
     result?: {
+      categoryIndex: number | null;
       categoryName: string;
       confidence: number;
       reasoning: string;
@@ -263,13 +280,25 @@ function ClassifyResultItem({
   onCancelArchive,
 }: {
   result: ClassifyResult;
-  onConfirmArchive: (clientId: string, archiveTitle: string) => void;
+  onConfirmArchive: (
+    clientId: string,
+    archiveTitle: string,
+    category: FlatFileCategory
+  ) => void;
   onCancelArchive: (clientId: string) => void;
 }) {
+  const getCategorySelectionValue = (category: FlatFileCategory) =>
+    `${category.folderId}:${category.fileName}`;
   const [archiveTitle, setArchiveTitle] = useState(
     result.suggestedArchiveTitle || result.category?.fileName || ''
   );
+  const [selectedCategoryId, setSelectedCategoryId] = useState(
+    result.category ? getCategorySelectionValue(result.category) : ''
+  );
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const selectedCategory = FLAT_FILE_CATEGORIES.find(
+    category => getCategorySelectionValue(category) === selectedCategoryId
+  );
   const isArchiving = result.archiveStatus === 'archiving';
   const needsConfirmation =
     result.requiresArchiveConfirmation &&
@@ -327,10 +356,37 @@ function ClassifyResultItem({
             {needsConfirmation && (
               <div className="min-w-0 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
                 <div>
-                  <p className="text-sm font-medium text-amber-900">请确认归档名称</p>
+                  <p className="text-sm font-medium text-amber-900">请确认分类和归档名称</p>
                   <p className="mt-1 text-xs leading-5 text-amber-700">
-                    该文件由 AI 完成分类，确认或修改标题后才会归档。
+                    该结果经过 AI 分析或歧义降级，确认分类位置和标题后才会归档。
                   </p>
+                </div>
+                <div className="min-w-0 space-y-1.5">
+                  <Label className="text-xs" htmlFor={`archive-category-${result.clientId}`}>
+                    归档分类
+                  </Label>
+                  <Select
+                    value={selectedCategoryId}
+                    disabled={isArchiving}
+                    onValueChange={setSelectedCategoryId}
+                  >
+                    <SelectTrigger
+                      id={`archive-category-${result.clientId}`}
+                      className="w-full bg-background"
+                    >
+                      <SelectValue placeholder="请选择归档分类" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FLAT_FILE_CATEGORIES.map(category => (
+                        <SelectItem
+                          key={`${category.folderId}-${category.fileName}`}
+                          value={getCategorySelectionValue(category)}
+                        >
+                          {category.folderPath.slice(1).join(' / ')} / {category.fileName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="min-w-0 space-y-1.5">
                   <Label className="text-xs" htmlFor={`archive-title-${result.clientId}`}>
@@ -367,8 +423,16 @@ function ClassifyResultItem({
                     type="button"
                     size="sm"
                     className="w-full"
-                    disabled={!archiveTitle.trim() || isArchiving}
-                    onClick={() => onConfirmArchive(result.clientId, archiveTitle.trim())}
+                    disabled={!archiveTitle.trim() || !selectedCategory || isArchiving}
+                    onClick={() => {
+                      if (selectedCategory) {
+                        onConfirmArchive(
+                          result.clientId,
+                          archiveTitle.trim(),
+                          selectedCategory
+                        );
+                      }
+                    }}
                   >
                     {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
                     确认归档
@@ -1654,7 +1718,11 @@ export default function Home() {
     }
   };
 
-  const handleConfirmArchive = async (clientId: string, archiveTitle: string) => {
+  const handleConfirmArchive = async (
+    clientId: string,
+    archiveTitle: string,
+    selectedCategory: FlatFileCategory
+  ) => {
     const pendingResult = results.find(result => result.clientId === clientId);
     if (
       (!pendingResult?.sourceFile && !pendingResult?.sourceStorageKey) ||
@@ -1686,9 +1754,9 @@ export default function Home() {
               fileSize: pendingResult.fileSize,
               mimeType: pendingResult.sourceMimeType,
               projectId: pendingResult.sourceProjectId,
-              categoryId: pendingResult.category.folderId,
-              categoryName: pendingResult.category.fileName,
-              folderPath: pendingResult.category.folderPath,
+              categoryId: selectedCategory.folderId,
+              categoryName: selectedCategory.fileName,
+              folderPath: selectedCategory.folderPath,
               archiveTitle,
               confidence: pendingResult.confidence,
               reasoning: pendingResult.reasoning,
@@ -1698,9 +1766,9 @@ export default function Home() {
             const formData = new FormData();
             formData.append('file', pendingResult.sourceFile!);
             formData.append('projectId', pendingResult.sourceProjectId!);
-            formData.append('categoryId', pendingResult.category!.folderId);
-            formData.append('categoryName', pendingResult.category!.fileName);
-            formData.append('folderPath', JSON.stringify(pendingResult.category!.folderPath));
+            formData.append('categoryId', selectedCategory.folderId);
+            formData.append('categoryName', selectedCategory.fileName);
+            formData.append('folderPath', JSON.stringify(selectedCategory.folderPath));
             formData.append('archiveTitle', archiveTitle);
             formData.append('confidence', String(pendingResult.confidence));
             formData.append('reasoning', pendingResult.reasoning);
@@ -1716,6 +1784,7 @@ export default function Home() {
         result.clientId === clientId
           ? {
               ...result,
+              category: selectedCategory,
               suggestedArchiveTitle: archiveTitle,
               requiresArchiveConfirmation: false,
               archiveStatus: 'archived',
