@@ -126,7 +126,7 @@ export async function POST(request: NextRequest) {
           mimeType,
           confidence,
           reasoning,
-          archiveTitle: archiveTitle || category.fileName,
+          archiveTitle,
         })
       : await archiveFile({
           fileBuffer: Buffer.from(await file!.arrayBuffer()),
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
           mimeType,
           confidence,
           reasoning,
-          archiveTitle: archiveTitle || category.fileName,
+          archiveTitle,
         });
 
     return NextResponse.json({
