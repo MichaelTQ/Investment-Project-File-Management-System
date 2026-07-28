@@ -37,6 +37,7 @@ export interface ArchivedFile {
 export interface FolderTreeNode {
   name: string;
   path: string;
+  folderPath?: string[];
   type: "folder" | "file";
   children?: FolderTreeNode[];
   file?: ArchivedFile;
@@ -433,7 +434,8 @@ export async function deleteArchivedFile(id: string): Promise<void> {
   }
 
   // 从数据库删除
-  await db.from("archived_files").delete().eq("id", id);
+  const { error } = await db.from("archived_files").delete().eq("id", id);
+  if (error) throw new Error(`删除归档文件失败: ${error.message}`);
 }
 
 // ============ 文件下载 ============
@@ -541,6 +543,7 @@ export function buildArchiveTree(files: ArchivedFile[]): FolderTreeNode[] {
         node = {
           name: segment,
           path: fullPath,
+          folderPath: path.slice(0, i + 1),
           type: "folder",
           children: [],
         };
