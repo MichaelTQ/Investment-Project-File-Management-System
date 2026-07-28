@@ -1410,9 +1410,22 @@ export default function Home() {
           body: formData
         });
 
-        if (!response.ok) throw new Error('分类请求失败');
+        const result = await response.json().catch(() => null);
+        if (!response.ok) {
+          const statusHint = response.status === 413
+            ? '文件超过当前服务允许的上传大小'
+            : response.status === 504
+              ? '文件处理超时'
+              : `请求失败（HTTP ${response.status}）`;
+          const serverMessage = [result?.error, result?.details]
+            .filter(Boolean)
+            .join('：');
+          throw new Error(serverMessage || statusHint);
+        }
+        if (!result) {
+          throw new Error('服务器没有返回有效的分类结果');
+        }
 
-        const result = await response.json();
         setResults(prev => [
           ...prev,
           {
@@ -1427,14 +1440,17 @@ export default function Home() {
                 : undefined,
           },
         ]);
-      } catch {
+      } catch (error) {
+        const errorMessage = error instanceof Error
+          ? error.message
+          : '未知错误';
         setResults(prev => [...prev, {
           clientId,
           fileName: file.name, fileSize: file.size, category: null, confidence: 0,
-          reasoning: '文件处理失败，请重试',
+          reasoning: `文件处理失败：${errorMessage}`,
           process: {
             step1_keywordMatch: { totalCategories: 0, matchedCategories: 0, details: [], threshold: 5, passed: false },
-            finalDecision: { method: 'none' as const, explanation: '文件处理失败' }
+            finalDecision: { method: 'none' as const, explanation: `文件处理失败：${errorMessage}` }
           }
         }]);
       }
