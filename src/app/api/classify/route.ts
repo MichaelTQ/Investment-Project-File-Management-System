@@ -9,6 +9,14 @@ import {
 } from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
 import {
+  assessKeywordMatches,
+  getCategoryByLlmIndex,
+  KEYWORD_SCORE_THRESHOLD,
+  LLM_CONFIDENCE_THRESHOLD,
+  matchByKeywords,
+  normalizeConfidence,
+} from '@/lib/classification';
+import {
   archiveFile,
   archiveStoredFile,
   getProject,
@@ -40,12 +48,15 @@ interface ClassifyProcess {
     details: KeywordMatchDetail[];
     bestMatch?: KeywordMatchDetail;
     threshold: number;
+    scoreGap?: number;
+    ambiguous?: boolean;
     passed: boolean;
   };
   step2_llmAnalysis?: {
     triggered: boolean;
     reason: string;
     result?: {
+      categoryIndex: number | null;
       categoryName: string;
       confidence: number;
       reasoning: string;
@@ -154,54 +165,6 @@ async function extractScannedPdfText(
   return `[扫描PDF视觉分析：共分析${selectedUrls.length}页]\n${extracted.join('\n\n')}`;
 }
 
-// 关键词匹配函数
-function matchByKeywords(fileName: string, contentText: string): {
-  category: FlatFileCategory;
-  score: number;
-  matchedKeywords: string[];
-  fileNameMatches: string[];
-  contentMatches: string[];
-}[] {
-  const results: {
-    category: FlatFileCategory;
-    score: number;
-    matchedKeywords: string[];
-    fileNameMatches: string[];
-    contentMatches: string[];
-  }[] = [];
-  const lowerFileName = fileName.toLowerCase();
-  const lowerContent = contentText.toLowerCase();
-
-  for (const category of FLAT_FILE_CATEGORIES) {
-    let score = 0;
-    const matchedKeywords: string[] = [];
-    const fileNameMatches: string[] = [];
-    const contentMatches: string[] = [];
-
-    for (const keyword of category.keywords) {
-      const lowerKeyword = keyword.toLowerCase();
-      if (lowerFileName.includes(lowerKeyword)) {
-        score += 3;
-        matchedKeywords.push(keyword);
-        fileNameMatches.push(keyword);
-      }
-      if (lowerContent.includes(lowerKeyword)) {
-        score += 1;
-        if (!matchedKeywords.includes(keyword)) {
-          matchedKeywords.push(keyword);
-        }
-        contentMatches.push(keyword);
-      }
-    }
-
-    if (score > 0) {
-      results.push({ category, score, matchedKeywords, fileNameMatches, contentMatches });
-    }
-  }
-
-  return results.sort((a, b) => b.score - a.score);
-}
-
 // 使用 LLM 进行智能分类
 async function classifyWithLLM(
   fileName: string,
@@ -210,6 +173,8 @@ async function classifyWithLLM(
   customHeaders: Record<string, string>,
   imageDataUrl?: string
 ): Promise<{
+  categoryIndex: number | null;
+  category: FlatFileCategory | null;
   categoryName: string;
   confidence: number;
   reasoning: string;
@@ -356,10 +321,18 @@ ${imageDataUrl
     const jsonMatch = response.content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
+      const { categoryIndex, category } = getCategoryByLlmIndex(
+        parsed.categoryIndex
+      );
       return {
-        categoryName: FLAT_FILE_CATEGORIES[parsed.categoryIndex - 1]?.fileName || '',
-        confidence: parsed.confidence || 50,
-        reasoning: parsed.reasoning || 'AI分析判断',
+        categoryIndex,
+        category,
+        categoryName: category?.fileName || '',
+        confidence: normalizeConfidence(parsed.confidence),
+        reasoning:
+          typeof parsed.reasoning === 'string' && parsed.reasoning.trim()
+            ? parsed.reasoning.trim()
+            : 'AI分析判断',
         suggestedArchiveTitle:
           typeof parsed.suggestedArchiveTitle === 'string'
             ? parsed.suggestedArchiveTitle.trim()
@@ -371,6 +344,8 @@ ${imageDataUrl
   }
 
   return {
+    categoryIndex: null,
+    category: null,
     categoryName: '',
     confidence: 0,
     reasoning: 'AI分类失败',
@@ -522,6 +497,7 @@ export async function POST(request: NextRequest) {
 
     // 第一步：关键词快速匹配
     const keywordMatches = matchByKeywords(fileName, contentText);
+    const keywordAssessment = assessKeywordMatches(keywordMatches);
 
     const keywordMatchDetails: KeywordMatchDetail[] = keywordMatches.slice(0, 5).map(m => ({
       categoryName: m.category.fileName,
@@ -538,8 +514,10 @@ export async function POST(request: NextRequest) {
         matchedCategories: keywordMatches.length,
         details: keywordMatchDetails,
         bestMatch: keywordMatchDetails[0],
-        threshold: 5,
-        passed: !imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5
+        threshold: KEYWORD_SCORE_THRESHOLD,
+        scoreGap: keywordAssessment.scoreGap ?? undefined,
+        ambiguous: keywordAssessment.ambiguous,
+        passed: !imageDataUrl && keywordAssessment.passed
       },
       finalDecision: {
         method: 'none',
@@ -550,11 +528,11 @@ export async function POST(request: NextRequest) {
     let result: ClassifyResult;
 
     // 如果关键词匹配置信度高，直接返回
-    if (!imageDataUrl && keywordMatches.length > 0 && keywordMatches[0].score >= 5) {
+    if (!imageDataUrl && keywordAssessment.passed) {
       const bestMatch = keywordMatches[0];
       process.finalDecision = {
         method: 'keyword',
-        explanation: `关键词匹配得分 ${bestMatch.score} 分，超过阈值 5 分，直接使用关键词匹配结果`
+        explanation: `关键词匹配得分 ${bestMatch.score} 分，且领先候选类别 ${keywordAssessment.scoreGap ?? bestMatch.score} 分，直接使用关键词匹配结果`
       };
 
       result = {
@@ -572,7 +550,9 @@ export async function POST(request: NextRequest) {
         triggered: true,
         reason: imageDataUrl
           ? '检测到图片文件，需要 AI 分析画面内容和可见文字'
-          : `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 5 分），需要 AI 智能分析`
+          : keywordAssessment.ambiguous
+            ? `关键词最高分与次高分差距不足 ${keywordAssessment.scoreGap ?? 0} 分，存在多个相近类别，需要 AI 消歧`
+          : `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 ${KEYWORD_SCORE_THRESHOLD} 分），需要 AI 智能分析`
       };
 
       const llmResult = await classifyWithLLM(
@@ -583,18 +563,23 @@ export async function POST(request: NextRequest) {
         imageDataUrl
       );
 
-      process.step2_llmAnalysis.result = llmResult;
+      process.step2_llmAnalysis.result = {
+        categoryIndex: llmResult.categoryIndex,
+        categoryName: llmResult.categoryName,
+        confidence: llmResult.confidence,
+        reasoning: llmResult.reasoning,
+        suggestedArchiveTitle: llmResult.suggestedArchiveTitle,
+      };
 
-      if (llmResult.categoryName && llmResult.confidence > 30) {
-        const matchedCategory = FLAT_FILE_CATEGORIES.find(
-          cat => cat.fileName === llmResult.categoryName ||
-            cat.keywords.some(kw => llmResult.categoryName.includes(kw))
-        );
-        const finalCategory = matchedCategory || keywordMatches[0]?.category || null;
+      if (
+        llmResult.category &&
+        llmResult.confidence >= LLM_CONFIDENCE_THRESHOLD
+      ) {
+        const finalCategory = llmResult.category;
 
         process.finalDecision = {
           method: 'llm',
-          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置；请确认或修改建议名称后归档`
+          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置；请确认分类位置和建议名称后归档`
         };
 
         result = {
@@ -612,14 +597,14 @@ export async function POST(request: NextRequest) {
       } else if (keywordMatches.length > 0) {
         process.finalDecision = {
           method: 'fallback',
-          explanation: `AI 分析置信度不足（${llmResult.confidence}%），降级使用关键词匹配的最佳结果`
+          explanation: `AI 分析置信度不足（${llmResult.confidence}% < ${LLM_CONFIDENCE_THRESHOLD}%），暂用关键词最佳结果；归档前必须人工确认分类位置`
         };
 
         result = {
           fileName,
           fileSize,
           category: keywordMatches[0].category,
-          confidence: keywordMatches[0].score * 10,
+          confidence: Math.min(keywordMatches[0].score * 10, 95),
           reasoning: `根据关键词匹配，归类到「${keywordMatches[0].category.fileName}」`,
           contentPreview,
           process,
