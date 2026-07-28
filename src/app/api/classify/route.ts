@@ -4,6 +4,7 @@ import {
   FetchClient,
   Config,
   HeaderUtils,
+  type ContentPart,
   type Message,
 } from 'coze-coding-dev-sdk';
 import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
@@ -64,6 +65,83 @@ interface ClassifyResult {
     projectName: string;
     folderPath: string[];
   };
+}
+
+const PDF_VISUAL_BATCH_SIZE = 4;
+const PDF_VISUAL_MAX_PAGES = 12;
+
+// 扫描 PDF 没有文字层时，将解析服务返回的页面图片分批交给多模态模型提取关键信息。
+async function extractScannedPdfText(
+  pageImageUrls: string[],
+  fileName: string,
+  customHeaders: Record<string, string>
+): Promise<string> {
+  const selectedUrls = pageImageUrls.slice(0, PDF_VISUAL_MAX_PAGES);
+  if (selectedUrls.length === 0) return '';
+
+  const batches: string[][] = [];
+  for (let index = 0; index < selectedUrls.length; index += PDF_VISUAL_BATCH_SIZE) {
+    batches.push(selectedUrls.slice(index, index + PDF_VISUAL_BATCH_SIZE));
+  }
+
+  const config = new Config();
+  const client = new LLMClient(config, customHeaders);
+  const batchResults = await Promise.all(
+    batches.map(async (batch, batchIndex) => {
+      const firstPage = batchIndex * PDF_VISUAL_BATCH_SIZE + 1;
+      const content: ContentPart[] = [
+        {
+          type: 'text',
+          text: `你正在读取扫描版PDF《${fileName}》的第${firstPage}至${firstPage + batch.length - 1}页。
+请只提取图片中能够明确辨认的关键信息，包括：
+1. 文件正式标题和文件类型
+2. 公司、基金、协议方等主体全称
+3. 日期、编号、版本、签署或盖章状态
+4. 能帮助判断档案分类的章节标题和核心事项
+
+不要猜测模糊文字，不要进行档案分类。请用简洁中文逐页概括。`,
+        },
+      ];
+
+      batch.forEach((url, pageIndex) => {
+        content.push(
+          {
+            type: 'text',
+            text: `第${firstPage + pageIndex}页：`,
+          },
+          {
+            type: 'image_url',
+            image_url: { url, detail: 'high' },
+          }
+        );
+      });
+
+      try {
+        const response = await client.invoke(
+          [
+            {
+              role: 'system',
+              content: '你是严谨的中文档案OCR助手，只记录图片中真实可见的信息。',
+            },
+            { role: 'user', content },
+          ],
+          {
+            model: 'doubao-seed-2-0-lite-260215',
+            temperature: 0.1,
+          }
+        );
+        return response.content.trim();
+      } catch (error) {
+        console.error(`Scanned PDF batch ${batchIndex + 1} error:`, error);
+        return '';
+      }
+    })
+  );
+
+  const extracted = batchResults.filter(Boolean);
+  if (extracted.length === 0) return '';
+
+  return `[扫描PDF视觉分析：共分析${selectedUrls.length}页]\n${extracted.join('\n\n')}`;
 }
 
 // 关键词匹配函数
@@ -341,6 +419,26 @@ export async function POST(request: NextRequest) {
           const fetchResponse = await fetchClient.fetch(dataUrl);
           const textItems = fetchResponse.content.filter(item => item.type === 'text');
           contentText = textItems.map(item => item.text || '').join('\n');
+
+          if (extension === 'pdf' && contentText.trim().length < 30) {
+            const pageImageUrls = fetchResponse.content
+              .filter(item => item.type === 'image')
+              .map(item =>
+                item.image?.image_url ||
+                item.image?.display_url ||
+                item.image?.thumbnail_display_url ||
+                item.url ||
+                ''
+              )
+              .filter((url): url is string => Boolean(url));
+
+            const scannedText = await extractScannedPdfText(
+              pageImageUrls,
+              fileName,
+              customHeaders
+            );
+            contentText = scannedText || fileName;
+          }
         } catch (fetchError) {
           console.error('FetchClient error:', fetchError);
           contentText = fileName;
