@@ -3,6 +3,11 @@
 ## 项目概览
 基于 Next.js 16 的智能投资项目档案管理系统，支持文件上传、自动分类和归档建议。遵循《国创致远-投资项目档案管理》文档规范。采用 Supabase（数据库）+ S3 对象存储实现跨设备同步。
 
+## 规划文档
+
+- `NEXT_STAGE_AGENT_IMPLEMENTATION_PLAN.md`：下一阶段上下文感知分类、项目状态建模、LangGraph 工作流、疑难 Agent、人工确认、评测与灰度上线的实施依据。后续涉及分类架构或 Agent 开发时，应先阅读该文档。
+- `CLASSIFICATION_CORE_LOGIC.md`：当前已经实现的文件分类逻辑。规划文档描述目标状态，本文件描述当前状态，不得混淆。
+
 ## 技术栈
 - **框架**: Next.js 16 (App Router)
 - **语言**: TypeScript 5
