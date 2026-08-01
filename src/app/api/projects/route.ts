@@ -78,7 +78,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "缺少项目 ID" }, { status: 400 });
     }
     await deleteProject(id);
-    clearSessionProjectMemory(id);
+    await clearSessionProjectMemory(id);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

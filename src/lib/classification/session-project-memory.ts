@@ -6,9 +6,16 @@ import type {
   ProjectContextSnapshot,
   RelatedDocumentFacts,
 } from './context-decision';
+import {
+  appendDurableContextVersion,
+  appendDurableDocumentVersion,
+  clearDurableProjectMemory,
+  loadDurableProjectMemory,
+} from './durable-project-memory';
 import type { DocumentFacts } from './document-facts';
 
-const MEMORY_MODE = 'process-local-shadow' as const;
+const DURABLE_MEMORY_MODE = 's3-durable-shadow' as const;
+const FALLBACK_MEMORY_MODE = 'process-local-fallback' as const;
 const PROJECT_TTL_MS = 12 * 60 * 60 * 1000;
 const MAX_PROJECTS = 50;
 const MAX_DOCUMENTS_PER_PROJECT = 200;
@@ -48,13 +55,15 @@ export interface ReEvaluatedDocument {
 }
 
 export interface ProjectSessionMemoryView {
-  mode: typeof MEMORY_MODE;
+  mode: typeof DURABLE_MEMORY_MODE | typeof FALLBACK_MEMORY_MODE;
+  persistent: boolean;
+  persistenceWarning?: string;
   projectId: string;
   revision: number;
   documentCount: number;
   relatedDocumentCount: number;
   reEvaluatedDocuments: ReEvaluatedDocument[];
-  expiresAt: string;
+  expiresAt?: string;
 }
 
 export interface RememberAndEvaluateResult extends ProjectSessionMemoryView {
@@ -98,7 +107,7 @@ function decisionSignature(decision: ClassificationAgentResult | null): string {
   });
 }
 
-function pruneExpiredProjects(store: SessionMemoryStore, now: number): void {
+function pruneFallbackProjects(store: SessionMemoryStore, now: number): void {
   for (const [projectId, project] of store.projects) {
     if (now - project.updatedAt > PROJECT_TTL_MS) {
       store.projects.delete(projectId);
@@ -113,7 +122,7 @@ function pruneExpiredProjects(store: SessionMemoryStore, now: number): void {
   }
 }
 
-function trimProjectDocuments(
+function trimFallbackDocuments(
   project: SessionProjectRecord,
   protectedPath: string
 ): void {
@@ -152,6 +161,23 @@ async function withProjectLock<T>(
   }
 }
 
+function mergeProjects(
+  durable: SessionProjectRecord,
+  local: SessionProjectRecord | undefined
+): SessionProjectRecord {
+  if (!local) return durable;
+  for (const [sourcePath, document] of local.documents) {
+    const persisted = durable.documents.get(sourcePath);
+    if (!persisted || document.updatedAt > persisted.updatedAt) {
+      durable.documents.set(sourcePath, document);
+    }
+  }
+  if (!durable.context && local.context) durable.context = local.context;
+  durable.revision = Math.max(durable.revision, local.revision);
+  durable.updatedAt = Math.max(durable.updatedAt, local.updatedAt);
+  return durable;
+}
+
 function combinedRelatedDocuments(
   project: SessionProjectRecord,
   supplied: RelatedDocumentFacts[]
@@ -170,28 +196,60 @@ function combinedRelatedDocuments(
   return [...byPath.values()];
 }
 
+function fallbackProject(
+  projectId: string,
+  existing: SessionProjectRecord | undefined,
+  now: number
+): SessionProjectRecord {
+  return (
+    existing ?? {
+      projectId,
+      revision: 0,
+      context: null,
+      documents: new Map(),
+      updatedAt: now,
+    }
+  );
+}
+
 export async function rememberAndEvaluateProjectDocument(
   params: RememberAndEvaluateParams
 ): Promise<RememberAndEvaluateResult> {
   const projectId = params.projectId.trim();
   const sourcePath = normalizeSourcePath(params.sourcePath);
-  if (!projectId) throw new Error('会话项目记忆需要有效的 projectId');
-  if (!sourcePath) throw new Error('会话项目记忆需要有效的 sourcePath');
+  if (!projectId) throw new Error('项目记忆需要有效的 projectId');
+  if (!sourcePath) throw new Error('项目记忆需要有效的 sourcePath');
 
   return withProjectLock(projectId, async () => {
     const store = memoryStore();
     const now = Date.now();
-    pruneExpiredProjects(store, now);
-    let project = store.projects.get(projectId);
-    if (!project) {
-      project = {
-        projectId,
-        revision: 0,
-        context: null,
-        documents: new Map(),
-        updatedAt: now,
-      };
-      store.projects.set(projectId, project);
+    pruneFallbackProjects(store, now);
+    let mode: ProjectSessionMemoryView['mode'] = DURABLE_MEMORY_MODE;
+    let persistenceWarning: string | undefined;
+    let project: SessionProjectRecord;
+
+    try {
+      const durable = await loadDurableProjectMemory(projectId);
+      const latestUpdate = Math.max(
+        now,
+        ...[...durable.documents.values()].map(document => document.updatedAt)
+      );
+      project = mergeProjects(
+        {
+          projectId,
+          revision: durable.revision,
+          context: durable.context,
+          documents: durable.documents,
+          updatedAt: latestUpdate,
+        },
+        store.projects.get(projectId)
+      );
+    } catch (error) {
+      mode = FALLBACK_MEMORY_MODE;
+      persistenceWarning =
+        error instanceof Error ? error.message : 'S3 项目记忆暂时不可用';
+      console.error('Durable project memory load failed:', error);
+      project = fallbackProject(projectId, store.projects.get(projectId), now);
     }
 
     if (params.projectContext) project.context = params.projectContext;
@@ -205,14 +263,15 @@ export async function rememberAndEvaluateProjectDocument(
     });
     project.revision += 1;
     project.updatedAt = now;
-    trimProjectDocuments(project, sourcePath);
+    if (mode === FALLBACK_MEMORY_MODE) trimFallbackDocuments(project, sourcePath);
+    store.projects.set(projectId, project);
 
     const availableDocuments = combinedRelatedDocuments(
       project,
       params.suppliedRelatedDocuments ?? []
     );
     const currentRecord = project.documents.get(sourcePath);
-    if (!currentRecord) throw new Error('当前文件未写入会话项目记忆');
+    if (!currentRecord) throw new Error('当前文件未写入项目记忆');
 
     const targets =
       params.facts.documentType === 'company_charter'
@@ -264,21 +323,55 @@ export async function rememberAndEvaluateProjectDocument(
       currentRecord.agentDecision = currentDecision;
     }
 
+    if (mode === DURABLE_MEMORY_MODE) {
+      try {
+        await Promise.all([
+          ...targets.map(record =>
+            appendDurableDocumentVersion({ projectId, record })
+          ),
+          ...(params.projectContext
+            ? [
+                appendDurableContextVersion({
+                  projectId,
+                  context: params.projectContext,
+                  updatedAt: now,
+                }),
+              ]
+            : []),
+        ]);
+      } catch (error) {
+        mode = FALLBACK_MEMORY_MODE;
+        persistenceWarning =
+          error instanceof Error ? error.message : 'S3 项目记忆写入失败';
+        console.error('Durable project memory write failed:', error);
+      }
+    }
+
     return {
-      mode: MEMORY_MODE,
+      mode,
+      persistent: mode === DURABLE_MEMORY_MODE,
+      persistenceWarning,
       projectId,
       revision: project.revision,
       documentCount: project.documents.size,
       relatedDocumentCount: Math.max(0, availableDocuments.length - 1),
       reEvaluatedDocuments,
-      expiresAt: new Date(project.updatedAt + PROJECT_TTL_MS).toISOString(),
+      expiresAt:
+        mode === FALLBACK_MEMORY_MODE
+          ? new Date(project.updatedAt + PROJECT_TTL_MS).toISOString()
+          : undefined,
       currentDecision,
     };
   });
 }
 
-export function clearSessionProjectMemory(projectId: string): boolean {
-  return memoryStore().projects.delete(projectId.trim());
+export async function clearSessionProjectMemory(
+  projectId: string
+): Promise<boolean> {
+  const normalizedProjectId = projectId.trim();
+  const localDeleted = memoryStore().projects.delete(normalizedProjectId);
+  await clearDurableProjectMemory(normalizedProjectId);
+  return localDeleted;
 }
 
 export function getSessionProjectMemorySnapshot(projectId: string): {
@@ -307,6 +400,7 @@ export function getSessionProjectMemorySnapshot(projectId: string): {
   };
 }
 
+/** 仅清空当前进程缓存，用于模拟服务重启；不会删除 S3 记忆。 */
 export function clearAllSessionProjectMemoryForTests(): void {
   const store = memoryStore();
   store.projects.clear();

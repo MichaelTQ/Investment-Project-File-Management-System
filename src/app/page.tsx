@@ -115,7 +115,9 @@ interface AgentDecisionResult {
 }
 
 interface ProjectSessionMemoryResult {
-  mode: 'process-local-shadow';
+  mode: 's3-durable-shadow' | 'process-local-fallback';
+  persistent: boolean;
+  persistenceWarning?: string;
   projectId: string;
   revision: number;
   documentCount: number;
@@ -128,7 +130,7 @@ interface ProjectSessionMemoryResult {
     selectedCategory: string | null;
     agentDecision: AgentDecisionResult;
   }>;
-  expiresAt: string;
+  expiresAt?: string;
 }
 
 interface ClassifyResult {
@@ -250,11 +252,24 @@ function AgentDecisionPanel({
 
       {projectMemory && (
         <div className="rounded-md border border-violet-200 bg-white p-3">
-          <p className="text-xs font-medium text-violet-900">会话项目记忆</p>
+          <p className="text-xs font-medium text-violet-900">
+            {projectMemory.persistent ? '持久化项目记忆' : '临时项目记忆'}
+          </p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            当前运行实例已记住本项目 {projectMemory.documentCount} 份文件，
+            {projectMemory.persistent
+              ? 'Coze S3 已保存并可在重启、重新部署及多实例间恢复本项目'
+              : 'S3 暂时不可用，当前运行实例临时保存本项目'}{' '}
+            {projectMemory.documentCount} 份文件，
             本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
           </p>
+          {!projectMemory.persistent && projectMemory.persistenceWarning && (
+            <p className="mt-1 break-words text-xs leading-5 text-amber-700">
+              持久化失败：{projectMemory.persistenceWarning}
+              {projectMemory.expiresAt
+                ? `；临时记忆预计于 ${new Date(projectMemory.expiresAt).toLocaleString()} 失效`
+                : ''}
+            </p>
+          )}
           {projectMemory.reEvaluatedDocuments.length > 0 && (
             <div className="mt-2 border-t pt-2">
               <p className="text-xs font-medium text-green-800">

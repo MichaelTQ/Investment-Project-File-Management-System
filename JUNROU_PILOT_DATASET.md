@@ -108,7 +108,7 @@ node scripts/build-junrou-inventory.mjs
 
 已完成真实文件 shadow 对照报告 `output/reports/JUNROU_SHADOW_EVALUATION.md`：六份样本均需 OCR，文档类型抽取 6/6 正确，上下文 v2 对六份金标准全部命中。
 
-已完成 LangGraph Agent 报告 `output/reports/JUNROU_AGENT_EVALUATION.md`：Agent 对六份文件给出建议且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按策略保留人工确认。Agent 调度层模型调用为 0，仍保持非持久化 shadow mode。
+已完成 LangGraph Agent 报告 `output/reports/JUNROU_AGENT_EVALUATION.md`：Agent 对六份文件给出建议且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按策略保留人工确认。Agent 调度层模型调用为 0，仍保持不接管正式分类与归档的 shadow mode；后续已为线上上传链路加入 Coze S3 持久化项目记忆。
 
 1. 扩充剩余 29 份文件的人工标签；
 2. 评估事实的日期、主体、交易变化和证据完整度；

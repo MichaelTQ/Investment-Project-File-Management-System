@@ -215,9 +215,9 @@ src/
 
 - 当前继续使用 Coze 代管环境，不修改其 Supabase 数据库结构；
 - 开发阶段不得开启 `PERSIST_PROJECT_MEMORY_SHADOW`；
-- Agent 项目记忆相关功能以非持久化 shadow mode 和本地 fixtures 验证；
+- Agent 项目记忆以 Coze S3 持久化 shadow mode 和本地 fixtures 验证；
 - Agent 当前只生成结构化建议和执行轨迹，不接管 legacy 分类、自动归档或数据库写入；
-- 进程内会话记忆最长空闲 12 小时，服务重启或多实例切换会丢失，不得当作正式持久化项目记忆；
+- Coze S3 保存项目事实并支持重启、重新部署和多实例恢复；S3 故障时才降级为最长空闲 12 小时的进程缓存；
 - 最终上线时再创建自有 Supabase，并执行完整数据库初始化与迁移。
 
 ## 依赖说明

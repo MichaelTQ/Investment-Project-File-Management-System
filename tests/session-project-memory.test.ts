@@ -3,6 +3,10 @@ import test from 'node:test';
 
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
+  setDurableProjectMemoryBackendForTests,
+  type DurableProjectMemoryBackend,
+} from '../src/lib/classification/durable-project-memory';
+import {
   clearAllSessionProjectMemoryForTests,
   clearSessionProjectMemory,
   getSessionProjectMemorySnapshot,
@@ -32,7 +36,36 @@ function charterFacts(capital: string): DocumentFacts {
 const preTransactionCharter = charterFacts('11.73624');
 const postTransactionCharter = charterFacts('13.04027');
 
+class MemoryBackend implements DurableProjectMemoryBackend {
+  readonly objects = new Map<string, Buffer>();
+
+  async write(storageKey: string, value: Buffer): Promise<string> {
+    this.objects.set(storageKey, Buffer.from(value));
+    return storageKey;
+  }
+
+  async read(storageKey: string): Promise<Buffer> {
+    const value = this.objects.get(storageKey);
+    if (!value) throw new Error(`missing object: ${storageKey}`);
+    return Buffer.from(value);
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    return [...this.objects.keys()].filter(key => key.startsWith(prefix));
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    for (const key of this.objects.keys()) {
+      if (key.startsWith(prefix)) this.objects.delete(key);
+    }
+  }
+}
+
+let durableBackend: MemoryBackend;
+
 test.beforeEach(() => {
+  durableBackend = new MemoryBackend();
+  setDurableProjectMemoryBackendForTests(durableBackend);
   clearAllSessionProjectMemoryForTests();
 });
 
@@ -44,6 +77,8 @@ test('按业务顺序上传时，新章程会触发旧章程重新判断', async
   });
   assert.equal(first.currentDecision.status, 'needs_review');
   assert.equal(first.documentCount, 1);
+  assert.equal(first.mode, 's3-durable-shadow');
+  assert.equal(first.persistent, true);
 
   const second = await rememberAndEvaluateProjectDocument({
     projectId: 'ordered-project',
@@ -143,6 +178,60 @@ test('同路径重复上传会幂等更新，删除项目时可完整清理', as
 
   assert.equal(updated.documentCount, 1);
   assert.equal(updated.revision, 2);
-  assert.equal(clearSessionProjectMemory('replace-project'), true);
+  assert.equal(await clearSessionProjectMemory('replace-project'), true);
   assert.equal(getSessionProjectMemorySnapshot('replace-project'), null);
+  assert.equal(durableBackend.objects.size, 0);
+});
+
+test('清空进程缓存模拟重启后，仍从 S3 恢复项目事实', async () => {
+  await rememberAndEvaluateProjectDocument({
+    projectId: 'restart-project',
+    sourcePath: '投资决策/公司章程.pdf',
+    facts: preTransactionCharter,
+  });
+
+  clearAllSessionProjectMemoryForTests();
+  assert.equal(getSessionProjectMemorySnapshot('restart-project'), null);
+
+  const restored = await rememberAndEvaluateProjectDocument({
+    projectId: 'restart-project',
+    sourcePath: '投资实施/项目公司章程.pdf',
+    facts: postTransactionCharter,
+  });
+  assert.equal(restored.mode, 's3-durable-shadow');
+  assert.equal(restored.persistent, true);
+  assert.equal(restored.documentCount, 2);
+  assert.equal(restored.reEvaluatedDocuments.length, 1);
+  assert.equal(
+    restored.reEvaluatedDocuments[0]?.selectedCategory,
+    '公司章程'
+  );
+});
+
+test('S3 不可用时降级为有明确告警的进程内记忆', async () => {
+  setDurableProjectMemoryBackendForTests({
+    write: async () => {
+      throw new Error('storage unavailable');
+    },
+    read: async () => {
+      throw new Error('storage unavailable');
+    },
+    list: async () => {
+      throw new Error('storage unavailable');
+    },
+    deletePrefix: async () => {
+      throw new Error('storage unavailable');
+    },
+  });
+
+  const result = await rememberAndEvaluateProjectDocument({
+    projectId: 'fallback-project',
+    sourcePath: '公司章程.pdf',
+    facts: preTransactionCharter,
+  });
+  assert.equal(result.mode, 'process-local-fallback');
+  assert.equal(result.persistent, false);
+  assert.match(result.persistenceWarning ?? '', /storage unavailable/);
+  assert.ok(result.expiresAt);
+  assert.equal(result.currentDecision.status, 'needs_review');
 });
