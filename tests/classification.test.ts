@@ -11,6 +11,10 @@ import {
   FLAT_FILE_CATEGORIES,
   type FlatFileCategory,
 } from '../src/lib/folder-structure';
+import {
+  getCategoryEvidencePolicy,
+  INVESTMENT_COMPLIANCE_REVIEW_POLICY,
+} from '../src/lib/classification/category-policies';
 
 test('同一类别的重复词和嵌套词只计最具体的一次', () => {
   const category: FlatFileCategory = {
@@ -101,4 +105,51 @@ test('LLM 置信度会校验并限制在 0 到 100', () => {
   assert.equal(normalizeConfidence(120), 100);
   assert.equal(normalizeConfidence(-5), 0);
   assert.equal(normalizeConfidence('invalid'), 0);
+});
+
+test('投资合规性审查表可被识别，但不会仅凭正文关键词自动归档', () => {
+  const matches = matchByKeywords(
+    '中山火炬电子产业基金管理有限公司-君柔科技.pdf',
+    '投资项目合规性审查表 投资方案 子基金管理人意见'
+  );
+
+  assert.equal(matches[0].category.folderId, 'decision-meeting');
+  assert.equal(matches[0].category.fileName, '投资合规性审查表');
+  assert.equal(assessKeywordMatches(matches).passed, false);
+});
+
+test('投资合规性审查规则要求项目级证据并默认人工复核', () => {
+  assert.equal(
+    INVESTMENT_COMPLIANCE_REVIEW_POLICY.categoryKey,
+    'decision-meeting:投资合规性审查表'
+  );
+  assert.equal(
+    INVESTMENT_COMPLIANCE_REVIEW_POLICY.documentTypes.includes(
+      'investment_compliance_review'
+    ),
+    true
+  );
+  assert.equal(
+    INVESTMENT_COMPLIANCE_REVIEW_POLICY.requiredEvidenceAny.length >= 2,
+    true
+  );
+  assert.equal(
+    INVESTMENT_COMPLIANCE_REVIEW_POLICY.negativeEvidence.some(evidence =>
+      evidence.includes('法律尽职调查')
+    ),
+    true
+  );
+  assert.equal(
+    INVESTMENT_COMPLIANCE_REVIEW_POLICY.defaultRequiresHumanReview,
+    true
+  );
+  assert.equal(
+    getCategoryEvidencePolicy('decision-meeting', '投资合规性审查表')
+      ?.policyVersion,
+    'investment-compliance-review-v1'
+  );
+  assert.equal(
+    getCategoryEvidencePolicy('decision-meeting', '投资建议书'),
+    undefined
+  );
 });

@@ -78,7 +78,12 @@ export const FOLDER_STRUCTURE: FolderNode = {
                 { name: '汇算清缴报告', keywords: ['汇算清缴', '清缴报告', '近三年'], description: '近三年汇算清缴报告' },
                 { name: '审计报告', keywords: ['审计', '审计报告', '近三年'], description: '近三年审计报告' },
                 { name: '财务预测', keywords: ['财务预测', '预测报告'], description: '项目公司财务预测' },
-                { name: '投资建议书', keywords: ['投资建议', '建议书', '投资建议书'], description: '投资建议书' }
+                { name: '投资建议书', keywords: ['投资建议', '建议书', '投资建议书'], description: '投资建议书' },
+                {
+                  name: '投资合规性审查表',
+                  keywords: ['投资项目合规性审查表', '投资合规性审查', '合规性审查表', '子基金管理人意见'],
+                  description: '投资决策阶段形成的项目合规性审查表及子基金管理人合规意见'
+                }
               ]
             },
             {
