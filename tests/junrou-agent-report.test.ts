@@ -50,11 +50,11 @@ test('君柔Agent报告使用当前LangGraph版本并覆盖六个金标准', () 
 });
 
 test('Agent明确建议全部命中且没有不安全猜测', () => {
-  assert.equal(report.summary.suggestedCaseCount, 3);
-  assert.equal(report.summary.suggestedCorrectCount, 3);
-  assert.equal(report.summary.safeAbstentionCount, 3);
+  assert.equal(report.summary.suggestedCaseCount, 6);
+  assert.equal(report.summary.suggestedCorrectCount, 6);
+  assert.equal(report.summary.safeAbstentionCount, 0);
   assert.equal(report.summary.unsafeWrongSuggestionCount, 0);
-  assert.equal(report.summary.humanReviewCount, 4);
+  assert.equal(report.summary.humanReviewCount, 1);
   assert.equal(report.summary.agentLlmCallCount, 0);
   assert.equal(report.cases.every(item => item.llmCallCount === 0), true);
 });
@@ -75,9 +75,10 @@ test('不同文档类型走不同Agent节点路径', () => {
   const resolution = reportCase('junrou-shareholder-resolution');
   assert.deepEqual(
     resolution.trace.map(step => step.node),
-    ['plan_evidence', 'context_decision', 'human_review']
+    ['plan_evidence', 'context_decision', 'complete']
   );
-  assert.equal(resolution.safeAbstention, true);
+  assert.equal(resolution.matchesGold, true);
+  assert.equal(resolution.safeAbstention, false);
 
   const compliance = reportCase('junrou-investment-compliance-review');
   assert.equal(compliance.matchesGold, true);
@@ -92,7 +93,7 @@ test('Markdown报告明确记录shadow与现有环境边界', () => {
     'utf8'
   );
   assert.match(markdown, /LangGraph/);
-  assert.match(markdown, /3\/3/);
+  assert.match(markdown, /6\/6/);
   assert.match(markdown, /不写入 Supabase/);
   assert.match(markdown, /不改变 Coze 环境/);
   assert.match(markdown, /调度层 LLM 调用：0/);

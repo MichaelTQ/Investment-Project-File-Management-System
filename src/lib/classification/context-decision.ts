@@ -79,7 +79,7 @@ interface MutableCandidate {
   contradictions: string[];
 }
 
-const POLICY_VERSION = 'context-decision-v1';
+const POLICY_VERSION = 'context-decision-v2';
 const MIN_DECISION_SCORE = 50;
 const MIN_SCORE_GAP = 15;
 
@@ -409,6 +409,136 @@ function scoreInvestmentComplianceReview(
   return [candidate];
 }
 
+function directlyRelatedEvents(
+  params: DecideWithProjectContextParams,
+  eventTypes: string[]
+) {
+  return (
+    params.projectContext?.timeline.filter(
+      event =>
+        eventTypes.includes(event.eventType) &&
+        event.evidenceFiles.includes(params.sourcePath)
+    ) ?? []
+  );
+}
+
+function scoreShareholderResolution(
+  params: DecideWithProjectContextParams
+): MutableCandidate[] {
+  const candidate = createCandidate(
+    'investment-implementation',
+    '股东会决议',
+    20
+  );
+  const text = combinedFactsText(params.facts);
+
+  if (hasAny(text, ['股东会决议', '股东决定'])) {
+    addEvidence(candidate, 30, '文件正式标题或文档类型明确为目标公司股东会决议');
+  }
+  if (
+    hasAny(text, [
+      '本次增资',
+      '注册资本由',
+      '股权结构变更',
+      '修改公司章程',
+      '签署《增资协议》',
+      '签署《股东协议》',
+      '签署《加入协议》',
+    ])
+  ) {
+    addEvidence(candidate, 30, '决议正文批准增资、交易文件或增资后公司治理变更');
+  }
+  for (const event of directlyRelatedEvents(params, [
+    'shareholders_approved_transaction',
+  ])) {
+    addEvidence(candidate, 25, `项目事件“${event.title}”与当前股东会决议直接关联`);
+  }
+  if (hasAny(text, ['投资决策委员会', '投委会决议', '基金投委会'])) {
+    addContradiction(candidate, 55, '文件具有基金投委会决议特征，不是目标公司股东会决议');
+  }
+
+  return [candidate];
+}
+
+function scoreClosingConfirmation(
+  params: DecideWithProjectContextParams
+): MutableCandidate[] {
+  const candidate = createCandidate(
+    'investment-implementation',
+    '确权文件',
+    20
+  );
+  const text = combinedFactsText(params.facts);
+
+  if (hasAny(text, ['交割确认函', '交割证明书', '交割确认书'])) {
+    addEvidence(candidate, 30, '文件正式标题或文档类型明确为交割确认文件');
+  }
+  if (
+    hasAny(text, [
+      '交割条件',
+      '先决条件',
+      '均已满足',
+      '书面豁免',
+      '截至交割日',
+      '增资协议',
+    ])
+  ) {
+    addEvidence(candidate, 25, '正文确认投资协议项下的交割条件或交割义务');
+  }
+  for (const event of directlyRelatedEvents(params, [
+    'capital_increase_agreement_signed',
+    'closing_conditions_confirmed',
+  ])) {
+    addEvidence(candidate, 20, `项目事件“${event.title}”与当前交割文件直接关联`);
+  }
+  if (
+    hasAny(text, ['银行电子回单', '转账凭证']) ||
+    (hasAny(text, ['缴款通知书']) && !hasAny(text, ['交割确认函']))
+  ) {
+    addContradiction(candidate, 45, '文件更像付款通知或付款凭证，不是交割确权文件');
+  }
+  if (hasAny(text, ['退出交易', '股权转让退出', '退出交割'])) {
+    addContradiction(candidate, 55, '文件指向项目退出交割，不属于投资实施阶段');
+  }
+
+  return [candidate];
+}
+
+function scorePaymentNotice(
+  params: DecideWithProjectContextParams
+): MutableCandidate[] {
+  const candidate = createCandidate(
+    'investment-implementation',
+    '付款通知函',
+    20
+  );
+  const text = combinedFactsText(params.facts);
+
+  if (hasAny(text, ['缴款通知书', '付款通知函', '付款通知书'])) {
+    addEvidence(candidate, 30, '文件正式标题或文档类型明确为投资付款通知');
+  }
+  if (
+    hasAny(text, ['支付增资款', '应支付的增资款', '电汇方式', '指定账户']) &&
+    hasAny(text, ['增资协议', '加入协议', '交割条件', '本次增资'])
+  ) {
+    addEvidence(candidate, 30, '正文要求投资方依据交易文件支付投资款或增资款');
+  }
+  for (const event of directlyRelatedEvents(params, [
+    'capital_increase_agreement_signed',
+    'closing_conditions_confirmed',
+  ])) {
+    addEvidence(candidate, 20, `项目事件“${event.title}”与当前缴款通知直接关联`);
+  }
+  if (hasAny(text, ['银行电子回单', '交易成功', '转账凭证'])) {
+    addContradiction(candidate, 50, '文件记录付款已完成，更像银行回单或转账凭证');
+  }
+  if (hasAny(text, ['退出交易', '股权转让退出', '退出价款'])) {
+    addContradiction(candidate, 55, '文件指向项目退出付款，不属于投资实施阶段');
+  }
+
+  return [candidate];
+}
+
 function finalizeDecision(
   candidates: MutableCandidate[],
   facts: DocumentFacts
@@ -479,6 +609,15 @@ export function decideWithProjectContext(
       params.facts
     );
   }
+  if (params.facts.documentType === 'shareholder_resolution') {
+    return finalizeDecision(scoreShareholderResolution(params), params.facts);
+  }
+  if (params.facts.documentType === 'closing_confirmation') {
+    return finalizeDecision(scoreClosingConfirmation(params), params.facts);
+  }
+  if (params.facts.documentType === 'payment_notice') {
+    return finalizeDecision(scorePaymentNotice(params), params.facts);
+  }
 
   return {
     status: 'insufficient',
@@ -487,7 +626,7 @@ export function decideWithProjectContext(
     candidates: [],
     evidence: [],
     contradictions: [
-      `context-decision-v1 尚未配置文档类型 ${params.facts.documentType} 的上下文规则`,
+      `${POLICY_VERSION} 尚未配置文档类型 ${params.facts.documentType} 的上下文规则`,
     ],
     requiresHumanReview: true,
     reasoning: '当前文档类型尚无上下文决策规则，保留 legacy 分类结果。',

@@ -102,7 +102,7 @@ test('Agent对合规审查表给出建议但遵守默认人工复核策略', asy
   assert.equal(result.trace.at(-1)?.node, 'human_review');
 });
 
-test('Agent对尚未配置上下文规则的文档显式请求人工处理', async () => {
+test('Agent对股东会增资决议给出投资实施建议', async () => {
   const resolution = reportCase('junrou-shareholder-resolution');
   const result = await runClassificationAgent({
     sourcePath: resolution.relativePath,
@@ -110,10 +110,11 @@ test('Agent对尚未配置上下文规则的文档显式请求人工处理', asy
     projectContext,
   });
 
-  assert.equal(result.status, 'needs_review');
+  assert.equal(result.status, 'decided');
   assert.deepEqual(result.requestedEvidence, [
-    'missing_context_policy:shareholder_resolution',
+    'project_event:shareholders_approved_transaction',
   ]);
-  assert.match(result.decision.reasoning, /尚无上下文决策规则/);
+  assert.equal(result.decision.selectedCategory?.fileName, '股东会决议');
+  assert.equal(result.trace.at(-1)?.node, 'complete');
   assert.equal(result.llmCallCount, 0);
 });

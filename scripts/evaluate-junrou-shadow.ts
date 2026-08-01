@@ -377,7 +377,7 @@ function main(): void {
             '六份PDF全部无文字层，使用macOS Vision OCR',
             '本地事实适配器不等同于Coze LLM事实抽取器',
             '未调用Coze LLM的legacy最终分类，只评估关键词预判',
-            '上下文规则v1只覆盖公司章程和投资合规性审查表',
+            '上下文规则v2覆盖当前六个金标准文档类型，仍需其他项目留出集验证',
           ],
           summary,
           cases: evaluated,
@@ -412,12 +412,12 @@ function main(): void {
 - 文档类型抽取：${summary.factTypeCorrectCount}/${summary.evaluatedCaseCount} 与金标准一致；
 - legacy 关键词最高候选：${summary.keywordTopCorrectCount}/${summary.evaluatedCaseCount} 与金标准一致；
 - 关键词可不经消歧直接决定：${summary.keywordAutoDecisionCount}/${summary.evaluatedCaseCount}；
-- 上下文规则 v1 给出明确结论：${summary.contextCoveredCount}/${summary.evaluatedCaseCount}；
+- 上下文规则 v2 给出明确结论：${summary.contextCoveredCount}/${summary.evaluatedCaseCount}；
 - 已覆盖案例的上下文命中：${summary.contextCoveredCorrectCount}/${summary.contextCoveredCount || 0}。
 
 ## 2. 逐文件对照
 
-| 原文件 | 金标准 | legacy 关键词预判 | 上下文 v1 | 结果 |
+| 原文件 | 金标准 | legacy 关键词预判 | 上下文 v2 | 结果 |
 |---|---|---|---|---|
 ${rows.join('\n')}
 
@@ -425,7 +425,7 @@ ${rows.join('\n')}
 
 1. OCR/视觉抽取是真实档案的必经步骤，不是可选优化。
 2. 单靠文件名和关键词不足以稳定区分两份公司章程；项目内注册资本对比可以提供决定性证据。
-3. \`context-decision-v1\` 只完成了第一批高价值规则，股东会决议、交割确认函和缴款通知书尚未配置上下文规则，属于“未覆盖”而不是错分。
+3. \`context-decision-v2\` 已覆盖六个金标准类型，并通过排除证据避免把投委会决议、银行回单或退出交易文件误收进新规则。
 4. 投资合规性审查表即使证据充分，仍按既定策略保留人工复核。
 
 ## 4. 边界

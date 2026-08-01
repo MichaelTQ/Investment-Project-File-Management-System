@@ -73,6 +73,7 @@ src/
 - 支持 `extractFacts=true` 或环境变量 `ENABLE_DOCUMENT_FACTS_SHADOW=true`，以 shadow mode 返回结构化文档事实；该结果暂不参与最终分类或自动归档
 - 支持 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true`，将事实和当前 legacy 分类决策写入项目记忆表；持久化失败不会阻断原分类
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
+- 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
@@ -80,6 +81,7 @@ src/
 - **归档文件树**: 按三级文件夹结构展示，支持展开/折叠、下载、删除
 - **一键下载全部**: 打包为 ZIP 保留完整文件夹结构
 - **分析记录面板**: 显示上传时间、原始文件名、归档后文件名、分类路径
+- **Agent Shadow 面板**: 在分类详情中展示 Agent 建议、证据、冲突、关联文件、执行轨迹和人工复核状态
 
 ## 文件分类逻辑
 1. **关键词匹配**: 先进行快速关键词匹配（文件名 + 内容），阈值 5 分
