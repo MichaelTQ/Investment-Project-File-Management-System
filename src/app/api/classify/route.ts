@@ -17,6 +17,30 @@ import {
   normalizeConfidence,
 } from '@/lib/classification';
 import {
+  DOCUMENT_FACTS_EXTRACTOR_VERSION,
+  DOCUMENT_FACTS_MODEL,
+  extractDocumentFacts,
+} from '@/lib/classification/fact-extractor';
+import type { DocumentFacts } from '@/lib/classification/document-facts';
+import { getCategoryEvidencePolicy } from '@/lib/classification/category-policies';
+import {
+  decideWithProjectContext,
+  parseProjectContextSnapshot,
+  parseRelatedDocumentFacts,
+  type ContextClassificationDecision,
+  type ProjectContextSnapshot,
+  type RelatedDocumentFacts,
+} from '@/lib/classification/context-decision';
+import {
+  runClassificationAgent,
+  type ClassificationAgentResult,
+} from '@/lib/classification/classification-agent';
+import {
+  createClassificationDecisionRecord,
+  linkDocumentFactToArchivedFile,
+  upsertDocumentFactsRecord,
+} from '@/lib/project-memory';
+import {
   archiveFile,
   archiveStoredFile,
   getProject,
@@ -42,6 +66,36 @@ interface KeywordMatchDetail {
 
 // 分类过程详情
 interface ClassifyProcess {
+  step0_factExtraction?: {
+    enabled: boolean;
+    status: 'success' | 'fallback';
+    error?: string;
+    persistence?: {
+      requested: boolean;
+      status: 'success' | 'skipped' | 'failed';
+      recordId?: string;
+      error?: string;
+      archivedFileLink?: 'success' | 'failed';
+    };
+  };
+  step0_contextDecision?: {
+    enabled: boolean;
+    status: ContextClassificationDecision['status'];
+    policyVersion: string;
+    requiresHumanReview: boolean;
+    inputWarnings?: string[];
+  };
+  step0_agentOrchestration?: {
+    enabled: boolean;
+    status: 'success' | 'failed';
+    graphVersion?: string;
+    finalStatus?: ClassificationAgentResult['status'];
+    rounds?: number;
+    toolSteps?: number;
+    llmCallCount?: number;
+    error?: string;
+    inputWarnings?: string[];
+  };
   step1_keywordMatch: {
     totalCategories: number;
     matchedCategories: number;
@@ -63,6 +117,11 @@ interface ClassifyProcess {
       suggestedArchiveTitle: string;
     };
   };
+  decisionPersistence?: {
+    status: 'success' | 'failed';
+    recordId?: string;
+    error?: string;
+  };
   finalDecision: {
     method: 'keyword' | 'llm' | 'fallback' | 'none';
     explanation: string;
@@ -79,6 +138,9 @@ interface ClassifyResult {
   contentPreview?: string;
   process: ClassifyProcess;
   suggestedArchiveTitle?: string;
+  documentFacts?: DocumentFacts;
+  contextDecision?: ContextClassificationDecision;
+  agentDecision?: ClassificationAgentResult;
   requiresArchiveConfirmation?: boolean;
   archived?: {
     id: string;
@@ -86,6 +148,17 @@ interface ClassifyResult {
     projectName: string;
     folderPath: string[];
   };
+}
+
+function parseOptionalJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
 }
 
 const PDF_VISUAL_BATCH_SIZE = 4;
@@ -364,7 +437,19 @@ export async function POST(request: NextRequest) {
     let fileSize = 0;
     let suppliedMimeType = '';
     let projectId = '';
+    let sourcePath = '';
     let autoArchive = true;
+    let extractFacts =
+      globalThis.process.env.ENABLE_DOCUMENT_FACTS_SHADOW === 'true';
+    let persistFacts =
+      globalThis.process.env.PERSIST_PROJECT_MEMORY_SHADOW === 'true' ||
+      globalThis.process.env.PERSIST_DOCUMENT_FACTS_SHADOW === 'true';
+    let runContextDecision =
+      globalThis.process.env.ENABLE_CONTEXT_DECISION_SHADOW === 'true';
+    let runAgentDecision =
+      globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
+    let rawProjectContext: unknown;
+    let rawRelatedDocumentFacts: unknown;
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -374,7 +459,27 @@ export async function POST(request: NextRequest) {
       suppliedMimeType =
         typeof body.mimeType === 'string' ? body.mimeType : '';
       projectId = typeof body.projectId === 'string' ? body.projectId : '';
+      sourcePath =
+        typeof body.sourcePath === 'string' ? body.sourcePath : fileName;
       autoArchive = body.autoArchive !== false;
+      extractFacts =
+        typeof body.extractFacts === 'boolean'
+          ? body.extractFacts
+          : extractFacts;
+      persistFacts =
+        typeof body.persistFacts === 'boolean'
+          ? body.persistFacts
+          : persistFacts;
+      runContextDecision =
+        typeof body.contextDecision === 'boolean'
+          ? body.contextDecision
+          : runContextDecision;
+      runAgentDecision =
+        typeof body.agentDecision === 'boolean'
+          ? body.agentDecision
+          : runAgentDecision;
+      rawProjectContext = body.projectContext;
+      rawRelatedDocumentFacts = body.relatedDocumentFacts;
 
       if (
         !storageKey ||
@@ -391,7 +496,32 @@ export async function POST(request: NextRequest) {
       const formFile = formData.get('file');
       file = formFile instanceof File ? formFile : null;
       projectId = String(formData.get('projectId') || '');
+      sourcePath = String(formData.get('sourcePath') || file?.name || '');
       autoArchive = formData.get('autoArchive') !== 'false';
+      const extractFactsValue = formData.get('extractFacts');
+      extractFacts =
+        extractFactsValue === null
+          ? extractFacts
+          : extractFactsValue === 'true';
+      const persistFactsValue = formData.get('persistFacts');
+      persistFacts =
+        persistFactsValue === null
+          ? persistFacts
+          : persistFactsValue === 'true';
+      const contextDecisionValue = formData.get('contextDecision');
+      runContextDecision =
+        contextDecisionValue === null
+          ? runContextDecision
+          : contextDecisionValue === 'true';
+      const agentDecisionValue = formData.get('agentDecision');
+      runAgentDecision =
+        agentDecisionValue === null
+          ? runAgentDecision
+          : agentDecisionValue === 'true';
+      rawProjectContext = parseOptionalJson(formData.get('projectContext'));
+      rawRelatedDocumentFacts = parseOptionalJson(
+        formData.get('relatedDocumentFacts')
+      );
       fileName = file?.name || '';
       fileSize = file?.size || 0;
       suppliedMimeType = file?.type || '';
@@ -402,6 +532,25 @@ export async function POST(request: NextRequest) {
         { error: '未提供文件' },
         { status: 400 }
       );
+    }
+
+    // 持久化必须以结构化事实为输入，因此显式请求持久化时自动启用抽取。
+    extractFacts =
+      extractFacts || persistFacts || runContextDecision || runAgentDecision;
+
+    const projectContext: ProjectContextSnapshot | null =
+      parseProjectContextSnapshot(rawProjectContext);
+    const relatedDocumentFacts: RelatedDocumentFacts[] =
+      parseRelatedDocumentFacts(rawRelatedDocumentFacts);
+    const contextInputWarnings: string[] = [];
+    if (rawProjectContext !== undefined && !projectContext) {
+      contextInputWarnings.push('项目上下文不符合 Schema，本次已忽略');
+    }
+    if (
+      rawRelatedDocumentFacts !== undefined &&
+      relatedDocumentFacts.length === 0
+    ) {
+      contextInputWarnings.push('关联文件事实不符合 Schema，本次已忽略');
     }
 
     const project = projectId ? await getProject(projectId) : null;
@@ -495,6 +644,121 @@ export async function POST(request: NextRequest) {
       contentText = fileName;
     }
 
+    // Shadow mode：先抽取结构化事实，但暂不改变当前分类和自动归档结论。
+    let documentFacts: DocumentFacts | undefined;
+    let persistedDocumentFactId: string | undefined;
+    let factExtractionStep: ClassifyProcess['step0_factExtraction'];
+    let contextClassificationDecision:
+      | ContextClassificationDecision
+      | undefined;
+    let agentClassificationResult: ClassificationAgentResult | undefined;
+    let agentOrchestrationStep:
+      | ClassifyProcess['step0_agentOrchestration']
+      | undefined;
+    if (extractFacts) {
+      const extraction = await extractDocumentFacts({
+        fileName,
+        contentText,
+        projectName: project?.name || '',
+        customHeaders,
+        imageDataUrl,
+      });
+      documentFacts = extraction.facts;
+      factExtractionStep = {
+        enabled: true,
+        status: extraction.status,
+        error: extraction.error,
+      };
+
+      if (persistFacts) {
+        if (!project) {
+          factExtractionStep.persistence = {
+            requested: true,
+            status: 'skipped',
+            error: '文档事实持久化需要有效的 projectId',
+          };
+        } else {
+          try {
+            const extension = fileName.split('.').pop()?.toLowerCase() || '';
+            const mimeType = suppliedMimeType || getMimeType(extension);
+            const persisted = await upsertDocumentFactsRecord({
+              projectId: project.id,
+              originalName: fileName,
+              storageKey: storageKey || undefined,
+              fileSize,
+              mimeType,
+              fileBuffer,
+              facts: extraction.facts,
+              extractionStatus: extraction.status,
+              extractionError: extraction.error,
+              extractorVersion: DOCUMENT_FACTS_EXTRACTOR_VERSION,
+              modelVersion: DOCUMENT_FACTS_MODEL,
+            });
+            persistedDocumentFactId = persisted.id;
+            factExtractionStep.persistence = {
+              requested: true,
+              status: 'success',
+              recordId: persisted.id,
+            };
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : '未知错误';
+            console.error('Document facts persistence error:', error);
+            factExtractionStep.persistence = {
+              requested: true,
+              status: 'failed',
+              error: message,
+            };
+          }
+        }
+      }
+    }
+
+    if (runContextDecision && documentFacts) {
+      contextClassificationDecision = decideWithProjectContext({
+        sourcePath: sourcePath || fileName,
+        facts: documentFacts,
+        projectContext,
+        relatedDocuments: relatedDocumentFacts,
+      });
+    }
+
+    if (runAgentDecision && documentFacts) {
+      try {
+        agentClassificationResult = await runClassificationAgent({
+          sourcePath: sourcePath || fileName,
+          facts: documentFacts,
+          projectContext,
+          availableRelatedDocuments: relatedDocumentFacts,
+        });
+        agentOrchestrationStep = {
+          enabled: true,
+          status: 'success',
+          graphVersion: agentClassificationResult.graphVersion,
+          finalStatus: agentClassificationResult.status,
+          rounds: agentClassificationResult.rounds,
+          toolSteps: agentClassificationResult.trace.length,
+          llmCallCount: agentClassificationResult.llmCallCount,
+          inputWarnings:
+            contextInputWarnings.length > 0
+              ? contextInputWarnings
+              : undefined,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误';
+        console.error('Classification agent error:', error);
+        agentOrchestrationStep = {
+          enabled: true,
+          status: 'failed',
+          error: message,
+          inputWarnings:
+            contextInputWarnings.length > 0
+              ? contextInputWarnings
+              : undefined,
+        };
+      }
+    }
+
     // 第一步：关键词快速匹配
     const keywordMatches = matchByKeywords(fileName, contentText);
     const keywordAssessment = assessKeywordMatches(keywordMatches);
@@ -509,6 +773,21 @@ export async function POST(request: NextRequest) {
     }));
 
     const process: ClassifyProcess = {
+      step0_factExtraction: factExtractionStep,
+      step0_contextDecision: contextClassificationDecision
+        ? {
+            enabled: true,
+            status: contextClassificationDecision.status,
+            policyVersion: contextClassificationDecision.policyVersion,
+            requiresHumanReview:
+              contextClassificationDecision.requiresHumanReview,
+            inputWarnings:
+              contextInputWarnings.length > 0
+                ? contextInputWarnings
+                : undefined,
+          }
+        : undefined,
+      step0_agentOrchestration: agentOrchestrationStep,
       step1_keywordMatch: {
         totalCategories: FLAT_FILE_CATEGORIES.length,
         matchedCategories: keywordMatches.length,
@@ -530,9 +809,17 @@ export async function POST(request: NextRequest) {
     // 如果关键词匹配置信度高，直接返回
     if (!imageDataUrl && keywordAssessment.passed) {
       const bestMatch = keywordMatches[0];
+      const evidencePolicy = getCategoryEvidencePolicy(
+        bestMatch.category.folderId,
+        bestMatch.category.fileName
+      );
+      const requiresPolicyReview =
+        evidencePolicy?.defaultRequiresHumanReview ?? false;
       process.finalDecision = {
         method: 'keyword',
-        explanation: `关键词匹配得分 ${bestMatch.score} 分，且领先候选类别 ${keywordAssessment.scoreGap ?? bestMatch.score} 分，直接使用关键词匹配结果`
+        explanation: requiresPolicyReview
+          ? `关键词匹配得分 ${bestMatch.score} 分，选择「${bestMatch.category.fileName}」；该类别按证据策略需人工复核后归档`
+          : `关键词匹配得分 ${bestMatch.score} 分，且领先候选类别 ${keywordAssessment.scoreGap ?? bestMatch.score} 分，直接使用关键词匹配结果`
       };
 
       result = {
@@ -542,7 +829,8 @@ export async function POST(request: NextRequest) {
         confidence: Math.min(bestMatch.score * 10, 95),
         reasoning: `文件名和内容匹配关键词："${bestMatch.matchedKeywords.join('、')}"，归类到「${bestMatch.category.fileName}」`,
         contentPreview,
-        process
+        process,
+        requiresArchiveConfirmation: requiresPolicyReview
       };
     } else {
       // 第二步：使用 LLM 进行智能分析
@@ -629,6 +917,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (documentFacts) result.documentFacts = documentFacts;
+    if (contextClassificationDecision) {
+      result.contextDecision = contextClassificationDecision;
+    }
+    if (agentClassificationResult) {
+      result.agentDecision = agentClassificationResult;
+    }
+
     // 自动归档
     if (
       autoArchive &&
@@ -672,6 +968,68 @@ export async function POST(request: NextRequest) {
           archivedName: archived.archivedName,
           projectName: project.name,
           folderPath: archived.folderPath
+        };
+
+        if (persistedDocumentFactId && factExtractionStep?.persistence) {
+          try {
+            await linkDocumentFactToArchivedFile(
+              persistedDocumentFactId,
+              archived.id
+            );
+            factExtractionStep.persistence.archivedFileLink = 'success';
+          } catch (error) {
+            console.error('Document fact archive link error:', error);
+            factExtractionStep.persistence.archivedFileLink = 'failed';
+          }
+        }
+      }
+    }
+
+    // 记录当前 legacy 分类器的 shadow 决策，用于后续与上下文分类器对比。
+    if (persistFacts && project) {
+      try {
+        const decisionId = await createClassificationDecisionRecord({
+          projectId: project.id,
+          archivedFileId: result.archived?.id,
+          documentFactId: persistedDocumentFactId,
+          selectedCategoryId: result.category?.folderId,
+          selectedCategoryName: result.category?.fileName,
+          selectedFolderPath: result.category?.folderPath,
+          candidateCategories: keywordMatchDetails.map(candidate => ({
+            categoryName: candidate.categoryName,
+            folderPath: candidate.folderPath,
+            score: candidate.score,
+            matchedKeywords: candidate.matchedKeywords,
+          })),
+          evidence: [
+            ...(documentFacts?.evidenceQuotes ?? []),
+            ...keywordMatchDetails[0]?.matchedKeywords.map(
+              keyword => `关键词命中：${keyword}`
+            ) ?? [],
+          ],
+          contradictions: [],
+          decisionScore: result.confidence,
+          decisionSource: process.finalDecision.method,
+          reasoning: result.reasoning,
+          modelVersion:
+            process.finalDecision.method === 'llm' ||
+            process.finalDecision.method === 'fallback'
+              ? 'doubao-seed-2-0-lite-260215'
+              : undefined,
+          policyVersion: 'legacy-classification-v1',
+          requiresReview:
+            Boolean(result.requiresArchiveConfirmation) || !result.category,
+        });
+        process.decisionPersistence = {
+          status: 'success',
+          recordId: decisionId,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误';
+        console.error('Classification decision persistence error:', error);
+        process.decisionPersistence = {
+          status: 'failed',
+          error: message,
         };
       }
     }

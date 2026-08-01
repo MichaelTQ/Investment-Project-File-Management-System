@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "projectName": "君柔",
+  "status": "pilot_gold_set_approved",
+  "approvedAt": "2026-08-01",
+  "approvalSource": "user_domain_review",
+  "labelPolicy": "expectedCategory由现有目录、文件视觉证据和关联交易文件共同形成，并已由业务负责人验收。",
+  "cases": [
+    {
+      "id": "junrou-charter-pre-transaction",
+      "relativePath": "投资决策/公司章程.pdf",
+      "documentType": "company_charter",
+      "expectedCategory": {
+        "folderId": "decision-meeting",
+        "fileName": "公司章程",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资决策",
+          "上会材料"
+        ]
+      },
+      "decisiveEvidence": [
+        "注册资本为11.73624万元",
+        "股东结构中尚未出现上海九合深远、中山致远望睿和中山远道壹号",
+        "内容与增资协议记载的交易前股权结构一致"
+      ],
+      "relatedFiles": [
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/6君柔科技-公司章程.pdf",
+        "投资实施/7君柔科技-股东会决议.pdf"
+      ],
+      "requiresHumanConfirmation": false
+    },
+    {
+      "id": "junrou-charter-post-transaction",
+      "relativePath": "投资实施/6君柔科技-公司章程.pdf",
+      "documentType": "company_charter",
+      "expectedCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "项目公司章程",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "decisiveEvidence": [
+        "注册资本为13.04027万元",
+        "新增上海九合深远、中山致远望睿和中山远道壹号等投资方",
+        "股东结构与2026年4月10日股东会决议批准的增资后结构一致",
+        "与交易前章程相比注册资本和持股比例均发生变化"
+      ],
+      "relatedFiles": [
+        "投资决策/公司章程.pdf",
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/7君柔科技-股东会决议.pdf"
+      ],
+      "requiresHumanConfirmation": false
+    },
+    {
+      "id": "junrou-shareholder-resolution",
+      "relativePath": "投资实施/7君柔科技-股东会决议.pdf",
+      "documentType": "shareholder_resolution",
+      "expectedCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "股东会决议",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "decisiveEvidence": [
+        "2026年4月10日形成",
+        "批准本次增资、交易文件和章程修改",
+        "列明增资后注册资本及股东结构"
+      ],
+      "relatedFiles": [
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/6君柔科技-公司章程.pdf"
+      ],
+      "requiresHumanConfirmation": false
+    },
+    {
+      "id": "junrou-closing-confirmation",
+      "relativePath": "投资实施/5中山致远望睿交割确认函.pdf",
+      "documentType": "closing_confirmation",
+      "expectedCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "确权文件",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "decisiveEvidence": [
+        "文件标题为交割确认函",
+        "确认增资协议项下交割条件",
+        "形成于投资协议签署之后"
+      ],
+      "relatedFiles": [
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/8中山致远望睿缴款通知书.pdf"
+      ],
+      "requiresHumanConfirmation": false
+    },
+    {
+      "id": "junrou-payment-notice",
+      "relativePath": "投资实施/8中山致远望睿缴款通知书.pdf",
+      "documentType": "payment_notice",
+      "expectedCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "付款通知函",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "decisiveEvidence": [
+        "文件明确为缴款通知书",
+        "要求致远望睿基金支付1,000万元增资款",
+        "引用增资协议和加入协议"
+      ],
+      "relatedFiles": [
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/5中山致远望睿交割确认函.pdf",
+        "投资实施/电子回单.png"
+      ],
+      "requiresHumanConfirmation": false
+    },
+    {
+      "id": "junrou-investment-compliance-review",
+      "relativePath": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
+      "documentType": "investment_compliance_review",
+      "expectedCategory": {
+        "folderId": "decision-meeting",
+        "fileName": "投资合规性审查表",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资决策",
+          "上会材料"
+        ]
+      },
+      "decisiveEvidence": [
+        "文件为投资项目合规性审查表",
+        "包含投资方案和子基金管理人合规意见",
+        "逐项检查投资限制并形成审核结论"
+      ],
+      "relatedFiles": [
+        "投资决策/君柔投委会决议.pdf",
+        "投资决策/【最终版】君柔科技-投资建议书.pptx"
+      ],
+      "requiresHumanConfirmation": true,
+      "reviewReason": "新分类在积累更多项目样本前默认人工确认，避免与法律尽调报告、投资建议书或投后合规检查混淆。"
+    }
+  ]
+}

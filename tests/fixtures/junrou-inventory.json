@@ -1,0 +1,446 @@
+{
+  "schemaVersion": 1,
+  "projectName": "君柔",
+  "sourceDirectory": "君柔档案",
+  "labelPolicy": "目录名仅作为初始弱标签；在人工确认和内容证据核验前，不视为最终金标准。",
+  "summary": {
+    "businessFileCount": 35,
+    "totalSizeBytes": 261530143,
+    "stageCounts": {
+      "尽职调查": 2,
+      "立项前": 2,
+      "投资决策": 13,
+      "投资实施": 12,
+      "项目立项": 5,
+      "未归类": 1
+    },
+    "formatCounts": {
+      "pdf": 22,
+      "docx": 1,
+      "pptx": 3,
+      "xls": 5,
+      "xlsx": 2,
+      "png": 2
+    },
+    "duplicateGroupCount": 2
+  },
+  "duplicateGroups": [
+    {
+      "id": "duplicate-001",
+      "sha256": "9763d2dfef96a8162c6d4c4872aa5ae4173e85d0d13aeb0d4b8b7173c868df58",
+      "paths": [
+        "立项前/1.pdf",
+        "立项前/NDA国创致远私募股权基金管理有限公司保密协议.pdf"
+      ]
+    },
+    {
+      "id": "duplicate-002",
+      "sha256": "1fffd77b3eb98f4ee8677e52c2fb31e071fc801c8d12438a56507bc771cd373d",
+      "paths": [
+        "投资实施/9致远望睿出资证明书➕股东名册.pdf",
+        "投资实施/致远望睿出资证明书➕股东名册(2).pdf"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "relativePath": "尽职调查/君柔-风控尽调报告.pdf",
+      "fileName": "君柔-风控尽调报告.pdf",
+      "extension": "pdf",
+      "sizeBytes": 347172,
+      "sha256": "8ad9d541ea783194bec12787136e6a637735aba65d40242e939b32a11ad835a6",
+      "initialStageLabel": "尽职调查",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "尽职调查/深圳君柔科技有限公司投资尽职调查报告(1).docx",
+      "fileName": "深圳君柔科技有限公司投资尽职调查报告(1).docx",
+      "extension": "docx",
+      "sizeBytes": 38568,
+      "sha256": "98821c85658ae6d4810917b6c426bec475fa9a393daeb4d8b1422676c7ed9ecd",
+      "initialStageLabel": "尽职调查",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "立项前/1.pdf",
+      "fileName": "1.pdf",
+      "extension": "pdf",
+      "sizeBytes": 2963732,
+      "sha256": "9763d2dfef96a8162c6d4c4872aa5ae4173e85d0d13aeb0d4b8b7173c868df58",
+      "initialStageLabel": "立项前",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "与同项目中的另一文件内容完全相同"
+      ],
+      "duplicateGroup": "duplicate-001"
+    },
+    {
+      "relativePath": "立项前/NDA国创致远私募股权基金管理有限公司保密协议.pdf",
+      "fileName": "NDA国创致远私募股权基金管理有限公司保密协议.pdf",
+      "extension": "pdf",
+      "sizeBytes": 2963732,
+      "sha256": "9763d2dfef96a8162c6d4c4872aa5ae4173e85d0d13aeb0d4b8b7173c868df58",
+      "initialStageLabel": "立项前",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "与同项目中的另一文件内容完全相同"
+      ],
+      "duplicateGroup": "duplicate-001"
+    },
+    {
+      "relativePath": "投资决策/【最终版】君柔科技-投资建议书.pptx",
+      "fileName": "【最终版】君柔科技-投资建议书.pptx",
+      "extension": "pptx",
+      "sizeBytes": 59283752,
+      "sha256": "ae9ea83f3b0046d14dbfbb7e0efc1cf3b01515324d6fd071d3d62ba44517669a",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/1营业执照.pdf",
+      "fileName": "1营业执照.pdf",
+      "extension": "pdf",
+      "sizeBytes": 883733,
+      "sha256": "d0c757e3d6349b4b84c0570c69531a2cd27a836a85e6777171f90b9fbcf5340c",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202504至202512.xls",
+      "fileName": "深圳君柔科技有限公司_利润表_202504至202512.xls",
+      "extension": "xls",
+      "sizeBytes": 126069,
+      "sha256": "a7bc963ad4c112dd23b64a8c2070c80af4c0cf1291f4b94b7c2eda17f421b815",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202601至202601.xls",
+      "fileName": "深圳君柔科技有限公司_利润表_202601至202601.xls",
+      "extension": "xls",
+      "sizeBytes": 17675,
+      "sha256": "d4e03e630f15057e4e28b5e62a0eea35904f34ac717663069c4be5eacdd5b81c",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202504至202512.xls",
+      "fileName": "深圳君柔科技有限公司_资产负债表_202504至202512.xls",
+      "extension": "xls",
+      "sizeBytes": 402920,
+      "sha256": "7fe99e2eb45053dd05e3f911bf2290007a810716d4c9b650f7ccbe4a681e1443",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202601至202601.xls",
+      "fileName": "深圳君柔科技有限公司_资产负债表_202601至202601.xls",
+      "extension": "xls",
+      "sizeBytes": 54243,
+      "sha256": "2b588edf56ec1c02588941ecf00fd69f46d3ddfbc15d4d9a167713004e36b5c3",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.2/科目余额表_深圳君柔科技有限公司_2025年04月至2025年12月.xlsx",
+      "fileName": "科目余额表_深圳君柔科技有限公司_2025年04月至2025年12月.xlsx",
+      "extension": "xlsx",
+      "sizeBytes": 13205,
+      "sha256": "e5a97d355d2ccac65ed87e34c9ac4aad3abc6c2baf28409a670e625a76fa97a2",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.2/科目余额表_深圳君柔科技有限公司_2026年01月.xlsx",
+      "fileName": "科目余额表_深圳君柔科技有限公司_2026年01月.xlsx",
+      "extension": "xlsx",
+      "sizeBytes": 12718,
+      "sha256": "e9833935345c37782494638278344464b9b83556bb91a87c46e8281513d2baf4",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.2/深圳君柔科技有限公司_明细账_2025年04月至2026年01月.xls",
+      "fileName": "深圳君柔科技有限公司_明细账_2025年04月至2026年01月.xls",
+      "extension": "xls",
+      "sizeBytes": 443848,
+      "sha256": "5652921e2b11ff645e5dbaf9ee83bf798af55385dc23e61536453071ee1b6409",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/财务资料/4.3/君柔信用报告.pdf",
+      "fileName": "君柔信用报告.pdf",
+      "extension": "pdf",
+      "sizeBytes": 161202,
+      "sha256": "5ddada3ad74ed4138b40a11c99143b51b5373cb678e7472ab76efdc5a66eb0c2",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/公司章程.pdf",
+      "fileName": "公司章程.pdf",
+      "extension": "pdf",
+      "sizeBytes": 12981073,
+      "sha256": "e5fb45b5647b61a121ee1d88f6f72f62f78cc2e6e878cc545268406f7b4abda8",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "公司章程可能在多个投资阶段出现，需要结合交易前后事实消歧"
+      ],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/君柔科技_专家委员会表决结果(1).pdf",
+      "fileName": "君柔科技_专家委员会表决结果(1).pdf",
+      "extension": "pdf",
+      "sizeBytes": 428885,
+      "sha256": "9143d491afe0771533397500a606ed1ab20fef720c645c5d9ad92f516543352a",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资决策/君柔投委会决议.pdf",
+      "fileName": "君柔投委会决议.pdf",
+      "extension": "pdf",
+      "sizeBytes": 1631775,
+      "sha256": "76fea753583bfa635613849512b7cc0cb49d20577e909ec3f74f67d1f90d3290",
+      "initialStageLabel": "投资决策",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/1君柔-股东协议.pdf",
+      "fileName": "1君柔-股东协议.pdf",
+      "extension": "pdf",
+      "sizeBytes": 17179333,
+      "sha256": "bc7ba49438195b167b510bbf2146b242e2801c0b9d2267b41c8ae78353230e54",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/2君柔-增资协议.pdf",
+      "fileName": "2君柔-增资协议.pdf",
+      "extension": "pdf",
+      "sizeBytes": 21044224,
+      "sha256": "b8002ede0b36d805be543dfdb2f74e7a709087087dfdef625c5bb8580ab8be23",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/3加入协议-中山致远.pdf",
+      "fileName": "3加入协议-中山致远.pdf",
+      "extension": "pdf",
+      "sizeBytes": 1224285,
+      "sha256": "12f64bbdd98cfcc7f43596a6acce893512eb6c34ef20bc439c23f89d8a2fc42f",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/4加入协议--中山远道壹号.pdf",
+      "fileName": "4加入协议--中山远道壹号.pdf",
+      "extension": "pdf",
+      "sizeBytes": 1218074,
+      "sha256": "f80f7f37fa6ada0c885820c6bd99a3b61226fbe4ffc0fed08698e6d7c97128f3",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/5中山致远望睿交割确认函.pdf",
+      "fileName": "5中山致远望睿交割确认函.pdf",
+      "extension": "pdf",
+      "sizeBytes": 569510,
+      "sha256": "46e844224bef515a71fe169942cf4b0a6d7bae8ea6fcb1bcd3b2defcde1f0fbb",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/6君柔科技-公司章程.pdf",
+      "fileName": "6君柔科技-公司章程.pdf",
+      "extension": "pdf",
+      "sizeBytes": 11626228,
+      "sha256": "5de798d872ea3c6f18d377d5c2df79885d0d3256d11296e8d34e7823e4996c12",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "公司章程可能在多个投资阶段出现，需要结合交易前后事实消歧"
+      ],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/7君柔科技-股东会决议.pdf",
+      "fileName": "7君柔科技-股东会决议.pdf",
+      "extension": "pdf",
+      "sizeBytes": 3760279,
+      "sha256": "16f7d6ff8efa57d7cde23df47ab20e400c1a9a903e10f3f991f5725cf0a87d2a",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/8中山致远望睿缴款通知书.pdf",
+      "fileName": "8中山致远望睿缴款通知书.pdf",
+      "extension": "pdf",
+      "sizeBytes": 659888,
+      "sha256": "9e11a26986d2f764b9b6cc6e2677dbd7eeb39ca95b7243f0092da08e96521134",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/9致远望睿出资证明书➕股东名册.pdf",
+      "fileName": "9致远望睿出资证明书➕股东名册.pdf",
+      "extension": "pdf",
+      "sizeBytes": 1015473,
+      "sha256": "1fffd77b3eb98f4ee8677e52c2fb31e071fc801c8d12438a56507bc771cd373d",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "与同项目中的另一文件内容完全相同"
+      ],
+      "duplicateGroup": "duplicate-002"
+    },
+    {
+      "relativePath": "投资实施/电子回单.png",
+      "fileName": "电子回单.png",
+      "extension": "png",
+      "sizeBytes": 100592,
+      "sha256": "e799011baaa0f60317d8c8beadaddcfe6934e3581b57f30883782bab2fcb9579",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/九合-出资证明书.pdf",
+      "fileName": "九合-出资证明书.pdf",
+      "extension": "pdf",
+      "sizeBytes": 394909,
+      "sha256": "21140b81555876ad804e1b88274480b74e276d18333fcaa4042d7fd499ca73fa",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "投资实施/致远望睿出资证明书➕股东名册(2).pdf",
+      "fileName": "致远望睿出资证明书➕股东名册(2).pdf",
+      "extension": "pdf",
+      "sizeBytes": 1015473,
+      "sha256": "1fffd77b3eb98f4ee8677e52c2fb31e071fc801c8d12438a56507bc771cd373d",
+      "initialStageLabel": "投资实施",
+      "labelSource": "directory",
+      "ambiguityReasons": [
+        "与同项目中的另一文件内容完全相同"
+      ],
+      "duplicateGroup": "duplicate-002"
+    },
+    {
+      "relativePath": "项目立项/君柔科技_立项表决结果(1).pdf",
+      "fileName": "君柔科技_立项表决结果(1).pdf",
+      "extension": "pdf",
+      "sizeBytes": 641989,
+      "sha256": "f3a0130f608a02cd7346ff75c9a456a132b6ab507d5e92d20f8404cee408c6b8",
+      "initialStageLabel": "项目立项",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "项目立项/君柔科技_立项会纪要.pdf",
+      "fileName": "君柔科技_立项会纪要.pdf",
+      "extension": "pdf",
+      "sizeBytes": 187793,
+      "sha256": "e3c89002185374f017672ce4ca89b6e531d44476b86fcf8059ba10eab7b3bff0",
+      "initialStageLabel": "项目立项",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "项目立项/君柔科技_Teaser_202603(1).pptx",
+      "fileName": "君柔科技_Teaser_202603(1).pptx",
+      "extension": "pptx",
+      "sizeBytes": 9346723,
+      "sha256": "4c5e8f16fdeba39541c0ebb65f575678df40cbc2da10e2322e5718a2beb72c9d",
+      "initialStageLabel": "项目立项",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "项目立项/君柔科技-立项报告v6.pptx",
+      "fileName": "君柔科技-立项报告v6.pptx",
+      "extension": "pptx",
+      "sizeBytes": 83619757,
+      "sha256": "8811812f8d4be87f878b03b6acd3d427c3e7f2f2f2c55e7291d612e8bc433258",
+      "initialStageLabel": "项目立项",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "项目立项/君柔立项申请.png",
+      "fileName": "君柔立项申请.png",
+      "extension": "png",
+      "sizeBytes": 130809,
+      "sha256": "80e3c10d169905b2623fb313fa89413cbce4e902c98b6ad3a4c6e41825bfdc3c",
+      "initialStageLabel": "项目立项",
+      "labelSource": "directory",
+      "ambiguityReasons": [],
+      "duplicateGroup": null
+    },
+    {
+      "relativePath": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
+      "fileName": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
+      "extension": "pdf",
+      "sizeBytes": 25040502,
+      "sha256": "cc97241214983adab4327b79d0dda4c1f70b98d52fa1040318c67a8cd2d7df94",
+      "initialStageLabel": "未归类",
+      "labelSource": "none",
+      "ambiguityReasons": [
+        "文件位于项目档案根目录，缺少阶段目录标签"
+      ],
+      "duplicateGroup": null
+    }
+  ]
+}

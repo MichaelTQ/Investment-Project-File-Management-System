@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "projectName": "君柔",
+  "targetCompany": "深圳君柔科技有限公司",
+  "contextStatus": "gold_labels_approved_context_draft",
+  "latestEvidencedStage": "investment_execution",
+  "stageConfidence": "high",
+  "importantCaveat": "当前阶段只作为分类先验。用户可能补传历史文件，最终分类必须结合文件日期、版本、交易事实和关联文件。",
+  "timeline": [
+    {
+      "date": "2025-04-07",
+      "eventType": "company_incorporated",
+      "stage": "pre_initiation",
+      "title": "深圳君柔科技有限公司成立",
+      "evidenceFiles": [
+        "投资实施/2君柔-增资协议.pdf"
+      ],
+      "evidence": "增资协议记载公司成立于2025年4月7日。",
+      "confidence": "high"
+    },
+    {
+      "date": "2026-04-01",
+      "eventType": "capital_increase_agreement_signed",
+      "stage": "investment_execution",
+      "title": "增资协议签署",
+      "evidenceFiles": [
+        "投资实施/2君柔-增资协议.pdf",
+        "投资实施/5中山致远望睿交割确认函.pdf",
+        "投资实施/8中山致远望睿缴款通知书.pdf"
+      ],
+      "evidence": "交割确认函和缴款通知书均引用各方于2026年4月1日签署的增资协议。",
+      "confidence": "high"
+    },
+    {
+      "date": "2026-04-09",
+      "eventType": "investment_committee_approved",
+      "stage": "investment_decision",
+      "title": "致远望睿基金投委会通过君柔项目",
+      "evidenceFiles": [
+        "投资决策/君柔投委会决议.pdf"
+      ],
+      "evidence": "投委会决议显示5票赞成、0票反对，决议通过不超过人民币1,000万元增资入股。",
+      "confidence": "high"
+    },
+    {
+      "date": "2026-04-10",
+      "eventType": "shareholders_approved_transaction",
+      "stage": "investment_execution",
+      "title": "股东会批准增资、交易文件和章程修改",
+      "evidenceFiles": [
+        "投资实施/7君柔科技-股东会决议.pdf",
+        "投资实施/3加入协议-中山致远.pdf",
+        "投资实施/4加入协议--中山远道壹号.pdf"
+      ],
+      "evidence": "股东会决议批准注册资本由11.73624万元增加至13.04027万元，并同意签署增资协议、股东协议、加入协议及相应修改公司章程。",
+      "confidence": "high"
+    },
+    {
+      "date": "2026-04-13",
+      "eventType": "fund_compliance_review",
+      "stage": "investment_decision",
+      "title": "子基金管理人形成投资项目合规性审查意见",
+      "evidenceFiles": [
+        "中山火炬电子产业基金管理有限公司-君柔科技.pdf"
+      ],
+      "evidence": "根目录文件为君柔项目投资合规性审查表，载明项目投资方案及子基金管理人意见。",
+      "confidence": "medium",
+      "needsHumanConfirmation": true
+    },
+    {
+      "date": "2026-04-21",
+      "eventType": "closing_conditions_confirmed",
+      "stage": "investment_execution",
+      "title": "交割条件确认并发出缴款通知",
+      "evidenceFiles": [
+        "投资实施/5中山致远望睿交割确认函.pdf",
+        "投资实施/8中山致远望睿缴款通知书.pdf"
+      ],
+      "evidence": "交割确认函日期为2026年4月21日；缴款通知书要求支付1,000万元增资款。",
+      "confidence": "high"
+    },
+    {
+      "date": "2026-04-29",
+      "eventType": "investment_payment_made",
+      "stage": "investment_execution",
+      "title": "致远望睿基金支付投资款",
+      "evidenceFiles": [
+        "投资实施/电子回单.png"
+      ],
+      "evidence": "银行电子回单显示向深圳君柔科技有限公司支付人民币1,000万元，交易附言为投资款。",
+      "confidence": "high"
+    }
+  ],
+  "openQuestions": [
+    "投资实施章程的最终签署或生效日期尚未从章程正文中确认，可暂由2026年4月10日股东会决议建立事件关系。",
+    "需要由业务人员确认现有目录是否可以作为全部35份文件的初始人工标签。"
+  ]
+}

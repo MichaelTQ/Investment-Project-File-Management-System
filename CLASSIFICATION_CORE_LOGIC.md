@@ -29,6 +29,87 @@
 - 扫描 PDF：当提取文字少于 30 个字符时，最多选取 12 页页面图片，分批进行视觉文字提取。
 - 文件解析失败：退化为仅使用原始文件名进行分类。
 
+### Shadow mode：结构化文档事实抽取
+
+系统已经加入独立的文档事实层：
+
+- `src/lib/classification/document-facts.ts`：定义 `DocumentFactsSchema`、JSON 安全解析和零置信度降级结果；
+- `src/lib/classification/fact-extractor.ts`：调用 LLM 提取文件类型、标题、日期、主体、签署状态、交易变化和证据；
+- `src/app/api/classify/route.ts`：通过 shadow mode 可选调用事实抽取器。
+
+启用方式：
+
+```text
+单次请求：extractFacts=true
+全局启用：ENABLE_DOCUMENT_FACTS_SHADOW=true
+```
+
+当前事实结果会作为 `documentFacts` 返回，并在 `process.step0_factExtraction` 中记录 `success` 或 `fallback`。事实抽取失败时返回 `documentType=unknown`、`extractionConfidence=0`，不会阻断原分类流程。
+
+重要边界：当前 shadow 结果不参与关键词得分、LLM 类别选择或自动归档。启用后会增加一次模型调用，主要用于使用君柔评测集验证事实完整度。
+
+### Shadow mode：项目记忆持久化
+
+执行 `src/storage/database/migrations/0001_agent_context.sql` 后，可以启用：
+
+```text
+单次请求：persistFacts=true
+全局启用：PERSIST_PROJECT_MEMORY_SHADOW=true
+```
+
+当前 Coze 开发环境未执行项目记忆表迁移，因此禁止使用 `persistFacts=true`，也禁止设置 `PERSIST_PROJECT_MEMORY_SHADOW=true`。持久化只在最终自有 Supabase 完成建表后启用。
+
+### Shadow mode：上下文决策
+
+`src/lib/classification/context-decision.ts` 实现了第一版内存型上下文决策器。调用 `/api/classify` 时传入 `contextDecision=true` 会自动启用文档事实抽取，并可同时传入：
+
+- `sourcePath`：文件在项目档案中的原始相对路径；
+- `projectContext`：符合 `ProjectContextSnapshotSchema` 的项目阶段与时间线快照；
+- `relatedDocumentFacts`：同项目关联文件的 `sourcePath + DocumentFacts` 列表。
+
+返回的 `contextDecision` 包含候选得分、决定性证据、冲突、策略版本和人工复核标记。当前它与 legacy 分类结果并列返回，不修改 `category`、`confidence` 或自动归档结果。
+
+第一版规则覆盖：
+
+- 根据注册资本、股东变化、有效日期、项目事件和关联章程对比，区分交易前公司章程和投资实施阶段项目公司章程；
+- 根据正式标题、管理人意见、投资限制审查和项目事件，识别投资合规性审查表；
+- 项目“当前阶段”只是弱先验，不能单独把后补上传的历史文件归入当前阶段。
+
+### Shadow mode：LangGraph 分类 Agent
+
+`src/lib/classification/classification-agent.ts` 已使用 `@langchain/langgraph` 实现第一版可执行状态图。它不是再写一个更长的 Prompt，而是用共享状态、节点和条件边组织以下流程：
+
+```text
+证据规划
+→ 按文档类型决定是否检索关联文件
+→ 上下文决策
+→ 证据不足时继续检索或转人工
+→ 有充分证据时完成建议
+```
+
+当前节点包括 `plan_evidence`、`retrieve_related_document`、`context_decision`、`complete` 和 `human_review`。公司章程会动态检索其他章程并允许多轮比较；合规审查表即使得出分类建议，也会遵守类别策略转人工；尚无规则的文件不会让模型猜测。
+
+启用方式：
+
+```text
+单次请求：agentDecision=true
+全局启用：ENABLE_CLASSIFICATION_AGENT_SHADOW=true
+```
+
+请求可同时提供 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`。返回值包含 `agentDecision` 及 `process.step0_agentOrchestration`，可查看最终状态、检索轮数、节点轨迹和调度层模型调用数。
+
+当前 Agent 调度层的 `llmCallCount` 固定为 0：LangGraph 负责工作流和工具调度，前置事实抽取器才可能调用一次 Coze LLM。Agent 仍为非持久化 shadow mode，不修改 legacy `category`，不触发额外归档，也不写入 Supabase。
+
+持久化行为包括：
+
+1. 优先使用文件内容 SHA-256；无法直接读取 Buffer 时使用存储身份生成源指纹；
+2. 按 `(project_id, source_fingerprint)` 幂等 upsert `document_facts`；
+3. 正式归档成功后，将事实记录关联到 `archived_files.id`；
+4. 将当前 legacy 分类器的候选和结论写入 `classification_decisions`，策略版本为 `legacy-classification-v1`；
+5. 持久化失败只记录在 `process` 中，不改变原分类或归档结果。
+
+`persistFacts=true` 会自动启用事实抽取，并且必须提供有效 `projectId`。数据库迁移应用前不得打开全局持久化开关。
+
 ## 三、关键词评分
 
 ### 1. 基础权重
@@ -184,6 +265,12 @@ LLM 置信度会：
 
 文件名“项目公司章程.pdf”不会把“章程”“公司章程”“项目公司章程”重复累计。若候选类别得分接近，则进入 AI 消歧和人工确认。
 
+### 投资合规性审查表
+
+该类别归入“基金投资及投资执行 / 投资决策 / 上会材料”。文件需至少有正式合规审查表标题，或有子基金管理人针对具体投资项目出具的合规审查意见。
+
+仅出现一般性“合规”字样不足以归类。法律尽调报告、投后合规检查和没有独立合规审查结构的投资建议书属于排除项。在累积更多项目样本前，该类别默认需人工复核。可执行规则见 `src/lib/classification/category-policies.ts`。
+
 ## 八、自动归档条件
 
 只有同时满足以下条件才会自动归档：
@@ -193,7 +280,7 @@ LLM 置信度会：
 3. 最终分类不为空。
 4. 分类结果不要求人工确认。
 
-当前只有明确通过关键词判定的结果可以直接自动归档。LLM 分类和降级分类均需人工确认。
+当前明确通过关键词判定的结果原则上可以直接自动归档，但若该类别的证据策略设置了 `defaultRequiresHumanReview`，仍必须人工确认。LLM 分类和降级分类也均需人工确认。
 
 ## 九、回归测试
 
@@ -201,6 +288,17 @@ LLM 置信度会：
 
 ```bash
 pnpm test:classification
+pnpm test:agent
+pnpm test:agent-report
+pnpm test:context
+pnpm test:shadow-report
+```
+
+重新生成君柔真实文件 shadow 报告（仅 macOS 本地评测，使用 Vision OCR）：
+
+```bash
+pnpm evaluate:junrou-shadow
+pnpm evaluate:junrou-agent
 ```
 
 测试覆盖：
@@ -212,3 +310,10 @@ pnpm test:classification
 - 最高分并列时进入 AI
 - LLM 同名类别索引映射
 - LLM 置信度校验
+- 投资合规性审查表识别与人工复核策略
+- 交易前/增资后章程的关联事实消歧
+- 项目当前阶段不能单独决定历史文件位置
+- 上下文输入 Schema 校验和证据不足降级
+- Agent 根据文档类型动态选择关联文件和执行路径
+- Agent 多轮检索、明确终止、规则未覆盖时安全转人工
+- 君柔 Agent 报告中明确建议 3/3 命中且错误自主建议为 0

@@ -17,6 +17,41 @@
 
 本文档描述目标方案，不代表所有内容已经实现。实施过程中如调整关键架构、数据模型或验收标准，应同步更新本文档。
 
+### 当前实施状态
+
+截至当前版本：
+
+- 已完成君柔 35 份业务文件的机器清单和重复检测；
+- 已完成 7 个项目事件的上下文草案；
+- 6 个君柔金标准分类用例已于 2026-08-01 通过业务验收；
+- 已将“投资合规性审查表”加入投资决策/上会材料，并建立正证据、排除项和默认人工复核规则；
+- 已实现 `DocumentFactsSchema`、事实响应安全解析和降级结果；
+- 已实现事实抽取器，并通过 `extractFacts=true` 或 `ENABLE_DOCUMENT_FACTS_SHADOW=true` 以 shadow mode 接入 `/api/classify`；
+- 已新增 `project_contexts`、`project_events`、`document_facts` 和 `classification_decisions` Drizzle Schema 与 SQL 迁移；
+- 已实现项目记忆存储层、源指纹幂等 upsert、预归档事实记录和归档后关联；
+- 已通过 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true` 接入事实与 legacy 决策的可选持久化；
+- 已实现 `context-decision-v1` 内存型上下文决策器，首批覆盖交易前/增资后公司章程和投资合规性审查表；
+- `/api/classify` 支持 `contextDecision=true`，可在不持久化的情况下输入项目快照和关联文件事实，返回 shadow 上下文建议；
+- 已对 6 份君柔金标准原始 PDF 完成真实文件 shadow 评测：6/6 文档类型抽取正确，上下文 v1 覆盖 3 份且 3/3 命中；
+- 评测确认 6 份 PDF 全部无文字层，OCR/视觉抽取是真实档案链路的必要组成；
+- 已安装 `@langchain/langgraph`，实现 `classification-agent-langgraph-v1` 状态图；
+- Agent 已具备证据规划、关联文件检索、条件循环、上下文决策、完成和转人工节点；
+- `/api/classify` 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true`，返回 Agent 决策与完整执行轨迹；
+- 君柔 Agent shadow 评测中明确建议 3 份且 3/3 命中，3 份规则未覆盖文件均安全转人工，错误自主建议为 0；
+- Agent 调度层使用确定性规则，模型调用数为 0；前置 `DocumentFacts` 抽取仍可能调用一次 Coze LLM；
+- shadow 事实暂不参与最终分类或自动归档；
+- SQL 迁移尚未应用到远端 Supabase；LangGraph Agent 仍为 shadow mode，尚未接管最终分类与自动归档。
+
+### 当前环境决策（2026-08-01）
+
+- 开发阶段继续使用 Coze 提供的原有运行环境，不更换 Supabase 连接；
+- 当前没有需要迁移的重要业务数据；
+- 不在 Coze 代管的 Supabase 上尝试执行数据库结构迁移；
+- `PERSIST_PROJECT_MEMORY_SHADOW` 保持关闭，开发验证使用非持久化 shadow mode 和 `tests/fixtures` 中的君柔数据；
+- 最终真实上线前，由项目所有者注册自有 Supabase，一次性部署基础表与 Agent 项目记忆表，再切换环境变量。
+
+在上述决策被明确修改前，后续开发不得要求 Coze 环境存在 `project_contexts`、`project_events`、`document_facts` 或 `classification_decisions` 表。
+
 ## 2. 下一阶段目标
 
 下一阶段只聚焦一个核心目标：
@@ -376,6 +411,8 @@ const DocumentFactsSchema = z.object({
 
 预计用时：4–5 天。
 
+当前进度：第一版 shadow 状态图已于 2026-08-01 实现，代码位于 `src/lib/classification/classification-agent.ts`。已完成共享 State、条件路由、关联文件检索循环、明确完成节点和人工复核节点；事实抽取和持久化暂仍由 API 外层负责，Agent 不接管归档。
+
 建议依赖：
 
 ```bash
@@ -434,6 +471,8 @@ update_context
 ### 阶段六：只为疑难文件启用 Agent
 
 预计用时：3–4 天。
+
+当前进度：已完成后端最小闭环。章程歧义会按需检索关联章程，证据仍不足时继续循环；规则未覆盖或类别策略要求确认时转人工。当前关联事实由请求注入，尚未连接正式项目记忆库，也尚未接入前端人工确认面板。
 
 普通文件使用固定工作流。只有候选冲突或证据不足时，才调用歧义消解 Agent。
 

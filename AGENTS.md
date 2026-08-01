@@ -14,6 +14,7 @@
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **样式**: Tailwind CSS 4
 - **AI 能力**: coze-coding-dev-sdk (LLM + FetchClient)
+- **Agent 编排**: @langchain/langgraph（状态图、条件路由、证据检索循环）
 - **数据库**: Supabase (Drizzle ORM)
 - **文件存储**: S3 兼容对象存储 (coze-coding-dev-sdk StorageClient)
 
@@ -31,10 +32,17 @@ src/
 ├── components/ui/                    # shadcn/ui 组件库
 ├── lib/
 │   ├── folder-structure.ts           # 文件夹结构定义 + 类型
+│   ├── classification/
+│   │   ├── document-facts.ts         # 文档事实 Schema + 安全解析/降级
+│   │   ├── fact-extractor.ts         # 文档事实 LLM 抽取器（shadow mode）
+│   │   ├── context-decision.ts       # 项目上下文证据决策器
+│   │   └── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）
+│   ├── project-memory.ts             # 项目上下文、事件、文档事实和分类决策存储层
 │   └── storage.ts                    # 统一存储层（Supabase + S3）
 ├── storage/
 │   └── database/
-│       ├── shared/schema.ts          # Drizzle schema（projects, archived_files）
+│       ├── shared/schema.ts          # Drizzle schema（业务表 + 项目记忆表）
+│       ├── migrations/               # Supabase SQL 迁移
 │       └── supabase-client.ts        # Supabase 客户端初始化
 └── hooks/                            # React Hooks
 ```
@@ -62,6 +70,9 @@ src/
 - **classifyWithLLM()**: 使用 LLM 进行智能分类
 - 支持 PDF、Word、Excel、PPT、TXT 等格式
 - 支持 `projectId` 和 `autoArchive` 参数，分类后自动归档
+- 支持 `extractFacts=true` 或环境变量 `ENABLE_DOCUMENT_FACTS_SHADOW=true`，以 shadow mode 返回结构化文档事实；该结果暂不参与最终分类或自动归档
+- 支持 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true`，将事实和当前 legacy 分类决策写入项目记忆表；持久化失败不会阻断原分类
+- 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
@@ -166,6 +177,19 @@ src/
 | reasoning | text | 分类理由 |
 | archived_at | timestamptz | 归档时间 |
 
+### 项目记忆表
+
+- `project_contexts`：项目阶段、目标公司、投资方、关键日期和上下文版本；
+- `project_events`：投决、签约、股东会、交割和付款等带证据的业务事件；
+- `document_facts`：允许预归档创建的结构化事实，按项目和源指纹幂等 upsert；
+- `classification_decisions`：候选、证据、冲突、策略版本、复核状态和人工纠正。
+
+### 已验收的试点标签
+
+- 君柔试点的 6 个核心分类用例已于 2026-08-01 通过业务验收；
+- “投资合规性审查表”归入“投资决策 / 上会材料”；
+- 该类别的证据与排除规则位于 `src/lib/classification/category-policies.ts`，在积累更多项目样本前默认需人工复核。
+
 ## 运行命令
 - `pnpm dev`: 启动开发环境
 - `pnpm build`: 构建生产版本
@@ -178,6 +202,17 @@ src/
 - `COZE_PROJECT_DOMAIN_DEFAULT`: 对外访问域名
 - `COZE_BUCKET_ENDPOINT_URL`: S3 对象存储端点
 - `COZE_BUCKET_NAME`: S3 存储桶名称
+- `ENABLE_DOCUMENT_FACTS_SHADOW`: 是否默认启用结构化文档事实抽取（默认关闭）
+- `ENABLE_CLASSIFICATION_AGENT_SHADOW`: 是否默认运行 LangGraph 分类 Agent（默认关闭）
+- `PERSIST_PROJECT_MEMORY_SHADOW`: 是否将 shadow 事实和分类决策写入 Supabase（默认关闭；启用前必须执行 `0001_agent_context.sql`）
+
+### 开发环境约束
+
+- 当前继续使用 Coze 代管环境，不修改其 Supabase 数据库结构；
+- 开发阶段不得开启 `PERSIST_PROJECT_MEMORY_SHADOW`；
+- Agent 项目记忆相关功能以非持久化 shadow mode 和本地 fixtures 验证；
+- Agent 当前只生成结构化建议和执行轨迹，不接管 legacy 分类、自动归档或数据库写入；
+- 最终上线时再创建自有 Supabase，并执行完整数据库初始化与迁移。
 
 ## 依赖说明
 - `coze-coding-dev-sdk`: 提供 LLM、文件解析、对象存储能力

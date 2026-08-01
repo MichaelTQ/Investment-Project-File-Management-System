@@ -1,0 +1,1293 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-01T09:30:23.972Z",
+  "mode": "local-vision-ocr-context-shadow",
+  "limitations": [
+    "六份PDF全部无文字层，使用macOS Vision OCR",
+    "本地事实适配器不等同于Coze LLM事实抽取器",
+    "未调用Coze LLM的legacy最终分类，只评估关键词预判",
+    "上下文规则v1只覆盖公司章程和投资合规性审查表"
+  ],
+  "summary": {
+    "evaluatedCaseCount": 6,
+    "scannedPdfCount": 6,
+    "factTypeCorrectCount": 6,
+    "keywordTopCorrectCount": 2,
+    "keywordAutoDecisionCount": 0,
+    "contextCoveredCount": 3,
+    "contextCoveredCorrectCount": 3,
+    "contextHumanReviewCount": 4
+  },
+  "cases": [
+    {
+      "id": "junrou-charter-pre-transaction",
+      "relativePath": "投资决策/公司章程.pdf",
+      "sha256": "e5fb45b5647b61a121ee1d88f6f72f62f78cc2e6e878cc545268406f7b4abda8",
+      "pageCount": 21,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 9152,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "company_charter",
+        "rawDocumentType": "件的规定，制定木章程。",
+        "title": "件的规定，制定木章程。",
+        "documentNumber": null,
+        "version": null,
+        "dates": [
+          {
+            "date": "2030-03-30",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2030-03-30"
+          },
+          {
+            "date": "2025-10-30",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2025-10-30"
+          }
+        ],
+        "parties": [
+          {
+            "name": "名称：深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "3、深圳感柔科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳泓远志科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "4、深圳鹏鑫澄科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "5、深圳市南山战新投种子投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳南山汇融股权投资管理有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "6、成都丹肠慧创脑科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "3、股东姓名或名称：深圳感柔科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "4、股东姓名或名称：深圳鹏鑫澄科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "5、股东姓名或名称：深圳市南山战新投种子投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "6、股东姓名或名称：成都丹旸慧创脑科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "设立合伙企业，加入合伙、合资或形成联营，或建立新的子公司或分支机构，但",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（此页无正文，为《深圳君柔科技有限公司引程》之領",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳感柔科技合伙企业（有",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（此页无正文，为《深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "內《深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳市南山战新投种子投资合伙企业（有限合伙）女公章）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳南山汇融股权投资管理有限公司（公章）",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "（二）有权查阅、复制公司章程、股东名册、股东会会议记录、董事会会议",
+          "证明书，向新股东签发出资证明书，并相应修改公司章程和股东名册中有关股东",
+          "及其出资额的记载。对公司章程的该项修改不需再由股东会表决。",
+          "第二十二条 有下列情形之一的，对股东会该项决议投反对票的股东可以请",
+          "自股东会决议作出之日起六十日内，股东与公司不能达成股权收购协议的，",
+          "股东可以自股东会决议作出之日起九十目内向人民法院提起诉讼。",
+          "第二十四条 公司设股东会，",
+          "股东会是公司的最高",
+          "第二十五条 股东会行使下列职权：",
+          "（七）修改公司章程；",
+          "股东对前款规定事项以书面形式一致表示同意的，可以不召开股东会会议，",
+          "第二十六条 股东会会议由股东按照出资比例行使表决权。",
+          "股东会作出决议，应当经代表过半数表决权的股东通过。",
+          "股东会作出修改公司章程、增加或者减少注册资本的决议，以及公司合并、",
+          "股东会的决议内容违反法律、行政法规的无效。",
+          "股东会的会议召集程序、表决方式违反法律、行政法规或者公司章程，或者",
+          "公司股东会、董事决议被人民法院宣告无效、撤销或者确认不成立的，公司",
+          "第二十七条 股东会会议分为定期会议和临时会议。",
+          "第二十八条 股东会会议由董事召集和主持，董事因特殊原因不能履行职务",
+          "会议召开前二十日通知全体股东，召开临时股东会会议，应当于会议召开十五日",
+          "第三十条 股东会应当对所议事项的决定作成会议记录，出席会议的股东",
+          "第三十二条 董事由股东会任命产生，董事的任期每届为三年。董事任期届",
+          "第三十四条 董事对股东会负责，行使",
+          "（一）召集股东会会议，并向股东会报告工作；",
+          "（二）执行股东会的决议；",
+          "（十）公司章程规定或者股东会授予的其他职权。",
+          "送股东会。",
+          "年。由股东会任命产生。",
+          "股东会通过的章程修正案或新章程，均本章程的组成部分，应当报公司登",
+          "第六十七条 本章程的解释权归公司股东会。"
+        ],
+        "evidenceQuotes": [
+          "认缴出资额：人民币3.79169万元",
+          "认缴出资额：人民币3.25002万元",
+          "认缴出资额：人民币2.16668 万元",
+          "认缴出资额：人民币 1.62501 万元",
+          "认缴出资额：人民币0.45142万元",
+          "认缴出资额：人民币 0.45142万元",
+          "1.73624万元。",
+          "认缴出资额：人民币3.79169万元",
+          "认缴出资额：人民币3.25002万元",
+          "认缴出资额：人民币2.16668 万元",
+          "认缴出资额：人民币 1.62501 万元",
+          "认缴出资额：人民币0.45142万元",
+          "认缴出资额：人民币 0.45142万元",
+          "置股权投资或单笔超过1,000万元，无论通过一次性交易或一系列相关交易达成；",
+          "（十九）超过1,000万元的预算外固定资产投资或其他超过1,000万元的非",
+          "（二十）单笔超过 1,000万元（经分拆的项目分项应合并计算并以总金额内",
+          "（二十四）就金额超过1,000万元的诉讼、仲裁或其他争议达成和解；",
+          "（三）公司注册资本；",
+          "自股东会决议作出之日起六十日内，股东与公司不能达成股权收购协议的，",
+          "股东可以自股东会决议作出之日起九十目内向人民法院提起诉讼。",
+          "（四）对公司增加或者减少注册资本作出决议；",
+          "（八）变更注册资本或资本结构；",
+          "股东会作出修改公司章程、增加或者减少注册资本的决议，以及公司合并、",
+          "（五）制订公司增加或者减少注册资本以及发行公司债券的方案；",
+          "增加公司注册资本。",
+          "法定公积金转增加注册资本时，所留存的该项公积金不得少于转增前公司",
+          "注册资本的百分之二十五。"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 85
+      },
+      "goldDocumentType": "company_charter",
+      "goldCategory": {
+        "folderId": "decision-meeting",
+        "fileName": "公司章程",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资决策",
+          "上会材料"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "上会材料"
+          ],
+          "folderId": "decision-meeting",
+          "fileName": "公司章程",
+          "keywords": [
+            "章程",
+            "工商登记",
+            "公司章程"
+          ],
+          "description": "项目公司工商登记章程"
+        },
+        "topScore": 4,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": true,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "上会材料"
+          ],
+          "folderId": "decision-meeting",
+          "fileName": "公司章程",
+          "keywords": [
+            "章程",
+            "工商登记",
+            "公司章程"
+          ],
+          "description": "项目公司工商登记章程"
+        },
+        "confidence": 50,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资决策",
+                "上会材料"
+              ],
+              "folderId": "decision-meeting",
+              "fileName": "公司章程",
+              "keywords": [
+                "章程",
+                "工商登记",
+                "公司章程"
+              ],
+              "description": "项目公司工商登记章程"
+            },
+            "score": 50,
+            "evidence": [
+              "项目内关联章程“投资实施/6君柔科技-公司章程.pdf”注册资本更高，当前文件更可能是交易前版本"
+            ],
+            "contradictions": []
+          },
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资实施"
+              ],
+              "folderId": "investment-implementation",
+              "fileName": "项目公司章程",
+              "keywords": [
+                "项目公司章程",
+                "新章程"
+              ],
+              "description": "项目公司章程"
+            },
+            "score": 25,
+            "evidence": [
+              "项目已有投资实施事件；该信息只作为弱先验，不能单独决定历史文件阶段"
+            ],
+            "contradictions": []
+          }
+        ],
+        "evidence": [
+          "项目内关联章程“投资实施/6君柔科技-公司章程.pdf”注册资本更高，当前文件更可能是交易前版本"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": false,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 公司章程”，得分 50。",
+        "policyVersion": "context-decision-v1"
+      },
+      "contextMatchesGold": true
+    },
+    {
+      "id": "junrou-charter-post-transaction",
+      "relativePath": "投资实施/6君柔科技-公司章程.pdf",
+      "sha256": "5de798d872ea3c6f18d377d5c2df79885d0d3256d11296e8d34e7823e4996c12",
+      "pageCount": 26,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 10603,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "company_charter",
+        "rawDocumentType": "深圳君柔科技有限公司章程",
+        "title": "深圳君柔科技有限公司章程",
+        "documentNumber": null,
+        "version": null,
+        "dates": [
+          {
+            "date": "2030-03-30",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2030-03-30"
+          },
+          {
+            "date": "2026-04-01",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2026-04-01"
+          }
+        ],
+        "parties": [
+          {
+            "name": "深圳君柔科技有限公司章程",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "名称：深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "3、深圳感柔科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳泓远志科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "4、深圳鹏鑫澄科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "5、深圳市南山战新投种子投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳南山汇融股权投资管理有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "6、成都丹旸慧创脑科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "7、上海九合深远创业投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "8、中山致远望睿创业投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "9、中山远道壹号股权投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "3、股东姓名或名称：深圳感柔科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "4、股东姓名或名称：深圳鹏鑫澄科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "5、股东姓名或名称：深圳市南山战新投种子投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "6、股东姓名或名称：成都丹旸慧创脑科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "7、股东姓名或名称：上海九合深远创业投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "8、股东姓名或名称：中山致远望睿创业投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "9、股东姓名或名称：中山远道壹号股权投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "设立合伙企业，加入合伙、合资或形成联营，或建立新的子公司或分支机构，但",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "司、深圳市南山战新投种子投资合伙企业（有限合伙）、上海九合深远创业投资",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "合伙企业（有限合伙）、中山致远望睿创业投资基金合伙企业（有限合伙）、中",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "山远道壹号股权投资基金合伙企业（有限合伙）合计所持公司表决权的半数以上",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "资合伙企业（有限合伙）有权提名一名董事；刘志远有权提名二名董事。由刘志",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（此页无正文，为《深圳君柔科技有限公司章程》之签字页）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "速圳泓远志科技有限公司（公章）",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "（二）有权查阅、复制公司章程、股东名册、股东会会议记录、董事会会议",
+          "证明书，向新股东签发出资证明书，并相应修改公司章程和股东名册中有关股东",
+          "及其出资额的记载。对公司章程的该项修改不需再由股东会表决。",
+          "第二十二条 有下列情形之一的，对股东会该项决议投反对票的股东可以请",
+          "自股东会决议作出之日起六十日内，股东与公司不能达成股权收购协议的，",
+          "股东可以自股东会决议作出之日起九十日内向人民法院提起诉讼。",
+          "第五章 股东会",
+          "第二十四条 公司设股东会，股东会由全体股东组成，股东会是公司的最高",
+          "第二十五条 股东会行使下列职权：",
+          "（二） 修改公司章程；",
+          "股东对前款规定事项以书面形式一致表示同意的，可以不召开股东会会议，",
+          "第二十六条 股东会会议由股东按照出资比例行使表决权。",
+          "股东会作出决议，应当经代表过半数表决权的股东通过。",
+          "股东会作出修改公司章程、增加或者减少注册资本的决议，以及公司合并、",
+          "股东会的决议内容违反法律、行政法规的无效。",
+          "股东会的会议召集程序、表决方式违反法律、行政法规或者公司章程，或者",
+          "公司股东会、董事会决议被人民法院宣告无效、撤销或者确认不成立的，公",
+          "第二十七条 股东会会议分为定期会议和临时会议。",
+          "第二十八条 股东会会议由董事会召集，董事长主持；董事长不能履行职务",
+          "由过半数的董事共同推举一名董事主持。董事会不能履行或者不履行召集股东会",
+          "会议召开前二十日通知全体股东，召开临时股东会会议，应当于会议召开十五日",
+          "第三十条 股东会应当对所议事项的决定作成会议记录，出席会议的股东",
+          "第三十二条 董事会成员由股东会选举产生，董事的任期每届为三年。董事",
+          "第三十四条 董事会对股东会负责，行使下列职权：",
+          "（一）召集股东会会议，并向股东会报告工作；",
+          "（二）执行股东会的决议；",
+          "（十六）公司章程规定或者股东会授予的其他职权。",
+          "董事会应当将其根据本章程规定的事项所作的决定以书面形式报送股东会。",
+          "年。由股东会任命产生。",
+          "股东会通过的章程修正案或新章程，均为本章程的组成部分，应当报公司登"
+        ],
+        "evidenceQuotes": [
+          "注册资本 第十二条 公司全体股东认缴的注册资本总额为人民币13.04027万元",
+          "认缴出资额：人民币 3.79169万元",
+          "认缴出资额：人民币3.25002万元",
+          "认缴出资额：人民币2.16668 万元",
+          "认缴出资额：人民币1.62501万元",
+          "认缴出资额：人民币 0.45142万元",
+          "认缴出资额：人民币 0.45142万元",
+          "认缴出资额：人民币 0.65201万元",
+          "认缴出资额：人民币0.43468万元",
+          "认缴出资额：人民币 0.21734万元",
+          "第十二条 公司全体股东认缴的注册资本总额为人民币13.04027万元。",
+          "认缴出资额：人民币 3.79169万元",
+          "认缴出资额：人民币3.25002万元",
+          "认缴出资额：人民币2.16668 万元",
+          "认缴出资额：人民币1.62501万元",
+          "认缴出资额：人民币 0.45142万元",
+          "认缴出资额：人民币 0.45142万元",
+          "认缴出资额：人民币 0.65201万元",
+          "认缴出资额：人民币0.43468万元",
+          "认缴出资额：人民币 0.21734万元",
+          "（十二）超过1,000万元的预算外固定资产投资，无论通过一次交易或一系",
+          "股权投资或单笔超过1,000万元，无论通过一次性交易或一系列相关交易达成；",
+          "（十一）超过1,000万元的非正常业务费用的借款、贷款、预付款或其他任",
+          "（十二）单笔超过1,000万元（经分拆的项目分项应合并计算并以总金额为",
+          "（十五）就金额超过1,000万元的诉讼、仲裁或其他争议达成和解。",
+          "（三）公司注册资本；",
+          "第三章 注册资本",
+          "第十二条 公司全体股东认缴的注册资本总额为人民币13.04027万元。",
+          "（三）公司注册资本；",
+          "自股东会决议作出之日起六十日内，股东与公司不能达成股权收购协议的，"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 85
+      },
+      "goldDocumentType": "company_charter",
+      "goldCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "项目公司章程",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "上会材料"
+          ],
+          "folderId": "decision-meeting",
+          "fileName": "公司章程",
+          "keywords": [
+            "章程",
+            "工商登记",
+            "公司章程"
+          ],
+          "description": "项目公司工商登记章程"
+        },
+        "topScore": 4,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": false,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资实施"
+          ],
+          "folderId": "investment-implementation",
+          "fileName": "项目公司章程",
+          "keywords": [
+            "项目公司章程",
+            "新章程"
+          ],
+          "description": "项目公司章程"
+        },
+        "confidence": 55,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资实施"
+              ],
+              "folderId": "investment-implementation",
+              "fileName": "项目公司章程",
+              "keywords": [
+                "项目公司章程",
+                "新章程"
+              ],
+              "description": "项目公司章程"
+            },
+            "score": 55,
+            "evidence": [
+              "项目内关联章程“投资决策/公司章程.pdf”注册资本更低，当前文件更可能是增资后版本",
+              "项目已有投资实施事件；该信息只作为弱先验，不能单独决定历史文件阶段"
+            ],
+            "contradictions": []
+          },
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资决策",
+                "上会材料"
+              ],
+              "folderId": "decision-meeting",
+              "fileName": "公司章程",
+              "keywords": [
+                "章程",
+                "工商登记",
+                "公司章程"
+              ],
+              "description": "项目公司工商登记章程"
+            },
+            "score": 20,
+            "evidence": [],
+            "contradictions": []
+          }
+        ],
+        "evidence": [
+          "项目内关联章程“投资决策/公司章程.pdf”注册资本更低，当前文件更可能是增资后版本",
+          "项目已有投资实施事件；该信息只作为弱先验，不能单独决定历史文件阶段"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": false,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 项目公司章程”，得分 55。",
+        "policyVersion": "context-decision-v1"
+      },
+      "contextMatchesGold": true
+    },
+    {
+      "id": "junrou-shareholder-resolution",
+      "relativePath": "投资实施/7君柔科技-股东会决议.pdf",
+      "sha256": "16f7d6ff8efa57d7cde23df47ab20e400c1a9a903e10f3f991f5725cf0a87d2a",
+      "pageCount": 11,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 2365,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "shareholder_resolution",
+        "rawDocumentType": "股东会决议",
+        "title": "股东会决议",
+        "documentNumber": null,
+        "version": null,
+        "dates": [],
+        "parties": [
+          {
+            "name": "深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳君柔科技有限公司（以下简称“公司”）根据《中华人民共和国公司法》以及",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "九合深远创业投资合伙企业（有限合伙）（以下简称“九合创投”）以投资金额",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "山致远望睿创业投资基金合伙企业（有限合伙）以投资金额1000万元认购本次新增",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "金合伙企业（有限合伙）以投资金额500万元认购本次新增注册资本0.21734万元，超",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳感柔科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳鹏鑫澄科技合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳市南山战新投种子投资合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "成都丹旸慧创脑科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "中山致远望睿创业投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "中山远道壹号股权投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "3. 就本次增资交易，公司全体股东一致同意公司与上海九合深远创业投资合伙企业（",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "有限合伙）以及其他相关方共同签署《关于深圳君柔科技有限公司之增资协议》（",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "以下简称“《增资协议》”）以及《关于深圳君柔科技有限公司之股东协议》（以",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "全体股东同意并确认，中山致远望睿创业投资基金合伙企业（有限合伙）、中山远",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "道壹号股权投资基金合伙企业（有限合伙）以签署《加入协议》的形式参与本次增",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "【彭乾碧】；由上海九合深远创业投资合伙企业（有限合伙）提名1名，为【汪思源】",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（此页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳君柔科技有限公司股东会决议-签署页",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（本页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "执行事务合伙人：深圳泓远志科技有限公司公章）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "深圳鹏鑫澄科技合伙企业",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "成都丹旸慧创脑科技有限公司（公章）",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "股东会决议",
+          "出部分计入公司的资本公积金（以下简称“本次增资”）。公司其余股东同意特此",
+          "2． 本次增资完成后，公司股权结构变更为：",
+          "3. 就本次增资交易，公司全体股东一致同意公司与上海九合深远创业投资合伙企业（",
+          "有限合伙）以及其他相关方共同签署《关于深圳君柔科技有限公司之增资协议》（",
+          "以下简称“《增资协议》”）以及《关于深圳君柔科技有限公司之股东协议》（以",
+          "下简称“《股东协议》”，以及根据《增资协议》、《股东协议》须签署的其他文",
+          "资交易；《加入协议》签署生效后，上述投资方应自《增资协议》《股东协议》签",
+          "署日起被视为《增资协议》《股东协议》及其他相关交易文件的一方当事人，并自",
+          "其完成增资交割之日起享有《增资协议》《股东协议》项下本轮投资人均享有的权",
+          "同意公司就本轮投资方认购公司新增注册资本事宜签署《增资协议》《股东协议》",
+          "6. 同意公司就上述增资事宜相应修改公司章程。",
+          "（此页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）",
+          "深圳君柔科技有限公司股东会决议-签署页",
+          "（本页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）"
+        ],
+        "evidenceQuotes": [
+          "注册资本由人民币11.73624万元",
+          "注册资本0.65201万元",
+          "注册资本0.43468万元",
+          "注册资本0.21734万元",
+          "1. 同意公司注册资本由人民币11.73624万元增加至人民币13.04027万元，其中，由上海",
+          "1500万元认购本次新增注册资本0.65201万元，超出部分计入公司的资本公积金；中",
+          "山致远望睿创业投资基金合伙企业（有限合伙）以投资金额1000万元认购本次新增",
+          "注册资本0.43468万元，超出部分计入公司的资本公积金：中山远道壹号股权投资基",
+          "金合伙企业（有限合伙）以投资金额500万元认购本次新增注册资本0.21734万元，超",
+          "股东会决议",
+          "1. 同意公司注册资本由人民币11.73624万元增加至人民币13.04027万元，其中，由上海",
+          "1500万元认购本次新增注册资本0.65201万元，超出部分计入公司的资本公积金；中",
+          "注册资本0.43468万元，超出部分计入公司的资本公积金：中山远道壹号股权投资基",
+          "金合伙企业（有限合伙）以投资金额500万元认购本次新增注册资本0.21734万元，超",
+          "出部分计入公司的资本公积金（以下简称“本次增资”）。公司其余股东同意特此",
+          "2． 本次增资完成后，公司股权结构变更为：",
+          "注册资本（万元）",
+          "3. 就本次增资交易，公司全体股东一致同意公司与上海九合深远创业投资合伙企业（",
+          "有限合伙）以及其他相关方共同签署《关于深圳君柔科技有限公司之增资协议》（",
+          "以下简称“《增资协议》”）以及《关于深圳君柔科技有限公司之股东协议》（以",
+          "下简称“《股东协议》”，以及根据《增资协议》、《股东协议》须签署的其他文",
+          "资交易；《加入协议》签署生效后，上述投资方应自《增资协议》《股东协议》签",
+          "署日起被视为《增资协议》《股东协议》及其他相关交易文件的一方当事人，并自",
+          "其完成增资交割之日起享有《增资协议》《股东协议》项下本轮投资人均享有的权",
+          "同意公司就本轮投资方认购公司新增注册资本事宜签署《增资协议》《股东协议》",
+          "6. 同意公司就上述增资事宜相应修改公司章程。",
+          "（此页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）",
+          "深圳君柔科技有限公司股东会决议-签署页",
+          "（此页无正文，为《深圳君柔科技有限公司股东会决议》之签字页）",
+          "深圳君柔科技有限公司股东会决议-签署页"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 85
+      },
+      "goldDocumentType": "shareholder_resolution",
+      "goldCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "股东会决议",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "决策文件"
+          ],
+          "folderId": "decision-documents",
+          "fileName": "投委会决议",
+          "keywords": [
+            "决议",
+            "投委会",
+            "投资决策",
+            "投委会决议"
+          ],
+          "description": "投资决策委员会决议"
+        },
+        "topScore": 4,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": false,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "insufficient",
+        "selectedCategory": null,
+        "confidence": 0,
+        "candidates": [],
+        "evidence": [],
+        "contradictions": [
+          "context-decision-v1 尚未配置文档类型 shareholder_resolution 的上下文规则"
+        ],
+        "requiresHumanReview": true,
+        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
+        "policyVersion": "context-decision-v1"
+      },
+      "contextMatchesGold": false
+    },
+    {
+      "id": "junrou-closing-confirmation",
+      "relativePath": "投资实施/5中山致远望睿交割确认函.pdf",
+      "sha256": "46e844224bef515a71fe169942cf4b0a6d7bae8ea6fcb1bcd3b2defcde1f0fbb",
+      "pageCount": 1,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 662,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "closing_confirmation",
+        "rawDocumentType": "附件1 交割确认函",
+        "title": "附件1 交割确认函",
+        "documentNumber": null,
+        "version": null,
+        "dates": [],
+        "parties": [
+          {
+            "name": "致：【中山致远望睿创业投资基金合伙企业（有限合伙）】",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "附件1 交割确认函",
+          "交割证明书格式",
+          "本交割证明书（“本证明书”）系根据公司、现有股东和投资方于【2026】年【4】",
+          "月【1】日签订的增资协议（“协议”）第22条以及各方于【2026】年【4】月【10】日",
+          "截至交割日均是真实、准确的，且不具有误导性，具有如同在交割日",
+          "在交割日前履行完毕的所有承诺和义务；",
+          "仲裁、争议、调查或者其他法律程序或未决事项，会对本次增资构成"
+        ],
+        "evidenceQuotes": [
+          "附件1 交割确认函",
+          "月【1】日签订的增资协议（“协议”）第22条以及各方于【2026】年【4】月【10】日",
+          "仲裁、争议、调查或者其他法律程序或未决事项，会对本次增资构成",
+          "（d）自协议签署日以米，Ci）除协议规定的交易外，公司的注册资本或所有"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 75
+      },
+      "goldDocumentType": "closing_confirmation",
+      "goldCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "确权文件",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资实施"
+          ],
+          "folderId": "investment-implementation",
+          "fileName": "付款通知函",
+          "keywords": [
+            "付款",
+            "通知函",
+            "确认函",
+            "付款通知"
+          ],
+          "description": "拟投资标的确认函(即付款通知函)"
+        },
+        "topScore": 4,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": false,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "insufficient",
+        "selectedCategory": null,
+        "confidence": 0,
+        "candidates": [],
+        "evidence": [],
+        "contradictions": [
+          "context-decision-v1 尚未配置文档类型 closing_confirmation 的上下文规则"
+        ],
+        "requiresHumanReview": true,
+        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
+        "policyVersion": "context-decision-v1"
+      },
+      "contextMatchesGold": false
+    },
+    {
+      "id": "junrou-payment-notice",
+      "relativePath": "投资实施/8中山致远望睿缴款通知书.pdf",
+      "sha256": "9e11a26986d2f764b9b6cc6e2677dbd7eeb39ca95b7243f0092da08e96521134",
+      "pageCount": 1,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 634,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "payment_notice",
+        "rawDocumentType": "中山致远望睿创业投资基金合伙企业（有限合伙）缴款通知书",
+        "title": "中山致远望睿创业投资基金合伙企业（有限合伙）缴款通知书",
+        "documentNumber": null,
+        "version": null,
+        "dates": [
+          {
+            "date": "2026-04-10",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2026-04-10"
+          },
+          {
+            "date": "2026-04-02",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2026-04-02"
+          }
+        ],
+        "parties": [
+          {
+            "name": "中山致远望睿创业投资基金合伙企业（有限合伙）缴款通知书",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "致：中山致远望睿创业投资基金合伙企业（有限合伙）（以下简秘等致远塑容”）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "根据深圳君柔科技有限公司（以下简称“公司”）、刘志远等于2026年：41",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "1日签署的《关于深圳君柔科技有限公司之增资协议》（以下简称“《增资协",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "账户名称：深圳君柔科技有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "开户银行全称：中国银行股份有限公司深圳西丽支行",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "中山致远望睿创业投资基金合伙企业（有限合伙）缴款通知书",
+          "1日签署的《关于深圳君柔科技有限公司之增资协议》（以下简称“《增资协",
+          "知书的术语与《增资协议》中的含义一致），本公司请致远望睿按照以下安排向",
+          "本公司支付致远望睿对本公司本次增资的增资款：",
+          "1、根据《增资协议》《加入协议》的条款和条件，致远望睿在交割日（定",
+          "义见下文）以人民币1000万元（“增资款”）认购公司新增的人民币0.43468万",
+          "元注册资本（“本次增资”或“本次交易”）。",
+          "望睿出具确认《增资协议》《加入协议》中所约定的各项交割条件已全部得到满",
+          "3、在本次增资的增资交割先决条件均已满足或被致远望睿书面豁免之日起",
+          "十（10）个工作日内，致远望睿应将其应支付的增资款以电汇方式一次性支付",
+          "至公司指定账户，致远望睿支付其对应的增资款“交割”，交割之日为“交割"
+        ],
+        "evidenceQuotes": [
+          "义见下文）以人民币1000万元（“增资款”）认购公司新增的人民币0.43468万",
+          "中山致远望睿创业投资基金合伙企业（有限合伙）缴款通知书",
+          "1日签署的《关于深圳君柔科技有限公司之增资协议》（以下简称“《增资协",
+          "知书的术语与《增资协议》中的含义一致），本公司请致远望睿按照以下安排向",
+          "本公司支付致远望睿对本公司本次增资的增资款：",
+          "1、根据《增资协议》《加入协议》的条款和条件，致远望睿在交割日（定",
+          "义见下文）以人民币1000万元（“增资款”）认购公司新增的人民币0.43468万",
+          "元注册资本（“本次增资”或“本次交易”）。",
+          "望睿出具确认《增资协议》《加入协议》中所约定的各项交割条件已全部得到满",
+          "3、在本次增资的增资交割先决条件均已满足或被致远望睿书面豁免之日起",
+          "十（10）个工作日内，致远望睿应将其应支付的增资款以电汇方式一次性支付",
+          "至公司指定账户，致远望睿支付其对应的增资款“交割”，交割之日为“交割"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 75
+      },
+      "goldDocumentType": "payment_notice",
+      "goldCategory": {
+        "folderId": "investment-implementation",
+        "fileName": "付款通知函",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "项目退出",
+            "退出执行"
+          ],
+          "folderId": "exit-implementation",
+          "fileName": "交易协议",
+          "keywords": [
+            "交易",
+            "协议",
+            "交易协议"
+          ],
+          "description": "退出交易协议"
+        },
+        "topScore": 2,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": false,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "insufficient",
+        "selectedCategory": null,
+        "confidence": 0,
+        "candidates": [],
+        "evidence": [],
+        "contradictions": [
+          "context-decision-v1 尚未配置文档类型 payment_notice 的上下文规则"
+        ],
+        "requiresHumanReview": true,
+        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
+        "policyVersion": "context-decision-v1"
+      },
+      "contextMatchesGold": false
+    },
+    {
+      "id": "junrou-investment-compliance-review",
+      "relativePath": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
+      "sha256": "cc97241214983adab4327b79d0dda4c1f70b98d52fa1040318c67a8cd2d7df94",
+      "pageCount": 6,
+      "textLayerCharacterCount": 0,
+      "ocrCharacterCount": 2798,
+      "ocrEmptyPageCount": 0,
+      "facts": {
+        "schemaVersion": 1,
+        "documentType": "investment_compliance_review",
+        "rawDocumentType": "投资项目合规性审查表",
+        "title": "投资项目合规性审查表",
+        "documentNumber": null,
+        "version": null,
+        "dates": [
+          {
+            "date": "2025-04-07",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2025-04-07"
+          },
+          {
+            "date": "2025-04-13",
+            "meaning": "OCR识别日期，具体含义待上下文核对",
+            "evidence": "2025-04-13"
+          }
+        ],
+        "parties": [
+          {
+            "name": "中山火炬电子产业基金管理有限公司",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "中山致远望睿创业投资基金合伙企业（有限合伙）",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "关于投资深圳君柔科技有限公司的合规性审查意见",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "与中山致远望睿创业投资基金合伙企业（有限合伙）《合伙协议》第9.1、9.2、",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "合伙企业投资项目时，必须符合国家法律、法规、",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "合伙企业对外投资应集中于以下领域：主要投资",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "合伙企业原则上对投资项目采用直接股权投资的",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "合伙企业拟通过专项基金、特殊目的载体等方式",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "管理人应保证合伙企业及合伙人不就该等投资行",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "9.5.1合伙企业不得从事以下业务：",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（13）通过投资合伙企业、公司、资产管理产品（含",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（16） 国家法律法规禁止本合伙企业从事的其他",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "足额缴付完毕之前，合伙企业不得签署任何使合",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（2）单个项目累计投资额不得超过合伙企业认缴",
+            "role": "OCR识别相关主体"
+          },
+          {
+            "name": "（子基金管理人名称）深圳国创致私募股权基金餐理有限公司",
+            "role": "OCR识别相关主体"
+          }
+        ],
+        "signStatus": "unknown",
+        "transactionChanges": [],
+        "explicitStageClues": [
+          "投资项目合规性审查表",
+          "关于投资深圳君柔科技有限公司的合规性审查意见",
+          "投资方式：增资扩股",
+          "9.5投资限制",
+          "经子基金管理人对照自查，该拟投项目不存在违反合规性串"
+        ],
+        "evidenceQuotes": [
+          "注册资本：11.73624万元",
+          "注册资本：11.73624万元",
+          "投资方案：本轮投前估值2.7亿，融3000万元；领投方九合创投1500万元，跟投方",
+          "中山致远望睿基金1000万元，中山创投500万元",
+          "资，由领投方九合创投1500 万元，跟投方本基金1000万元，中山创",
+          "10000 万元",
+          "3070万元",
+          "1000万元",
+          "3070 万元",
+          "2500万元",
+          "3750 万元",
+          "3750 万元",
+          "投资项目合规性审查表",
+          "注册资本：11.73624万元",
+          "投资方式：增资扩股",
+          "经子基金管理人对照自查，该拟投项目不存在违反合规性串",
+          "（子基金管理人名称）深圳国创致私募股权基金餐理有限公司"
+        ],
+        "warnings": [
+          "PDF无文字层，本次使用macOS Vision对渲染页面进行OCR",
+          "本地规则适配器只用于shadow评测，不代替Coze事实抽取模型"
+        ],
+        "sourceQuality": "image",
+        "extractionConfidence": 85
+      },
+      "goldDocumentType": "investment_compliance_review",
+      "goldCategory": {
+        "folderId": "decision-meeting",
+        "fileName": "投资合规性审查表",
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资决策",
+          "上会材料"
+        ]
+      },
+      "factTypeMatchesGold": true,
+      "keywordBaseline": {
+        "topCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "上会材料"
+          ],
+          "folderId": "decision-meeting",
+          "fileName": "投资合规性审查表",
+          "keywords": [
+            "投资项目合规性审查表",
+            "投资合规性审查",
+            "合规性审查表",
+            "子基金管理人意见"
+          ],
+          "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+        },
+        "topScore": 1,
+        "passed": false,
+        "ambiguous": false,
+        "canAutoDecide": false,
+        "topMatchesGold": true,
+        "note": "仍需Coze LLM消歧或人工确认"
+      },
+      "contextDecision": {
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资决策",
+            "上会材料"
+          ],
+          "folderId": "decision-meeting",
+          "fileName": "投资合规性审查表",
+          "keywords": [
+            "投资项目合规性审查表",
+            "投资合规性审查",
+            "合规性审查表",
+            "子基金管理人意见"
+          ],
+          "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+        },
+        "confidence": 100,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资决策",
+                "上会材料"
+              ],
+              "folderId": "decision-meeting",
+              "fileName": "投资合规性审查表",
+              "keywords": [
+                "投资项目合规性审查表",
+                "投资合规性审查",
+                "合规性审查表",
+                "子基金管理人意见"
+              ],
+              "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+            },
+            "score": 100,
+            "evidence": [
+              "文件正式标题或文档类型明确为投资合规性审查表",
+              "正文包含基金管理人的项目级合规审查结构或结论",
+              "项目事件“子基金管理人形成投资项目合规性审查意见”与当前文件直接关联"
+            ],
+            "contradictions": []
+          }
+        ],
+        "evidence": [
+          "文件正式标题或文档类型明确为投资合规性审查表",
+          "正文包含基金管理人的项目级合规审查结构或结论",
+          "项目事件“子基金管理人形成投资项目合规性审查意见”与当前文件直接关联"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": true,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 投资合规性审查表”，得分 100。",
+        "policyVersion": "context-decision-v1+investment-compliance-review-v1"
+      },
+      "contextMatchesGold": true
+    }
+  ]
+}
