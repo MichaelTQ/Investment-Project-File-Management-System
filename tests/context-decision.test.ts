@@ -165,6 +165,99 @@ test('一般性合规表述不足以形成上下文决策', () => {
   assert.equal(decision.requiresHumanReview, true);
 });
 
+test('目标公司股东会批准增资和章程修改时归入投资实施', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资实施/7君柔科技-股东会决议.pdf',
+    facts: facts({
+      documentType: 'shareholder_resolution',
+      rawDocumentType: '股东会决议',
+      title: '深圳君柔科技有限公司股东会决议',
+      evidenceQuotes: [
+        '同意公司注册资本由11.73624万元增加至13.04027万元',
+        '同意签署《增资协议》并相应修改公司章程',
+      ],
+    }),
+    projectContext,
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.selectedCategory?.fileName, '股东会决议');
+  assert.equal(decision.requiresHumanReview, false);
+  assert.match(decision.policyVersion, /shareholder-resolution-v1/);
+});
+
+test('投委会决议不能被股东会决议规则误收', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资决策/基金投委会决议.pdf',
+    facts: facts({
+      documentType: 'shareholder_resolution',
+      rawDocumentType: '决议',
+      title: '基金投资决策委员会决议',
+      evidenceQuotes: ['基金投委会决议通过投资君柔项目'],
+    }),
+  });
+
+  assert.equal(decision.status, 'insufficient');
+  assert.equal(decision.selectedCategory, null);
+  assert.ok(decision.contradictions.some(item => item.includes('投委会')));
+});
+
+test('交割确认函根据交割条件和项目事件归入确权文件', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资实施/5中山致远望睿交割确认函.pdf',
+    facts: facts({
+      documentType: 'closing_confirmation',
+      rawDocumentType: '交割确认函',
+      title: '附件1 交割确认函',
+      explicitStageClues: [
+        '根据增资协议确认各项交割先决条件均已满足',
+      ],
+    }),
+    projectContext,
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.selectedCategory?.fileName, '确权文件');
+  assert.equal(decision.requiresHumanReview, false);
+  assert.match(decision.policyVersion, /closing-confirmation-v1/);
+});
+
+test('缴款通知书根据支付要求和交易文件归入付款通知函', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资实施/8中山致远望睿缴款通知书.pdf',
+    facts: facts({
+      documentType: 'payment_notice',
+      rawDocumentType: '缴款通知书',
+      title: '中山致远望睿缴款通知书',
+      explicitStageClues: [
+        '根据《增资协议》《加入协议》，以电汇方式支付增资款至公司指定账户',
+      ],
+    }),
+    projectContext,
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.selectedCategory?.fileName, '付款通知函');
+  assert.equal(decision.requiresHumanReview, false);
+  assert.match(decision.policyVersion, /payment-notice-v1/);
+});
+
+test('银行回单不能被付款通知规则误收', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资实施/电子回单.png',
+    facts: facts({
+      documentType: 'payment_notice',
+      rawDocumentType: '银行电子回单',
+      title: '银行电子回单',
+      evidenceQuotes: ['交易成功，银行电子回单，附言投资款'],
+    }),
+  });
+
+  assert.equal(decision.status, 'insufficient');
+  assert.equal(decision.selectedCategory, null);
+  assert.ok(decision.contradictions.some(item => item.includes('银行回单')));
+});
+
 test('上下文输入只接受符合 Schema 的项目快照和关联事实', () => {
   assert.equal(parseProjectContextSnapshot(projectContext)?.projectName, '君柔');
   assert.equal(parseProjectContextSnapshot({ projectName: '君柔' }), null);

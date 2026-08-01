@@ -130,7 +130,7 @@ async function main(): Promise<void> {
 - 评测案例：${summary.evaluatedCaseCount}；
 - Agent 给出明确分类建议：${summary.suggestedCaseCount}；
 - 明确建议命中：${summary.suggestedCorrectCount}/${summary.suggestedCaseCount}；
-- 规则未覆盖时安全转人工：${summary.safeAbstentionCount}；
+- 安全转人工（无明确建议）：${summary.safeAbstentionCount}；
 - 错误自主建议：${summary.unsafeWrongSuggestionCount}；
 - Agent 调度层 LLM 调用：${summary.agentLlmCallCount}。
 
@@ -142,7 +142,7 @@ ${rows.join('\n')}
 
 ## 3. Agent 与固定流程的区别
 
-Agent 并非对每份文件固定执行同一组步骤：公司章程会触发关联章程检索和对比；合规审查表在得到建议后因策略要求转人工；尚无规则的文档直接安全终止，不会调用 LLM 猜测。每个案例的 \`trace\` 保留了实际节点和工具路径。
+Agent 并非对每份文件固定执行同一组步骤：公司章程会触发关联章程检索和对比；股东会决议、交割确认函和缴款通知书根据各自证据策略判断；合规审查表在得到建议后因策略要求转人工。每个案例的 \`trace\` 保留了实际节点和工具路径。
 
 ## 4. 边界
 

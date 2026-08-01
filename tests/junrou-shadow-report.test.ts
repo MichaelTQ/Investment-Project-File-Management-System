@@ -62,13 +62,13 @@ test('六份PDF均需OCR，文档类型抽取全部命中', () => {
   assert.equal(report.cases.every(item => item.factTypeMatchesGold), true);
 });
 
-test('上下文v1覆盖三类高价值案例且全部命中', () => {
-  assert.equal(report.summary.contextCoveredCount, 3);
-  assert.equal(report.summary.contextCoveredCorrectCount, 3);
+test('上下文v2覆盖六个金标准案例且全部命中', () => {
+  assert.equal(report.summary.contextCoveredCount, 6);
+  assert.equal(report.summary.contextCoveredCorrectCount, 6);
   const covered = report.cases.filter(
     item => item.contextDecision.selectedCategory
   );
-  assert.equal(covered.length, 3);
+  assert.equal(covered.length, 6);
   assert.equal(covered.every(item => item.contextMatchesGold), true);
 });
 
@@ -77,7 +77,7 @@ test('Markdown报告明确记录Coze和非持久化边界', () => {
     path.join(projectRoot, 'output/reports/JUNROU_SHADOW_EVALUATION.md'),
     'utf8'
   );
-  assert.match(markdown, /3\/3/);
+  assert.match(markdown, /6\/6/);
   assert.match(markdown, /不写入 Supabase/);
   assert.match(markdown, /不改变 Coze 环境/);
 });

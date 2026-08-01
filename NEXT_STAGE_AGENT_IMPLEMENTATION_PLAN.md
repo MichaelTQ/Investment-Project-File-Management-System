@@ -30,14 +30,14 @@
 - 已新增 `project_contexts`、`project_events`、`document_facts` 和 `classification_decisions` Drizzle Schema 与 SQL 迁移；
 - 已实现项目记忆存储层、源指纹幂等 upsert、预归档事实记录和归档后关联；
 - 已通过 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true` 接入事实与 legacy 决策的可选持久化；
-- 已实现 `context-decision-v1` 内存型上下文决策器，首批覆盖交易前/增资后公司章程和投资合规性审查表；
+- 已实现 `context-decision-v2` 内存型上下文决策器，覆盖交易前/增资后公司章程、股东会决议、交割确认函、缴款通知书和投资合规性审查表；
 - `/api/classify` 支持 `contextDecision=true`，可在不持久化的情况下输入项目快照和关联文件事实，返回 shadow 上下文建议；
-- 已对 6 份君柔金标准原始 PDF 完成真实文件 shadow 评测：6/6 文档类型抽取正确，上下文 v1 覆盖 3 份且 3/3 命中；
+- 已对 6 份君柔金标准原始 PDF 完成真实文件 shadow 评测：6/6 文档类型抽取正确，上下文 v2 覆盖 6 份且 6/6 命中；
 - 评测确认 6 份 PDF 全部无文字层，OCR/视觉抽取是真实档案链路的必要组成；
 - 已安装 `@langchain/langgraph`，实现 `classification-agent-langgraph-v1` 状态图；
 - Agent 已具备证据规划、关联文件检索、条件循环、上下文决策、完成和转人工节点；
 - `/api/classify` 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true`，返回 Agent 决策与完整执行轨迹；
-- 君柔 Agent shadow 评测中明确建议 3 份且 3/3 命中，3 份规则未覆盖文件均安全转人工，错误自主建议为 0；
+- 君柔 Agent shadow 评测中明确建议 6 份且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按类别策略继续转人工；
 - Agent 调度层使用确定性规则，模型调用数为 0；前置 `DocumentFacts` 抽取仍可能调用一次 Coze LLM；
 - shadow 事实暂不参与最终分类或自动归档；
 - SQL 迁移尚未应用到远端 Supabase；LangGraph Agent 仍为 shadow mode，尚未接管最终分类与自动归档。
@@ -472,7 +472,7 @@ update_context
 
 预计用时：3–4 天。
 
-当前进度：已完成后端最小闭环。章程歧义会按需检索关联章程，证据仍不足时继续循环；规则未覆盖或类别策略要求确认时转人工。当前关联事实由请求注入，尚未连接正式项目记忆库，也尚未接入前端人工确认面板。
+当前进度：已完成后端最小闭环。章程歧义会按需检索关联章程，证据仍不足时继续循环；规则未覆盖或类别策略要求确认时转人工。现有分类详情界面已能展示 Agent 建议、证据、冲突、关联文件和执行轨迹；当前关联事实仍由请求注入，尚未连接正式项目记忆库。
 
 普通文件使用固定工作流。只有候选冲突或证据不足时，才调用歧义消解 Agent。
 

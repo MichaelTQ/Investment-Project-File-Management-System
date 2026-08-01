@@ -106,12 +106,12 @@ node scripts/build-junrou-inventory.mjs
 
 ## 9. 下一步
 
-已完成真实文件 shadow 对照报告 `output/reports/JUNROU_SHADOW_EVALUATION.md`：六份样本均需 OCR，文档类型抽取 6/6 正确，上下文 v1 已覆盖的两份章程和一份合规审查表全部命中。
+已完成真实文件 shadow 对照报告 `output/reports/JUNROU_SHADOW_EVALUATION.md`：六份样本均需 OCR，文档类型抽取 6/6 正确，上下文 v2 对六份金标准全部命中。
 
-已完成 LangGraph Agent 报告 `output/reports/JUNROU_AGENT_EVALUATION.md`：Agent 对三份已有规则的文件给出建议且 3/3 命中；对三份尚无规则的文件不猜测并安全转人工；错误自主建议为 0。Agent 调度层模型调用为 0，仍保持非持久化 shadow mode。
+已完成 LangGraph Agent 报告 `output/reports/JUNROU_AGENT_EVALUATION.md`：Agent 对六份文件给出建议且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按策略保留人工确认。Agent 调度层模型调用为 0，仍保持非持久化 shadow mode。
 
 1. 扩充剩余 29 份文件的人工标签；
-2. 将上下文规则扩展到股东会决议、交割确认函和缴款通知书；
-3. 评估事实的日期、主体、交易变化和证据完整度；
-4. 用其他投资项目建立独立留出集，验证规则是否能跨项目泛化；
-5. 达到验收门槛后，再让 Agent 建议进入人工确认界面，仍不直接自动归档。
+2. 评估事实的日期、主体、交易变化和证据完整度；
+3. 用其他投资项目建立独立留出集，验证规则是否能跨项目泛化；
+4. 收集界面中的人工确认与纠正结果，形成评测反馈；
+5. 达到跨项目验收门槛后，再评估是否允许部分 Agent 建议参与正式分类，仍不直接授予 Agent 归档权限。

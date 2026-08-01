@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-01T09:42:59.677Z",
+  "generatedAt": "2026-08-01T10:03:32.172Z",
   "graphVersion": "classification-agent-langgraph-v1",
   "mode": "non-persistent-shadow",
   "summary": {
     "evaluatedCaseCount": 6,
-    "suggestedCaseCount": 3,
-    "suggestedCorrectCount": 3,
-    "safeAbstentionCount": 3,
+    "suggestedCaseCount": 6,
+    "suggestedCorrectCount": 6,
+    "safeAbstentionCount": 0,
     "unsafeWrongSuggestionCount": 0,
-    "humanReviewCount": 4,
+    "humanReviewCount": 1,
     "agentLlmCallCount": 0
   },
   "cases": [
@@ -74,7 +74,7 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v1 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v2 完成上下文分类建议",
           "round": 1
         }
       ],
@@ -138,7 +138,7 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v1 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v2 完成上下文分类建议",
           "round": 1
         }
       ],
@@ -156,16 +156,30 @@
           "投资实施"
         ]
       },
-      "agentStatus": "needs_review",
-      "suggestedCategory": null,
-      "decisionStatus": "insufficient",
-      "matchesGold": false,
-      "safeAbstention": true,
-      "requiresHumanReview": true,
+      "agentStatus": "decided",
+      "suggestedCategory": {
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ],
+        "folderId": "investment-implementation",
+        "fileName": "股东会决议",
+        "keywords": [
+          "股东会",
+          "决议",
+          "股东会决议"
+        ],
+        "description": "项目公司股东会决议"
+      },
+      "decisionStatus": "decided",
+      "matchesGold": true,
+      "safeAbstention": false,
+      "requiresHumanReview": false,
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
-        "missing_context_policy:shareholder_resolution"
+        "project_event:shareholders_approved_transaction"
       ],
       "trace": [
         {
@@ -177,13 +191,12 @@
         {
           "node": "context_decision",
           "tool": "decide_with_project_context",
-          "summary": "insufficient，最高得分 0，需要人工复核",
+          "summary": "decided，最高得分 100，证据满足自动建议条件",
           "round": 0
         },
         {
-          "node": "human_review",
-          "tool": "request_human_review",
-          "summary": "证据不足、规则未覆盖或候选冲突，转人工复核",
+          "node": "complete",
+          "summary": "Agent以 context-decision-v2+shareholder-resolution-v1 完成上下文分类建议",
           "round": 0
         }
       ],
@@ -201,16 +214,32 @@
           "投资实施"
         ]
       },
-      "agentStatus": "needs_review",
-      "suggestedCategory": null,
-      "decisionStatus": "insufficient",
-      "matchesGold": false,
-      "safeAbstention": true,
-      "requiresHumanReview": true,
+      "agentStatus": "decided",
+      "suggestedCategory": {
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ],
+        "folderId": "investment-implementation",
+        "fileName": "确权文件",
+        "keywords": [
+          "确权",
+          "股东名册",
+          "交割",
+          "出资证明"
+        ],
+        "description": "股东名册、交割确认函、股东出资证明书"
+      },
+      "decisionStatus": "decided",
+      "matchesGold": true,
+      "safeAbstention": false,
+      "requiresHumanReview": false,
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
-        "missing_context_policy:closing_confirmation"
+        "project_event:capital_increase_agreement_signed",
+        "project_event:closing_conditions_confirmed"
       ],
       "trace": [
         {
@@ -222,13 +251,12 @@
         {
           "node": "context_decision",
           "tool": "decide_with_project_context",
-          "summary": "insufficient，最高得分 0，需要人工复核",
+          "summary": "decided，最高得分 100，证据满足自动建议条件",
           "round": 0
         },
         {
-          "node": "human_review",
-          "tool": "request_human_review",
-          "summary": "证据不足、规则未覆盖或候选冲突，转人工复核",
+          "node": "complete",
+          "summary": "Agent以 context-decision-v2+closing-confirmation-v1 完成上下文分类建议",
           "round": 0
         }
       ],
@@ -246,16 +274,32 @@
           "投资实施"
         ]
       },
-      "agentStatus": "needs_review",
-      "suggestedCategory": null,
-      "decisionStatus": "insufficient",
-      "matchesGold": false,
-      "safeAbstention": true,
-      "requiresHumanReview": true,
+      "agentStatus": "decided",
+      "suggestedCategory": {
+        "folderPath": [
+          "投资项目档案",
+          "基金投资及投资执行",
+          "投资实施"
+        ],
+        "folderId": "investment-implementation",
+        "fileName": "付款通知函",
+        "keywords": [
+          "付款",
+          "通知函",
+          "确认函",
+          "付款通知"
+        ],
+        "description": "拟投资标的确认函(即付款通知函)"
+      },
+      "decisionStatus": "decided",
+      "matchesGold": true,
+      "safeAbstention": false,
+      "requiresHumanReview": false,
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
-        "missing_context_policy:payment_notice"
+        "project_event:capital_increase_agreement_signed",
+        "project_event:closing_conditions_confirmed"
       ],
       "trace": [
         {
@@ -267,13 +311,12 @@
         {
           "node": "context_decision",
           "tool": "decide_with_project_context",
-          "summary": "insufficient，最高得分 0，需要人工复核",
+          "summary": "decided，最高得分 100，证据满足自动建议条件",
           "round": 0
         },
         {
-          "node": "human_review",
-          "tool": "request_human_review",
-          "summary": "证据不足、规则未覆盖或候选冲突，转人工复核",
+          "node": "complete",
+          "summary": "Agent以 context-decision-v2+payment-notice-v1 完成上下文分类建议",
           "round": 0
         }
       ],

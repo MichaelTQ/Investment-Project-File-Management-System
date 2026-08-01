@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-01T09:30:23.972Z",
+  "generatedAt": "2026-08-01T10:02:04.458Z",
   "mode": "local-vision-ocr-context-shadow",
   "limitations": [
     "六份PDF全部无文字层，使用macOS Vision OCR",
     "本地事实适配器不等同于Coze LLM事实抽取器",
     "未调用Coze LLM的legacy最终分类，只评估关键词预判",
-    "上下文规则v1只覆盖公司章程和投资合规性审查表"
+    "上下文规则v2覆盖当前六个金标准文档类型，仍需其他项目留出集验证"
   ],
   "summary": {
     "evaluatedCaseCount": 6,
@@ -14,9 +14,9 @@
     "factTypeCorrectCount": 6,
     "keywordTopCorrectCount": 2,
     "keywordAutoDecisionCount": 0,
-    "contextCoveredCount": 3,
-    "contextCoveredCorrectCount": 3,
-    "contextHumanReviewCount": 4
+    "contextCoveredCount": 6,
+    "contextCoveredCorrectCount": 6,
+    "contextHumanReviewCount": 1
   },
   "cases": [
     {
@@ -301,7 +301,7 @@
         "contradictions": [],
         "requiresHumanReview": false,
         "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 公司章程”，得分 50。",
-        "policyVersion": "context-decision-v1"
+        "policyVersion": "context-decision-v2"
       },
       "contextMatchesGold": true
     },
@@ -611,7 +611,7 @@
         "contradictions": [],
         "requiresHumanReview": false,
         "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 项目公司章程”，得分 55。",
-        "policyVersion": "context-decision-v1"
+        "policyVersion": "context-decision-v2"
       },
       "contextMatchesGold": true
     },
@@ -820,19 +820,60 @@
         "note": "仍需Coze LLM消歧或人工确认"
       },
       "contextDecision": {
-        "status": "insufficient",
-        "selectedCategory": null,
-        "confidence": 0,
-        "candidates": [],
-        "evidence": [],
-        "contradictions": [
-          "context-decision-v1 尚未配置文档类型 shareholder_resolution 的上下文规则"
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资实施"
+          ],
+          "folderId": "investment-implementation",
+          "fileName": "股东会决议",
+          "keywords": [
+            "股东会",
+            "决议",
+            "股东会决议"
+          ],
+          "description": "项目公司股东会决议"
+        },
+        "confidence": 100,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资实施"
+              ],
+              "folderId": "investment-implementation",
+              "fileName": "股东会决议",
+              "keywords": [
+                "股东会",
+                "决议",
+                "股东会决议"
+              ],
+              "description": "项目公司股东会决议"
+            },
+            "score": 100,
+            "evidence": [
+              "文件正式标题或文档类型明确为目标公司股东会决议",
+              "决议正文批准增资、交易文件或增资后公司治理变更",
+              "项目事件“股东会批准增资、交易文件和章程修改”与当前股东会决议直接关联"
+            ],
+            "contradictions": []
+          }
         ],
-        "requiresHumanReview": true,
-        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
-        "policyVersion": "context-decision-v1"
+        "evidence": [
+          "文件正式标题或文档类型明确为目标公司股东会决议",
+          "决议正文批准增资、交易文件或增资后公司治理变更",
+          "项目事件“股东会批准增资、交易文件和章程修改”与当前股东会决议直接关联"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": false,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 股东会决议”，得分 100。",
+        "policyVersion": "context-decision-v2+shareholder-resolution-v1"
       },
-      "contextMatchesGold": false
+      "contextMatchesGold": true
     },
     {
       "id": "junrou-closing-confirmation",
@@ -916,19 +957,64 @@
         "note": "仍需Coze LLM消歧或人工确认"
       },
       "contextDecision": {
-        "status": "insufficient",
-        "selectedCategory": null,
-        "confidence": 0,
-        "candidates": [],
-        "evidence": [],
-        "contradictions": [
-          "context-decision-v1 尚未配置文档类型 closing_confirmation 的上下文规则"
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资实施"
+          ],
+          "folderId": "investment-implementation",
+          "fileName": "确权文件",
+          "keywords": [
+            "确权",
+            "股东名册",
+            "交割",
+            "出资证明"
+          ],
+          "description": "股东名册、交割确认函、股东出资证明书"
+        },
+        "confidence": 100,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资实施"
+              ],
+              "folderId": "investment-implementation",
+              "fileName": "确权文件",
+              "keywords": [
+                "确权",
+                "股东名册",
+                "交割",
+                "出资证明"
+              ],
+              "description": "股东名册、交割确认函、股东出资证明书"
+            },
+            "score": 100,
+            "evidence": [
+              "文件正式标题或文档类型明确为交割确认文件",
+              "正文确认投资协议项下的交割条件或交割义务",
+              "项目事件“增资协议签署”与当前交割文件直接关联",
+              "项目事件“交割条件确认并发出缴款通知”与当前交割文件直接关联"
+            ],
+            "contradictions": []
+          }
         ],
-        "requiresHumanReview": true,
-        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
-        "policyVersion": "context-decision-v1"
+        "evidence": [
+          "文件正式标题或文档类型明确为交割确认文件",
+          "正文确认投资协议项下的交割条件或交割义务",
+          "项目事件“增资协议签署”与当前交割文件直接关联",
+          "项目事件“交割条件确认并发出缴款通知”与当前交割文件直接关联"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": false,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 确权文件”，得分 100。",
+        "policyVersion": "context-decision-v2+closing-confirmation-v1"
       },
-      "contextMatchesGold": false
+      "contextMatchesGold": true
     },
     {
       "id": "junrou-payment-notice",
@@ -1054,19 +1140,64 @@
         "note": "仍需Coze LLM消歧或人工确认"
       },
       "contextDecision": {
-        "status": "insufficient",
-        "selectedCategory": null,
-        "confidence": 0,
-        "candidates": [],
-        "evidence": [],
-        "contradictions": [
-          "context-decision-v1 尚未配置文档类型 payment_notice 的上下文规则"
+        "status": "decided",
+        "selectedCategory": {
+          "folderPath": [
+            "投资项目档案",
+            "基金投资及投资执行",
+            "投资实施"
+          ],
+          "folderId": "investment-implementation",
+          "fileName": "付款通知函",
+          "keywords": [
+            "付款",
+            "通知函",
+            "确认函",
+            "付款通知"
+          ],
+          "description": "拟投资标的确认函(即付款通知函)"
+        },
+        "confidence": 100,
+        "candidates": [
+          {
+            "category": {
+              "folderPath": [
+                "投资项目档案",
+                "基金投资及投资执行",
+                "投资实施"
+              ],
+              "folderId": "investment-implementation",
+              "fileName": "付款通知函",
+              "keywords": [
+                "付款",
+                "通知函",
+                "确认函",
+                "付款通知"
+              ],
+              "description": "拟投资标的确认函(即付款通知函)"
+            },
+            "score": 100,
+            "evidence": [
+              "文件正式标题或文档类型明确为投资付款通知",
+              "正文要求投资方依据交易文件支付投资款或增资款",
+              "项目事件“增资协议签署”与当前缴款通知直接关联",
+              "项目事件“交割条件确认并发出缴款通知”与当前缴款通知直接关联"
+            ],
+            "contradictions": []
+          }
         ],
-        "requiresHumanReview": true,
-        "reasoning": "当前文档类型尚无上下文决策规则，保留 legacy 分类结果。",
-        "policyVersion": "context-decision-v1"
+        "evidence": [
+          "文件正式标题或文档类型明确为投资付款通知",
+          "正文要求投资方依据交易文件支付投资款或增资款",
+          "项目事件“增资协议签署”与当前缴款通知直接关联",
+          "项目事件“交割条件确认并发出缴款通知”与当前缴款通知直接关联"
+        ],
+        "contradictions": [],
+        "requiresHumanReview": false,
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 付款通知函”，得分 100。",
+        "policyVersion": "context-decision-v2+payment-notice-v1"
       },
-      "contextMatchesGold": false
+      "contextMatchesGold": true
     },
     {
       "id": "junrou-investment-compliance-review",
@@ -1285,7 +1416,7 @@
         "contradictions": [],
         "requiresHumanReview": true,
         "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 投资合规性审查表”，得分 100。",
-        "policyVersion": "context-decision-v1+investment-compliance-review-v1"
+        "policyVersion": "context-decision-v2+investment-compliance-review-v1"
       },
       "contextMatchesGold": true
     }

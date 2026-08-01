@@ -61,7 +61,7 @@
 
 ### Shadow mode：上下文决策
 
-`src/lib/classification/context-decision.ts` 实现了第一版内存型上下文决策器。调用 `/api/classify` 时传入 `contextDecision=true` 会自动启用文档事实抽取，并可同时传入：
+`src/lib/classification/context-decision.ts` 实现了第二版内存型上下文决策器。调用 `/api/classify` 时传入 `contextDecision=true` 会自动启用文档事实抽取，并可同时传入：
 
 - `sourcePath`：文件在项目档案中的原始相对路径；
 - `projectContext`：符合 `ProjectContextSnapshotSchema` 的项目阶段与时间线快照；
@@ -69,10 +69,13 @@
 
 返回的 `contextDecision` 包含候选得分、决定性证据、冲突、策略版本和人工复核标记。当前它与 legacy 分类结果并列返回，不修改 `category`、`confidence` 或自动归档结果。
 
-第一版规则覆盖：
+第二版规则覆盖：
 
 - 根据注册资本、股东变化、有效日期、项目事件和关联章程对比，区分交易前公司章程和投资实施阶段项目公司章程；
 - 根据正式标题、管理人意见、投资限制审查和项目事件，识别投资合规性审查表；
+- 根据目标公司股东会身份、增资批准事项和项目事件，识别投资实施阶段股东会决议，并排除基金投委会决议；
+- 根据交割确认标题、交割条件和增资协议引用，识别确权文件，并排除付款通知、银行回单和退出交割；
+- 根据缴款通知标题、付款指令和交易协议引用，识别付款通知函，并排除银行回单和退出付款；
 - 项目“当前阶段”只是弱先验，不能单独把后补上传的历史文件归入当前阶段。
 
 ### Shadow mode：LangGraph 分类 Agent
@@ -316,4 +319,4 @@ pnpm evaluate:junrou-agent
 - 上下文输入 Schema 校验和证据不足降级
 - Agent 根据文档类型动态选择关联文件和执行路径
 - Agent 多轮检索、明确终止、规则未覆盖时安全转人工
-- 君柔 Agent 报告中明确建议 3/3 命中且错误自主建议为 0
+- 君柔 Agent 报告中明确建议 6/6 命中且错误自主建议为 0

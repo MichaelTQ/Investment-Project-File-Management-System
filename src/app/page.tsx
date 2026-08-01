@@ -82,6 +82,38 @@ interface ClassifyProcess {
   };
 }
 
+interface AgentTraceStep {
+  node:
+    | 'plan_evidence'
+    | 'retrieve_related_document'
+    | 'context_decision'
+    | 'complete'
+    | 'human_review';
+  tool?: string;
+  summary: string;
+  round: number;
+}
+
+interface AgentDecisionResult {
+  status: 'decided' | 'needs_review';
+  decision: {
+    status: 'decided' | 'insufficient' | 'conflict';
+    selectedCategory: FlatFileCategory | null;
+    confidence: number;
+    evidence: string[];
+    contradictions: string[];
+    requiresHumanReview: boolean;
+    reasoning: string;
+    policyVersion: string;
+  };
+  selectedRelatedDocuments: Array<{ sourcePath: string }>;
+  requestedEvidence: string[];
+  trace: AgentTraceStep[];
+  rounds: number;
+  llmCallCount: number;
+  graphVersion: string;
+}
+
 interface ClassifyResult {
   clientId: string;
   fileName: string;
@@ -91,6 +123,7 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  agentDecision?: AgentDecisionResult;
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
   sourceFile?: File;
@@ -100,6 +133,120 @@ interface ClassifyResult {
   archiveStatus?: 'pending' | 'archiving' | 'archived' | 'cancelled' | 'error';
   archiveError?: string;
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
+}
+
+const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
+  plan_evidence: '规划证据',
+  retrieve_related_document: '检索关联文件',
+  context_decision: '上下文决策',
+  complete: '形成建议',
+  human_review: '转人工复核',
+};
+
+function AgentDecisionPanel({ agent }: { agent: AgentDecisionResult }) {
+  const suggestion = agent.decision.selectedCategory;
+  const needsReview = agent.status === 'needs_review';
+
+  return (
+    <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50/50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-violet-700" />
+          <h4 className="text-sm font-medium text-violet-950">Agent 上下文建议</h4>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="outline" className="border-violet-300 bg-white text-violet-700">
+            Shadow
+          </Badge>
+          <Badge
+            variant="outline"
+            className={needsReview
+              ? 'border-amber-300 bg-amber-50 text-amber-700'
+              : 'border-green-300 bg-green-50 text-green-700'}
+          >
+            {needsReview ? '需要人工复核' : '证据充分'}
+          </Badge>
+        </div>
+      </div>
+
+      <div className="rounded-md border bg-white p-3 text-sm">
+        <p className="text-xs text-muted-foreground">建议归档位置</p>
+        <p className="mt-1 break-words font-medium text-violet-900">
+          {suggestion
+            ? `${suggestion.folderPath.join(' / ')} / ${suggestion.fileName}`
+            : '暂不建议分类，等待人工处理'}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
+          {agent.decision.reasoning}
+        </p>
+      </div>
+
+      {agent.decision.evidence.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-green-800">支持证据</p>
+          <ul className="mt-1 space-y-1 text-xs leading-5 text-green-800">
+            {agent.decision.evidence.map((item, index) => (
+              <li key={`${item}-${index}`} className="flex gap-2">
+                <span aria-hidden="true">✓</span>
+                <span className="break-words">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {agent.decision.contradictions.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-amber-800">冲突或风险</p>
+          <ul className="mt-1 space-y-1 text-xs leading-5 text-amber-800">
+            {agent.decision.contradictions.map((item, index) => (
+              <li key={`${item}-${index}`} className="flex gap-2">
+                <span aria-hidden="true">!</span>
+                <span className="break-words">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {agent.selectedRelatedDocuments.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-violet-900">使用的关联文件</p>
+          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
+            {agent.selectedRelatedDocuments.map(item => item.sourcePath).join('；')}
+          </p>
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs font-medium text-violet-900">执行轨迹</p>
+        <ol className="mt-1 space-y-1.5">
+          {agent.trace.map((step, index) => (
+            <li key={`${step.node}-${index}`} className="flex gap-2 text-xs leading-5">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 font-medium text-violet-700">
+                {index + 1}
+              </span>
+              <span className="break-words text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {AGENT_NODE_LABELS[step.node]}
+                </span>
+                ：{step.summary}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-violet-200 pt-2 text-[11px] text-muted-foreground">
+        <span>规则：{agent.decision.policyVersion}</span>
+        <span>检索轮次：{agent.rounds}</span>
+        <span>Agent 调度 LLM：{agent.llmCallCount} 次</span>
+      </div>
+      <p className="text-[11px] leading-4 text-violet-700">
+        当前仅用于对照评估，不会覆盖上方正式分类或直接触发归档。
+      </p>
+    </div>
+  );
 }
 
 // ============ 文件夹树组件 ============
@@ -500,6 +647,10 @@ function ClassifyResultItem({
                   {result.reasoning || '暂无详细理由'}
                 </p>
               </div>
+
+              {result.agentDecision && (
+                <AgentDecisionPanel agent={result.agentDecision} />
+              )}
 
               {result.contentPreview && (
                 <div className="space-y-2">
@@ -1949,6 +2100,8 @@ export default function Home() {
             mimeType: file.type || 'application/octet-stream',
             projectId: selectedProjectId,
             autoArchive: true,
+            agentDecision: true,
+            sourcePath: file.name,
           }),
         });
         const result = await response.json().catch(() => null);

@@ -76,6 +76,21 @@ function evidencePlanFor(documentType: DocumentType): string[] {
   if (documentType === 'investment_compliance_review') {
     return ['project_event:fund_compliance_review'];
   }
+  if (documentType === 'shareholder_resolution') {
+    return ['project_event:shareholders_approved_transaction'];
+  }
+  if (documentType === 'closing_confirmation') {
+    return [
+      'project_event:capital_increase_agreement_signed',
+      'project_event:closing_conditions_confirmed',
+    ];
+  }
+  if (documentType === 'payment_notice') {
+    return [
+      'project_event:capital_increase_agreement_signed',
+      'project_event:closing_conditions_confirmed',
+    ];
+  }
   return [`missing_context_policy:${documentType}`];
 }
 
