@@ -36,6 +36,10 @@ import {
   type ClassificationAgentResult,
 } from '@/lib/classification/classification-agent';
 import {
+  rememberAndEvaluateProjectDocument,
+  type ProjectSessionMemoryView,
+} from '@/lib/classification/session-project-memory';
+import {
   createClassificationDecisionRecord,
   linkDocumentFactToArchivedFile,
   upsertDocumentFactsRecord,
@@ -96,6 +100,16 @@ interface ClassifyProcess {
     error?: string;
     inputWarnings?: string[];
   };
+  step0_projectSessionMemory?: {
+    enabled: boolean;
+    status: 'success' | 'skipped' | 'failed';
+    mode?: ProjectSessionMemoryView['mode'];
+    documentCount?: number;
+    relatedDocumentCount?: number;
+    reEvaluatedCount?: number;
+    revision?: number;
+    error?: string;
+  };
   step1_keywordMatch: {
     totalCategories: number;
     matchedCategories: number;
@@ -141,6 +155,7 @@ interface ClassifyResult {
   documentFacts?: DocumentFacts;
   contextDecision?: ContextClassificationDecision;
   agentDecision?: ClassificationAgentResult;
+  projectSessionMemory?: ProjectSessionMemoryView;
   requiresArchiveConfirmation?: boolean;
   archived?: {
     id: string;
@@ -655,6 +670,10 @@ export async function POST(request: NextRequest) {
     let agentOrchestrationStep:
       | ClassifyProcess['step0_agentOrchestration']
       | undefined;
+    let projectSessionMemory: ProjectSessionMemoryView | undefined;
+    let projectSessionMemoryStep:
+      | ClassifyProcess['step0_projectSessionMemory']
+      | undefined;
     if (extractFacts) {
       const extraction = await extractDocumentFacts({
         fileName,
@@ -725,7 +744,48 @@ export async function POST(request: NextRequest) {
 
     if (runAgentDecision && documentFacts) {
       try {
-        agentClassificationResult = await runClassificationAgent({
+        if (project) {
+          try {
+            const memoryEvaluation =
+              await rememberAndEvaluateProjectDocument({
+                projectId: project.id,
+                sourcePath: sourcePath || fileName,
+                facts: documentFacts,
+                projectContext,
+                suppliedRelatedDocuments: relatedDocumentFacts,
+              });
+            const { currentDecision, ...memoryView } = memoryEvaluation;
+            agentClassificationResult = currentDecision;
+            projectSessionMemory = memoryView;
+            projectSessionMemoryStep = {
+              enabled: true,
+              status: 'success',
+              mode: memoryView.mode,
+              documentCount: memoryView.documentCount,
+              relatedDocumentCount: memoryView.relatedDocumentCount,
+              reEvaluatedCount: memoryView.reEvaluatedDocuments.length,
+              revision: memoryView.revision,
+            };
+          } catch (memoryError) {
+            const message =
+              memoryError instanceof Error
+                ? memoryError.message
+                : '未知错误';
+            console.error('Project session memory error:', memoryError);
+            projectSessionMemoryStep = {
+              enabled: true,
+              status: 'failed',
+              error: message,
+            };
+          }
+        } else {
+          projectSessionMemoryStep = {
+            enabled: true,
+            status: 'skipped',
+            error: '会话项目记忆需要有效的 projectId',
+          };
+        }
+        agentClassificationResult ??= await runClassificationAgent({
           sourcePath: sourcePath || fileName,
           facts: documentFacts,
           projectContext,
@@ -788,6 +848,7 @@ export async function POST(request: NextRequest) {
           }
         : undefined,
       step0_agentOrchestration: agentOrchestrationStep,
+      step0_projectSessionMemory: projectSessionMemoryStep,
       step1_keywordMatch: {
         totalCategories: FLAT_FILE_CATEGORIES.length,
         matchedCategories: keywordMatches.length,
@@ -923,6 +984,9 @@ export async function POST(request: NextRequest) {
     }
     if (agentClassificationResult) {
       result.agentDecision = agentClassificationResult;
+    }
+    if (projectSessionMemory) {
+      result.projectSessionMemory = projectSessionMemory;
     }
 
     // 自动归档

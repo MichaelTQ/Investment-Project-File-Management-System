@@ -114,9 +114,27 @@ interface AgentDecisionResult {
   graphVersion: string;
 }
 
+interface ProjectSessionMemoryResult {
+  mode: 'process-local-shadow';
+  projectId: string;
+  revision: number;
+  documentCount: number;
+  relatedDocumentCount: number;
+  reEvaluatedDocuments: Array<{
+    sourcePath: string;
+    previousStatus: 'decided' | 'needs_review';
+    status: 'decided' | 'needs_review';
+    previousCategory: string | null;
+    selectedCategory: string | null;
+    agentDecision: AgentDecisionResult;
+  }>;
+  expiresAt: string;
+}
+
 interface ClassifyResult {
   clientId: string;
   fileName: string;
+  sourcePath?: string;
   fileSize: number;
   category: FlatFileCategory | null;
   confidence: number;
@@ -124,6 +142,7 @@ interface ClassifyResult {
   contentPreview?: string;
   process: ClassifyProcess;
   agentDecision?: AgentDecisionResult;
+  projectSessionMemory?: ProjectSessionMemoryResult;
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
   sourceFile?: File;
@@ -143,7 +162,13 @@ const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
   human_review: '转人工复核',
 };
 
-function AgentDecisionPanel({ agent }: { agent: AgentDecisionResult }) {
+function AgentDecisionPanel({
+  agent,
+  projectMemory,
+}: {
+  agent: AgentDecisionResult;
+  projectMemory?: ProjectSessionMemoryResult;
+}) {
   const suggestion = agent.decision.selectedCategory;
   const needsReview = agent.status === 'needs_review';
 
@@ -158,6 +183,11 @@ function AgentDecisionPanel({ agent }: { agent: AgentDecisionResult }) {
           <Badge variant="outline" className="border-violet-300 bg-white text-violet-700">
             Shadow
           </Badge>
+          {projectMemory && (
+            <Badge variant="outline" className="border-violet-300 bg-white text-violet-700">
+              项目记忆 {projectMemory.documentCount} 份
+            </Badge>
+          )}
           <Badge
             variant="outline"
             className={needsReview
@@ -215,6 +245,32 @@ function AgentDecisionPanel({ agent }: { agent: AgentDecisionResult }) {
           <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
             {agent.selectedRelatedDocuments.map(item => item.sourcePath).join('；')}
           </p>
+        </div>
+      )}
+
+      {projectMemory && (
+        <div className="rounded-md border border-violet-200 bg-white p-3">
+          <p className="text-xs font-medium text-violet-900">会话项目记忆</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            当前运行实例已记住本项目 {projectMemory.documentCount} 份文件，
+            本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
+          </p>
+          {projectMemory.reEvaluatedDocuments.length > 0 && (
+            <div className="mt-2 border-t pt-2">
+              <p className="text-xs font-medium text-green-800">
+                新证据已重新判断以下历史文件
+              </p>
+              <ul className="mt-1 space-y-1 text-xs leading-5 text-green-800">
+                {projectMemory.reEvaluatedDocuments.map(document => (
+                  <li key={document.sourcePath} className="break-words">
+                    {document.sourcePath}：
+                    {document.previousCategory ?? '无结论'} →{' '}
+                    {document.selectedCategory ?? '仍需复核'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -649,7 +705,10 @@ function ClassifyResultItem({
               </div>
 
               {result.agentDecision && (
-                <AgentDecisionPanel agent={result.agentDecision} />
+                <AgentDecisionPanel
+                  agent={result.agentDecision}
+                  projectMemory={result.projectSessionMemory}
+                />
               )}
 
               {result.contentPreview && (
@@ -2101,7 +2160,7 @@ export default function Home() {
             projectId: selectedProjectId,
             autoArchive: true,
             agentDecision: true,
-            sourcePath: file.name,
+            sourcePath: file.webkitRelativePath || file.name,
           }),
         });
         const result = await response.json().catch(() => null);
@@ -2120,11 +2179,28 @@ export default function Home() {
           throw new Error('服务器没有返回有效的分类结果');
         }
 
+        const uploadedSourcePath = file.webkitRelativePath || file.name;
+        const reEvaluatedByPath = new Map(
+          (
+            result.projectSessionMemory?.reEvaluatedDocuments ?? []
+          ).map((document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
+            document.sourcePath,
+            document.agentDecision,
+          ] as const)
+        );
         setResults(prev => [
-          ...prev,
+          ...prev.map(existing => {
+            const updatedAgent = reEvaluatedByPath.get(
+              existing.sourcePath || existing.fileName
+            );
+            return updatedAgent
+              ? { ...existing, agentDecision: updatedAgent }
+              : existing;
+          }),
           {
             ...result,
             clientId,
+            sourcePath: uploadedSourcePath,
             sourceStorageKey: result.requiresArchiveConfirmation
               ? uploadedStorageKey
               : undefined,

@@ -103,6 +103,27 @@
 
 当前 Agent 调度层的 `llmCallCount` 固定为 0：LangGraph 负责工作流和工具调度，前置事实抽取器才可能调用一次 Coze LLM。Agent 仍为非持久化 shadow mode，不修改 legacy `category`，不触发额外归档，也不写入 Supabase。
 
+### Shadow mode：会话项目记忆
+
+`src/lib/classification/session-project-memory.ts` 为线上开发阶段提供不依赖 Supabase 的临时项目记忆。启用 `agentDecision=true` 且请求包含有效 `projectId` 时，分类 API 会：
+
+1. 按 `projectId` 隔离保存当前文件的结构化事实；
+2. 按规范化 `sourcePath` 幂等更新同一文件；
+3. 自动把同项目已上传文件作为 Agent 的关联事实；
+4. 新章程到达后，重新判断项目内之前证据不足的章程；
+5. 将重新判断结果返回给前端，更新历史文件的 Agent Shadow 卡片；
+6. 删除项目时同步清除该项目的会话记忆。
+
+因此顺序上传和乱序上传都受支持：按业务顺序上传可以逐步积累上下文；项目结束后乱序导入时，系统会在新证据出现后回看旧文件，而不是把上传顺序当作业务阶段。
+
+会话记忆的边界：
+
+- 仅存在于当前 Node.js 运行实例内，服务重启、重新部署或请求切换到其他实例后会丢失；
+- 12 小时无活动自动过期；
+- 最多保留 50 个项目、每个项目 200 份文件；
+- 不写入 Supabase，不替代未来的正式项目记忆数据库；
+- 仍只更新 Agent Shadow 建议，不覆盖 legacy 正式分类和归档结果。
+
 持久化行为包括：
 
 1. 优先使用文件内容 SHA-256；无法直接读取 Buffer 时使用存储身份生成源指纹；
