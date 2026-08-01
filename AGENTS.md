@@ -36,7 +36,8 @@ src/
 │   │   ├── document-facts.ts         # 文档事实 Schema + 安全解析/降级
 │   │   ├── fact-extractor.ts         # 文档事实 LLM 抽取器（shadow mode）
 │   │   ├── context-decision.ts       # 项目上下文证据决策器
-│   │   └── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）
+│   │   ├── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）
+│   │   └── session-project-memory.ts # 按项目隔离的进程内临时事实记忆
 │   ├── project-memory.ts             # 项目上下文、事件、文档事实和分类决策存储层
 │   └── storage.ts                    # 统一存储层（Supabase + S3）
 ├── storage/
@@ -74,6 +75,7 @@ src/
 - 支持 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true`，将事实和当前 legacy 分类决策写入项目记忆表；持久化失败不会阻断原分类
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
+- Agent shadow 请求具有有效 `projectId` 时自动使用进程内会话项目记忆；新关联文件可触发历史章程重新判断，结果不写入 Supabase
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
@@ -82,6 +84,7 @@ src/
 - **一键下载全部**: 打包为 ZIP 保留完整文件夹结构
 - **分析记录面板**: 显示上传时间、原始文件名、归档后文件名、分类路径
 - **Agent Shadow 面板**: 在分类详情中展示 Agent 建议、证据、冲突、关联文件、执行轨迹和人工复核状态
+- **会话项目记忆提示**: 展示当前实例记住的项目文件数、可用关联事实及被新证据重新判断的历史文件
 
 ## 文件分类逻辑
 1. **关键词匹配**: 先进行快速关键词匹配（文件名 + 内容），阈值 5 分
@@ -214,6 +217,7 @@ src/
 - 开发阶段不得开启 `PERSIST_PROJECT_MEMORY_SHADOW`；
 - Agent 项目记忆相关功能以非持久化 shadow mode 和本地 fixtures 验证；
 - Agent 当前只生成结构化建议和执行轨迹，不接管 legacy 分类、自动归档或数据库写入；
+- 进程内会话记忆最长空闲 12 小时，服务重启或多实例切换会丢失，不得当作正式持久化项目记忆；
 - 最终上线时再创建自有 Supabase，并执行完整数据库初始化与迁移。
 
 ## 依赖说明
