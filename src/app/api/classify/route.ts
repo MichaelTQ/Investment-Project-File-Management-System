@@ -104,6 +104,8 @@ interface ClassifyProcess {
     enabled: boolean;
     status: 'success' | 'skipped' | 'failed';
     mode?: ProjectSessionMemoryView['mode'];
+    persistent?: boolean;
+    persistenceWarning?: string;
     documentCount?: number;
     relatedDocumentCount?: number;
     reEvaluatedCount?: number;
@@ -761,6 +763,8 @@ export async function POST(request: NextRequest) {
               enabled: true,
               status: 'success',
               mode: memoryView.mode,
+              persistent: memoryView.persistent,
+              persistenceWarning: memoryView.persistenceWarning,
               documentCount: memoryView.documentCount,
               relatedDocumentCount: memoryView.relatedDocumentCount,
               reEvaluatedCount: memoryView.reEvaluatedDocuments.length,

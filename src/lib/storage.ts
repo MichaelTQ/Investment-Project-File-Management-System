@@ -149,6 +149,42 @@ export async function deleteStoredFilesByPrefix(prefix: string): Promise<void> {
   } while (continuationToken);
 }
 
+/** 上传应用内部生成的数据对象，并返回实际的 S3 storageKey。 */
+export async function writeStoredFile(params: {
+  buffer: Buffer;
+  storageKey: string;
+  mimeType?: string;
+}): Promise<string> {
+  return getS3Storage().uploadFile({
+    fileContent: params.buffer,
+    fileName: params.storageKey,
+    contentType: params.mimeType ?? "application/octet-stream",
+  });
+}
+
+/** 列出指定前缀下的全部对象，自动处理 S3 分页。 */
+export async function listStoredFilesByPrefix(
+  prefix: string
+): Promise<string[]> {
+  const s3 = getS3Storage();
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const result = await s3.listFiles({
+      prefix,
+      maxKeys: 1000,
+      continuationToken,
+    });
+    keys.push(...result.keys);
+    continuationToken = result.isTruncated
+      ? result.nextContinuationToken
+      : undefined;
+  } while (continuationToken);
+
+  return keys;
+}
+
 export async function readStoredFile(storageKey: string): Promise<Buffer> {
   return getS3Storage().readFile({ fileKey: storageKey });
 }

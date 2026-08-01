@@ -4,7 +4,7 @@
 
 开发阶段继续使用 Coze 代管的现有环境，不在该环境执行本目录中的 SQL 迁移。`PERSIST_PROJECT_MEMORY_SHADOW` 必须保持关闭。
 
-本目录的迁移文件保留给最终真实上线时的自有 Supabase。当前 Agent 开发使用非持久化 shadow mode 和本地评测 fixtures，不依赖新表存在。
+本目录的迁移文件保留给最终真实上线时的自有 Supabase。当前 Agent 开发使用 Coze S3 持久化 shadow mode 和本地评测 fixtures，不依赖新表存在；S3 只承担项目事实连续记忆，不替代最终数据库的结构化查询、权限和审核状态。
 
 ## 迁移文件
 
