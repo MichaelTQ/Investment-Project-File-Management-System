@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1178,16 +1178,19 @@ interface ArchiveOperationTarget {
 
 function ArchivedFilesList({
   projectId,
-  refreshKey,
+  archiveTree,
+  archivedFiles,
+  loading,
   onFilesChanged,
 }: {
   projectId: string;
-  refreshKey: number;
+  archiveTree: ArchiveTreeNode[];
+  archivedFiles: ArchivedFile[];
+  loading: boolean;
   onFilesChanged: (projectId: string, fileCountDelta: number) => void;
 }) {
-  const [tree, setTree] = useState<ArchiveTreeNode[]>([]);
-  const [files, setFiles] = useState<ArchivedFile[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [tree, setTree] = useState<ArchiveTreeNode[]>(archiveTree);
+  const [files, setFiles] = useState<ArchivedFile[]>(archivedFiles);
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [moveTarget, setMoveTarget] = useState<ArchiveOperationTarget | null>(null);
   const [moving, setMoving] = useState(false);
@@ -1208,16 +1211,9 @@ function ArchivedFilesList({
     : '';
 
   useEffect(() => {
-    if (!projectId) return;
-    setLoading(true);
-    fetch(`/api/archive?projectId=${projectId}&tree=true`)
-      .then(r => r.json())
-      .then(data => {
-        setTree(data.tree || []);
-        setFiles(data.files || []);
-      })
-      .finally(() => setLoading(false));
-  }, [projectId, refreshKey]);
+    setTree(archiveTree);
+    setFiles(archivedFiles);
+  }, [archiveTree, archivedFiles]);
 
   const handleDownload = (fileId: string) => {
     window.open(`/api/archive?download=${fileId}&id=${fileId}`, '_blank');
@@ -1293,12 +1289,6 @@ function ArchivedFilesList({
         throw new Error(responseData?.error || '重命名失败，请重试');
       }
 
-      const refreshResponse = await fetch(
-        `/api/archive?projectId=${projectId}&tree=true`
-      );
-      const refreshed = await refreshResponse.json();
-      setTree(refreshed.tree || []);
-      setFiles(refreshed.files || []);
       setRenameTarget(null);
       onFilesChanged(projectId, 0);
     } catch (error) {
@@ -1372,11 +1362,6 @@ function ArchivedFilesList({
       });
       const moveData = await res.json().catch(() => null);
       if (!res.ok) throw new Error(moveData?.error || '移动失败');
-      // 刷新列表
-      const refreshRes = await fetch(`/api/archive?projectId=${projectId}&tree=true`);
-      const data = await refreshRes.json();
-      setTree(data.tree || []);
-      setFiles(data.files || []);
       setMoveTarget(null);
       onFilesChanged(projectId, 0);
     } catch {
@@ -1665,22 +1650,14 @@ interface AnalysisRecord {
   archivedAt: string;
 }
 
-function AnalysisHistoryPanel({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
-  const [records, setRecords] = useState<AnalysisRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!projectId) return;
-    setLoading(true);
-    fetch(`/api/archive?projectId=${projectId}`)
-      .then(r => r.json())
-      .then(data => {
-        setRecords(data.files || []);
-      })
-      .finally(() => setLoading(false));
-  }, [projectId, refreshKey]);
-
-  if (loading) {
+function AnalysisHistoryPanel({
+  records,
+  loading,
+}: {
+  records: AnalysisRecord[];
+  loading: boolean;
+}) {
+  if (loading && records.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -1777,6 +1754,10 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
+  const [archiveTree, setArchiveTree] = useState<ArchiveTreeNode[]>([]);
+  const [archivedFiles, setArchivedFiles] = useState<ArchivedFile[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const loadedArchiveProjectIdRef = useRef<string | null>(null);
   // 新增项目动画
   const [newProjectId, setNewProjectId] = useState<string | null>(null);
   const [deleteProjectTargetId, setDeleteProjectTargetId] = useState<string | null>(null);
@@ -1804,6 +1785,50 @@ export default function Home() {
         setSelectedProjectId(currentId => currentId || data.projects?.[0]?.id || '');
       });
   }, []);
+
+  // 归档树和分析记录共享同一次读取；同项目刷新时保留旧内容，避免整块闪烁。
+  useEffect(() => {
+    if (!selectedProjectId) {
+      loadedArchiveProjectIdRef.current = null;
+      setArchiveTree([]);
+      setArchivedFiles([]);
+      setArchiveLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const isProjectChange =
+      loadedArchiveProjectIdRef.current !== selectedProjectId;
+
+    if (isProjectChange) {
+      setArchiveTree([]);
+      setArchivedFiles([]);
+      setArchiveLoading(true);
+    }
+
+    fetch(`/api/archive?projectId=${selectedProjectId}&tree=true`, {
+      signal: controller.signal,
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('获取归档文件失败');
+        return response.json();
+      })
+      .then(data => {
+        loadedArchiveProjectIdRef.current = selectedProjectId;
+        setArchiveTree(data.tree || []);
+        setArchivedFiles(data.files || []);
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        loadedArchiveProjectIdRef.current = selectedProjectId;
+        // 后台校准失败时保留当前数据，下一次操作或切换项目会再次读取。
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setArchiveLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [selectedProjectId, archiveRefreshKey]);
 
   const handleProjectCreated = (project: Project) => {
     setProjects(prev => [project, ...prev]);
@@ -2280,6 +2305,12 @@ export default function Home() {
   }, [selectedProjectId, results]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const archiveDataMatchesSelection =
+    loadedArchiveProjectIdRef.current === selectedProjectId;
+  const visibleArchiveTree = archiveDataMatchesSelection ? archiveTree : [];
+  const visibleArchivedFiles = archiveDataMatchesSelection ? archivedFiles : [];
+  const visibleArchiveLoading =
+    archiveLoading || (Boolean(selectedProjectId) && !archiveDataMatchesSelection);
   const hasPendingArchiveConfirmation = results.some(
     result => result.requiresArchiveConfirmation
   );
@@ -2463,7 +2494,9 @@ export default function Home() {
                   {selectedProjectId ? (
                     <ArchivedFilesList
                       projectId={selectedProjectId}
-                      refreshKey={archiveRefreshKey}
+                      archiveTree={visibleArchiveTree}
+                      archivedFiles={visibleArchivedFiles}
+                      loading={visibleArchiveLoading}
                       onFilesChanged={handleArchivedFilesChanged}
                     />
                   ) : (
@@ -2534,7 +2567,10 @@ export default function Home() {
               <CardContent className="min-w-0 flex-1 px-3 pt-0">
                 <div className="h-[240px] overflow-y-auto overflow-x-hidden pr-1 md:h-[300px] lg:h-[340px]">
                   {selectedProjectId ? (
-                    <AnalysisHistoryPanel projectId={selectedProjectId} refreshKey={archiveRefreshKey} />
+                    <AnalysisHistoryPanel
+                      records={visibleArchivedFiles}
+                      loading={visibleArchiveLoading}
+                    />
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
