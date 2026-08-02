@@ -132,6 +132,11 @@ test('Agent对股东会增资决议给出投资实施建议', async () => {
 
   assert.equal(result.status, 'decided');
   assert.deepEqual(result.requestedEvidence, [
+    'related_document:capital_increase_agreement',
+    'related_document:company_charter',
+    'related_document:shareholder_agreement',
+    'project_context:direct_events',
+    'project_context:document_relations',
     'project_event:shareholders_approved_transaction',
   ]);
   assert.equal(result.decision.selectedCategory?.fileName, '股东会决议');

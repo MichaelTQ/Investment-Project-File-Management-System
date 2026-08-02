@@ -110,6 +110,11 @@ interface ClassifyProcess {
     relatedDocumentCount?: number;
     reEvaluatedCount?: number;
     revision?: number;
+    contextStatus?: ProjectSessionMemoryView['contextSynthesis']['status'];
+    contextLlmCallCount?: number;
+    contextEventCount?: number;
+    contextRelationCount?: number;
+    latestEvidencedStage?: ProjectSessionMemoryView['contextSynthesis']['latestEvidencedStage'];
     error?: string;
   };
   step1_keywordMatch: {
@@ -752,10 +757,12 @@ export async function POST(request: NextRequest) {
             const memoryEvaluation =
               await rememberAndEvaluateProjectDocument({
                 projectId: project.id,
+                projectName: project.name,
                 sourcePath: sourcePath || fileName,
                 facts: documentFacts,
                 projectContext,
                 suppliedRelatedDocuments: relatedDocumentFacts,
+                customHeaders,
               });
             const { currentDecision, ...memoryView } = memoryEvaluation;
             agentClassificationResult = currentDecision;
@@ -770,6 +777,12 @@ export async function POST(request: NextRequest) {
               relatedDocumentCount: memoryView.relatedDocumentCount,
               reEvaluatedCount: memoryView.reEvaluatedDocuments.length,
               revision: memoryView.revision,
+              contextStatus: memoryView.contextSynthesis.status,
+              contextLlmCallCount: memoryView.contextSynthesis.llmCallCount,
+              contextEventCount: memoryView.contextSynthesis.eventCount,
+              contextRelationCount: memoryView.contextSynthesis.relationCount,
+              latestEvidencedStage:
+                memoryView.contextSynthesis.latestEvidencedStage,
             };
           } catch (memoryError) {
             const message =

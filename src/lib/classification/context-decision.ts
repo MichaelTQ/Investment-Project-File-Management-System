@@ -14,14 +14,47 @@ import {
 const ConfidenceLabelSchema = z.enum(['low', 'medium', 'high']);
 
 export const ProjectTimelineEventSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
   eventType: z.string().trim().min(1).max(128),
   stage: z.enum(PROJECT_STAGES),
   title: z.string().trim().min(1).max(300),
-  evidenceFiles: z.array(z.string().trim().min(1).max(1024)).max(100),
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(100),
   evidence: z.string().trim().min(1).max(1000),
   confidence: ConfidenceLabelSchema,
   needsHumanConfirmation: z.boolean().optional(),
+});
+
+export const ProjectStageHypothesisSchema = z.object({
+  stage: z.enum(PROJECT_STAGES),
+  confidence: ConfidenceLabelSchema,
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(100),
+  reasoning: z.string().trim().min(1).max(1000),
+});
+
+export const ProjectDocumentRelationSchema = z.object({
+  fromSourcePath: z.string().trim().min(1).max(1024),
+  toSourcePath: z.string().trim().min(1).max(1024),
+  relationType: z.string().trim().min(1).max(128),
+  evidence: z.string().trim().min(1).max(1000),
+  confidence: ConfidenceLabelSchema,
+});
+
+export const ProjectContextConflictSchema = z.object({
+  description: z.string().trim().min(1).max(1000),
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(100),
+  needsHumanConfirmation: z.boolean(),
 });
 
 export const ProjectContextSnapshotSchema = z.object({
@@ -33,7 +66,17 @@ export const ProjectContextSnapshotSchema = z.object({
   stageConfidence: ConfidenceLabelSchema,
   importantCaveat: z.string().trim().max(1000).optional(),
   timeline: z.array(ProjectTimelineEventSchema).max(200),
+  stageHypotheses: z.array(ProjectStageHypothesisSchema).max(20).optional(),
+  documentRelations: z.array(ProjectDocumentRelationSchema).max(300).optional(),
+  conflicts: z.array(ProjectContextConflictSchema).max(100).optional(),
   openQuestions: z.array(z.string().trim().min(1).max(1000)).max(100),
+  sourceDocumentCount: z.number().int().min(0).max(10000).optional(),
+  generatedAt: z.string().datetime().optional(),
+  synthesizerVersion: z.string().trim().min(1).max(100).optional(),
+  synthesisWarnings: z
+    .array(z.string().trim().min(1).max(1000))
+    .max(100)
+    .optional(),
 });
 
 export const RelatedDocumentFactsSchema = z.object({
@@ -79,7 +122,7 @@ interface MutableCandidate {
   contradictions: string[];
 }
 
-const POLICY_VERSION = 'context-decision-v2';
+const POLICY_VERSION = 'context-decision-v3';
 const MIN_DECISION_SCORE = 50;
 const MIN_SCORE_GAP = 15;
 
@@ -612,6 +655,116 @@ function scorePaymentNotice(
   return [candidate];
 }
 
+const GENERIC_CATEGORY_NAMES: Partial<
+  Record<DocumentFacts['documentType'], string[]>
+> = {
+  capital_increase_agreement: ['增资协议'],
+  shareholder_agreement: ['股东协议'],
+  board_resolution: ['董事会决议'],
+  investment_committee_resolution: ['投委会决议', '退出投委会决议'],
+  bank_receipt: ['转账凭证'],
+  due_diligence_report: ['业务尽调报告', '财务尽调报告', '法律尽调报告'],
+  business_plan: ['商业计划书'],
+  project_initiation_report: ['立项报告'],
+  project_initiation_application: ['立项申请书'],
+  meeting_minutes: ['立项评审纪要'],
+  voting_result: ['表决票', '退出表决票'],
+  investment_recommendation: ['投资建议书'],
+  business_license: ['营业执照'],
+  financial_statement: ['审计报告', '财务预测', '纳税报表'],
+  credit_report: ['贷款资料'],
+  confidentiality_agreement: ['保密协议'],
+  capital_contribution_certificate: ['确权文件'],
+  shareholder_register: ['确权文件'],
+};
+
+function categoryStage(category: FlatFileCategory): (typeof PROJECT_STAGES)[number] {
+  const stageByFolder: Record<string, (typeof PROJECT_STAGES)[number]> = {
+    'pre-project': 'pre_initiation',
+    'project-initiation': 'initiation',
+    'due-diligence': 'due_diligence',
+    'decision-meeting': 'investment_decision',
+    'decision-documents': 'investment_decision',
+    'investment-implementation': 'investment_execution',
+    'post-investment-report': 'post_investment',
+    'field-research': 'post_investment',
+    'enterprise-materials': 'post_investment',
+    'risk-management': 'post_investment',
+    'exit-meeting': 'exit_decision',
+    'exit-decision-docs': 'exit_decision',
+    'exit-implementation': 'exit_execution',
+  };
+  return stageByFolder[category.folderId] ?? 'unknown';
+}
+
+function scoreGenericDocument(
+  params: DecideWithProjectContextParams
+): MutableCandidate[] {
+  const categoryNames = GENERIC_CATEGORY_NAMES[params.facts.documentType] ?? [];
+  const categories = FLAT_FILE_CATEGORIES.filter(category =>
+    categoryNames.includes(category.fileName)
+  );
+  if (categories.length === 0) return [];
+  const text = combinedFactsText(params.facts);
+  const directEvents =
+    params.projectContext?.timeline.filter(event =>
+      event.evidenceFiles.includes(params.sourcePath)
+    ) ?? [];
+
+  return categories.map(category => {
+    const candidate: MutableCandidate = {
+      category,
+      score: 20,
+      evidence: [],
+      contradictions: [],
+    };
+    if (text.includes(category.fileName)) {
+      addEvidence(candidate, 25, `文件标题或事实明确匹配“${category.fileName}”`);
+    }
+    const matchedKeywords = category.keywords.filter(
+      keyword => keyword.length >= 3 && text.includes(keyword)
+    );
+    if (matchedKeywords.length > 0) {
+      addEvidence(
+        candidate,
+        Math.min(20, matchedKeywords.length * 5),
+        `结构化事实命中类别特征：${matchedKeywords.slice(0, 4).join('、')}`
+      );
+    }
+    const expectedStage = categoryStage(category);
+    const matchingEvents = directEvents.filter(
+      event => event.stage === expectedStage
+    );
+    if (matchingEvents.length > 0) {
+      addEvidence(
+        candidate,
+        30,
+        `项目事件“${matchingEvents[0]?.title}”将该文件关联到 ${expectedStage}`
+      );
+    } else if (
+      directEvents.length > 0 &&
+      directEvents.every(event => event.stage !== expectedStage)
+    ) {
+      addContradiction(
+        candidate,
+        25,
+        `该文件直接关联的项目事件不属于候选阶段 ${expectedStage}`
+      );
+    }
+    if (
+      directEvents.length === 0 &&
+      params.projectContext?.latestEvidencedStage === expectedStage
+    ) {
+      addEvidence(
+        candidate,
+        5,
+        '项目最晚证据阶段与候选阶段一致，但该信息仅作为弱先验'
+      );
+    }
+    return candidate;
+  });
+}
+
 function finalizeDecision(
   candidates: MutableCandidate[],
   facts: DocumentFacts
@@ -690,6 +843,11 @@ export function decideWithProjectContext(
   }
   if (params.facts.documentType === 'payment_notice') {
     return finalizeDecision(scorePaymentNotice(params), params.facts);
+  }
+
+  const genericCandidates = scoreGenericDocument(params);
+  if (genericCandidates.length > 0) {
+    return finalizeDecision(genericCandidates, params.facts);
   }
 
   return {

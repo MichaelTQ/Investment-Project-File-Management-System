@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
+  loadDurableProjectMemory,
   setDurableProjectMemoryBackendForTests,
   type DurableProjectMemoryBackend,
 } from '../src/lib/classification/durable-project-memory';
@@ -243,6 +244,10 @@ test('单文件 tombstone 在重启后仍阻止已删除事实恢复', async () 
     ),
     true
   );
+  const afterDelete = await loadDurableProjectMemory('forget-project');
+  assert.equal(afterDelete.documents.size, 0);
+  assert.equal(afterDelete.context?.sourceDocumentCount, 0);
+  assert.equal(afterDelete.context?.timeline.length, 0);
   clearAllSessionProjectMemoryForTests();
 
   const result = await rememberAndEvaluateProjectDocument({
@@ -252,6 +257,94 @@ test('单文件 tombstone 在重启后仍阻止已删除事实恢复', async () 
   });
   assert.equal(result.documentCount, 1);
   assert.equal(result.currentDecision.status, 'needs_review');
+});
+
+test('非章程文件也会随项目上下文变化被重新判断', async () => {
+  const bankReceipt: DocumentFacts = {
+    schemaVersion: 1,
+    documentType: 'bank_receipt',
+    rawDocumentType: '银行电子回单',
+    title: '银行电子回单',
+    documentNumber: null,
+    version: null,
+    dates: [],
+    parties: [{ name: '深圳君柔科技有限公司', role: '收款方' }],
+    signStatus: 'unknown',
+    transactionChanges: [],
+    explicitStageClues: [],
+    evidenceQuotes: ['支付投资款人民币1000万元'],
+    warnings: [],
+    sourceQuality: 'text',
+    extractionConfidence: 90,
+  };
+  const exitAgreement: DocumentFacts = {
+    ...bankReceipt,
+    documentType: 'other',
+    rawDocumentType: '退出交易协议',
+    title: '退出交易协议',
+    evidenceQuotes: ['各方签署股权退出交易协议'],
+  };
+  let synthesisRound = 0;
+  const contextSynthesizerClient = {
+    invoke: async () => {
+      synthesisRound += 1;
+      const isExit = synthesisRound > 1;
+      return {
+        content: JSON.stringify({
+          schemaVersion: 1,
+          projectName: '跨类型项目',
+          targetCompany: '深圳君柔科技有限公司',
+          contextStatus: 'llm_synthesized',
+          latestEvidencedStage: isExit
+            ? 'exit_execution'
+            : 'investment_execution',
+          stageConfidence: 'high',
+          timeline: [
+            {
+              date: null,
+              eventType: isExit
+                ? 'exit_payment_made'
+                : 'investment_payment_made',
+              stage: isExit ? 'exit_execution' : 'investment_execution',
+              title: isExit ? '形成退出付款凭证' : '形成投资付款凭证',
+              evidenceFiles: ['银行电子回单.pdf'],
+              evidence: isExit ? '退出交易付款' : '支付投资款',
+              confidence: 'high',
+            },
+          ],
+          stageHypotheses: [],
+          documentRelations: [],
+          conflicts: [],
+          openQuestions: [],
+        }),
+      };
+    },
+  };
+
+  const first = await rememberAndEvaluateProjectDocument({
+    projectId: 'generic-re-evaluation-project',
+    projectName: '跨类型项目',
+    sourcePath: '银行电子回单.pdf',
+    facts: bankReceipt,
+    contextSynthesizerClient: contextSynthesizerClient as never,
+  });
+  assert.equal(
+    first.currentDecision.decision.selectedCategory?.folderId,
+    'investment-implementation'
+  );
+  assert.equal(first.contextSynthesis.llmCallCount, 1);
+
+  const second = await rememberAndEvaluateProjectDocument({
+    projectId: 'generic-re-evaluation-project',
+    projectName: '跨类型项目',
+    sourcePath: '退出交易协议.pdf',
+    facts: exitAgreement,
+    contextSynthesizerClient: contextSynthesizerClient as never,
+  });
+  const reEvaluated = second.reEvaluatedDocuments.find(
+    document => document.sourcePath === '银行电子回单.pdf'
+  );
+  assert.equal(reEvaluated?.agentDecision.decision.selectedCategory?.folderId, 'exit-implementation');
 });
 
 test('S3 不可用时降级为有明确告警的进程内记忆', async () => {

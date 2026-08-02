@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "stream";
+import { HeaderUtils } from "coze-coding-dev-sdk";
 import {
   deleteStoredFile,
   getProject,
@@ -89,7 +90,16 @@ export async function DELETE(request: NextRequest) {
 
     await deleteStoredFile(storageKey);
     if (sourcePath) {
-      await forgetProjectDocument(projectId, sourcePath);
+      try {
+        const project = await getProject(projectId);
+        await forgetProjectDocument(projectId, sourcePath, {
+          projectName: project?.name,
+          customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+        });
+      } catch (memoryError) {
+        // 文件已经清理成功；项目记忆刷新失败不能把本次删除误报为失败。
+        console.error('Temporary upload memory cleanup failed:', memoryError);
+      }
     }
     return NextResponse.json({ success: true });
   } catch (error) {

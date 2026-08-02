@@ -18,6 +18,7 @@
     "test:agent-report": "node --import tsx --test tests/junrou-agent-report.test.ts",
     "test:shadow-report": "node --import tsx --test tests/junrou-shadow-report.test.ts",
     "test:memory": "node --import tsx --test tests/project-memory.test.ts",
+    "test:project-context": "node --import tsx --test tests/project-context-synthesizer.test.ts",
     "evaluate:junrou-shadow": "node --import tsx scripts/evaluate-junrou-shadow.ts",
     "evaluate:junrou-agent": "node --import tsx scripts/evaluate-junrou-agent.ts",
     "ts-check": "tsc -p tsconfig.json",

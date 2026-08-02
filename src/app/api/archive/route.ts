@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { HeaderUtils } from "coze-coding-dev-sdk";
 import {
   listArchivedFiles,
   deleteArchivedFile,
@@ -236,7 +237,10 @@ export async function DELETE(request: NextRequest) {
         try {
           await forgetProjectDocumentsByFileName(
             deleted.projectId,
-            deleted.originalName
+            deleted.originalName,
+            {
+              customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+            }
           );
         } catch (memoryError) {
           console.error('Delete archive memory cleanup failed:', memoryError);

@@ -66,34 +66,146 @@ const AgentState = Annotation.Root({
 
 type AgentGraphState = typeof AgentState.State;
 
+const RELATED_TYPE_PLANS: Partial<Record<DocumentType, DocumentType[]>> = {
+  company_charter: [
+    'company_charter',
+    'shareholder_resolution',
+    'capital_increase_agreement',
+  ],
+  capital_increase_agreement: [
+    'shareholder_resolution',
+    'company_charter',
+    'closing_confirmation',
+    'payment_notice',
+  ],
+  shareholder_agreement: [
+    'capital_increase_agreement',
+    'shareholder_resolution',
+    'company_charter',
+  ],
+  shareholder_resolution: [
+    'capital_increase_agreement',
+    'company_charter',
+    'shareholder_agreement',
+  ],
+  board_resolution: [
+    'shareholder_resolution',
+    'capital_increase_agreement',
+  ],
+  investment_committee_resolution: [
+    'investment_recommendation',
+    'investment_compliance_review',
+    'voting_result',
+  ],
+  closing_confirmation: [
+    'capital_increase_agreement',
+    'payment_notice',
+    'bank_receipt',
+  ],
+  payment_notice: [
+    'capital_increase_agreement',
+    'closing_confirmation',
+    'bank_receipt',
+  ],
+  bank_receipt: ['payment_notice', 'closing_confirmation'],
+  due_diligence_report: [
+    'business_license',
+    'financial_statement',
+    'credit_report',
+    'company_charter',
+  ],
+  project_initiation_application: [
+    'project_initiation_report',
+    'business_plan',
+  ],
+  project_initiation_report: [
+    'project_initiation_application',
+    'business_plan',
+    'meeting_minutes',
+  ],
+};
+
 function evidencePlanFor(documentType: DocumentType): string[] {
+  const relatedTypes = RELATED_TYPE_PLANS[documentType] ?? [];
+  const genericPlan = [
+    ...relatedTypes.map(type => `related_document:${type}`),
+    'project_context:direct_events',
+    'project_context:document_relations',
+  ];
   if (documentType === 'company_charter') {
     return [
-      'related_document:company_charter',
-      'related_document:shareholder_resolution',
-      'related_document:capital_increase_agreement',
+      ...genericPlan,
       'project_event:shareholders_approved_transaction',
     ];
   }
   if (documentType === 'investment_compliance_review') {
-    return ['project_event:fund_compliance_review'];
+    return [...genericPlan, 'project_event:fund_compliance_review'];
   }
   if (documentType === 'shareholder_resolution') {
-    return ['project_event:shareholders_approved_transaction'];
+    return [...genericPlan, 'project_event:shareholders_approved_transaction'];
   }
   if (documentType === 'closing_confirmation') {
     return [
+      ...genericPlan,
       'project_event:capital_increase_agreement_signed',
       'project_event:closing_conditions_confirmed',
     ];
   }
   if (documentType === 'payment_notice') {
     return [
+      ...genericPlan,
       'project_event:capital_increase_agreement_signed',
       'project_event:closing_conditions_confirmed',
     ];
   }
-  return [`missing_context_policy:${documentType}`];
+  return relatedTypes.length > 0
+    ? genericPlan
+    : [...genericPlan, `missing_context_policy:${documentType}`];
+}
+
+function relatedDocumentScore(
+  state: AgentGraphState,
+  document: RelatedDocumentFacts
+): number {
+  let score = 0;
+  const relatedTypes = RELATED_TYPE_PLANS[state.facts.documentType] ?? [];
+  if (document.facts.documentType === state.facts.documentType) score += 40;
+  if (relatedTypes.includes(document.facts.documentType)) score += 60;
+
+  const directEvents = state.projectContext?.timeline.filter(event =>
+    event.evidenceFiles.includes(state.sourcePath)
+  ) ?? [];
+  if (
+    directEvents.some(event => event.evidenceFiles.includes(document.sourcePath))
+  ) {
+    score += 100;
+  }
+  const directlyRelated = state.projectContext?.documentRelations?.some(
+    relation =>
+      (relation.fromSourcePath === state.sourcePath &&
+        relation.toSourcePath === document.sourcePath) ||
+      (relation.toSourcePath === state.sourcePath &&
+        relation.fromSourcePath === document.sourcePath)
+  );
+  if (directlyRelated) score += 120;
+
+  const currentParties = new Set(state.facts.parties.map(party => party.name));
+  const sharedPartyCount = document.facts.parties.filter(party =>
+    currentParties.has(party.name)
+  ).length;
+  score += Math.min(30, sharedPartyCount * 10);
+
+  const currentFields = new Set(
+    state.facts.transactionChanges.map(change => change.field)
+  );
+  if (
+    document.facts.transactionChanges.some(change =>
+      currentFields.has(change.field)
+    )
+  ) {
+    score += 20;
+  }
+  return score;
 }
 
 function remainingRelatedDocuments(
@@ -102,17 +214,14 @@ function remainingRelatedDocuments(
   const selectedPaths = new Set(
     state.selectedRelatedDocuments.map(item => item.sourcePath)
   );
-  if (state.facts.documentType !== 'company_charter') return [];
-  const relevantTypes = new Set<DocumentType>([
-    'company_charter',
-    'shareholder_resolution',
-    'capital_increase_agreement',
-  ]);
   return state.availableRelatedDocuments.filter(
     item =>
       item.sourcePath !== state.sourcePath &&
-      relevantTypes.has(item.facts.documentType) &&
-      !selectedPaths.has(item.sourcePath)
+      !selectedPaths.has(item.sourcePath) &&
+      relatedDocumentScore(state, item) > 0
+  ).sort(
+    (left, right) =>
+      relatedDocumentScore(state, right) - relatedDocumentScore(state, left)
   );
 }
 
@@ -127,7 +236,7 @@ const planEvidenceNode: typeof AgentState.Node = state => {
         tool: 'inspect_document_facts',
         summary:
           remaining.length > 0
-            ? `文档类型为 ${state.facts.documentType}，发现 ${remaining.length} 份尚未比较的章程或交易证据`
+            ? `文档类型为 ${state.facts.documentType}，发现 ${remaining.length} 份与事件、主体、版本或交易关系相关的候选证据`
             : `文档类型为 ${state.facts.documentType}，当前没有可继续检索的关联文件`,
         round: state.rounds,
       },
