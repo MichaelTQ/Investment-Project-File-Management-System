@@ -33,7 +33,7 @@
 
 系统已经加入独立的文档事实层：
 
-- `src/lib/classification/document-facts.ts`：定义 `DocumentFactsSchema`、JSON 安全解析和零置信度降级结果；
+- `src/lib/classification/document-facts.ts`：定义严格的 `DocumentFactsSchema`、局部字段校正、JSON 安全解析和零置信度降级结果；非标准日期、缺失数组或超长字段会保留其余事实并记录校正警告；
 - `src/lib/classification/fact-extractor.ts`：调用 LLM 提取文件类型、标题、日期、主体、签署状态、交易变化和证据；
 - `src/app/api/classify/route.ts`：通过 shadow mode 可选调用事实抽取器。
 
@@ -90,7 +90,7 @@
 → 有充分证据时完成建议
 ```
 
-当前节点包括 `plan_evidence`、`retrieve_related_document`、`context_decision`、`complete` 和 `human_review`。公司章程会动态检索其他章程并允许多轮比较；合规审查表即使得出分类建议，也会遵守类别策略转人工；尚无规则的文件不会让模型猜测。
+当前节点包括 `plan_evidence`、`retrieve_related_document`、`context_decision`、`complete` 和 `human_review`。公司章程会动态检索其他章程、股东会决议和增资协议并允许多轮比较；合规审查表即使得出分类建议，也会遵守类别策略转人工；尚无规则的文件不会让模型猜测。
 
 启用方式：
 

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   createFallbackDocumentFacts,
+  DocumentFactsSchema,
   extractFirstJsonObject,
   parseDocumentFactsResponse,
 } from '../src/lib/classification/document-facts';
@@ -64,24 +65,56 @@ test('JSON 提取器不会被字符串内部的大括号截断', () => {
   );
 });
 
-test('不合法日期和越界置信度会被 Schema 拒绝', () => {
-  assert.throws(
-    () =>
-      parseDocumentFactsResponse(
-        JSON.stringify({
-          ...validFacts,
-          dates: [
-            {
-              date: '2026-4-10',
-              meaning: '日期',
-              evidence: '原文',
-            },
-          ],
-          extractionConfidence: 101,
-        })
-      ),
-    /文档事实不符合 Schema/
+test('Schema 保持严格，响应适配器可校正日期和越界置信度', () => {
+  const rawFacts = {
+    ...validFacts,
+    dates: [
+      {
+        date: '2026/4/10',
+        meaning: '日期',
+        evidence: '原文',
+      },
+    ],
+    extractionConfidence: 101,
+  };
+  assert.equal(DocumentFactsSchema.safeParse(rawFacts).success, false);
+
+  const facts = parseDocumentFactsResponse(JSON.stringify(rawFacts));
+  assert.equal(facts.dates[0]?.date, '2026-04-10');
+  assert.equal(facts.extractionConfidence, 100);
+  assert.match(facts.warnings.join('\n'), /结构化输出已校正/);
+});
+
+test('局部字段缺失或超长时保留其余事实而不是整份降级', () => {
+  const facts = parseDocumentFactsResponse(
+    JSON.stringify({
+      ...validFacts,
+      dates: [
+        ...validFacts.dates,
+        {
+          date: '日期待确认',
+          meaning: '工商变更日期',
+          evidence: '原文未形成标准日期',
+        },
+      ],
+      transactionChanges: [
+        {
+          field: '股东结构',
+          before: null,
+          after: '股东变化'.repeat(80),
+          evidence: '股东会决议列明增资后股东结构',
+        },
+      ],
+      explicitStageClues: undefined,
+    })
   );
+
+  assert.equal(facts.documentType, 'company_charter');
+  assert.equal(facts.dates[1]?.date, null);
+  assert.equal(facts.transactionChanges[0]?.after?.length, 200);
+  assert.deepEqual(facts.explicitStageClues, []);
+  assert.match(facts.warnings.join('\n'), /过长的交易变化值已截断/);
+  assert.match(facts.warnings.join('\n'), /explicitStageClues/);
 });
 
 test('抽取失败时生成不参与自动决策的零置信度事实', () => {

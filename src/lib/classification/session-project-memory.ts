@@ -13,7 +13,7 @@ import {
   clearDurableProjectMemory,
   loadDurableProjectMemory,
 } from './durable-project-memory';
-import type { DocumentFacts } from './document-facts';
+import type { DocumentFacts, DocumentType } from './document-facts';
 
 const DURABLE_MEMORY_MODE = 's3-durable-shadow' as const;
 const FALLBACK_MEMORY_MODE = 'process-local-fallback' as const;
@@ -61,7 +61,7 @@ export interface ProjectMemoryDocumentView {
   title: string;
   sourceQuality: DocumentFacts['sourceQuality'];
   extractionConfidence: number;
-  factStatus: 'extracted' | 'fallback' | 'type_recovered';
+  factStatus: 'extracted' | 'repaired' | 'fallback' | 'type_recovered';
   warnings: string[];
   agentStatus: ClassificationAgentResult['status'] | null;
   selectedCategory: string | null;
@@ -121,17 +121,33 @@ function decisionSignature(decision: ClassificationAgentResult | null): string {
   });
 }
 
-function recoverCompanyCharterType(
+function recoverDocumentType(
   sourcePath: string,
   facts: DocumentFacts
 ): DocumentFacts {
   if (!['unknown', 'other'].includes(facts.documentType)) return facts;
   const identity = [sourcePath, facts.title, facts.rawDocumentType].join('\n');
-  if (!identity.includes('公司章程')) return facts;
-  const warning = '文档类型由明确文件名或标题“公司章程”保守恢复';
+  const rules: Array<{
+    terms: string[];
+    documentType: DocumentType;
+    label: string;
+  }> = [
+    { terms: ['公司章程'], documentType: 'company_charter', label: '公司章程' },
+    { terms: ['股东会决议'], documentType: 'shareholder_resolution', label: '股东会决议' },
+    { terms: ['增资协议'], documentType: 'capital_increase_agreement', label: '增资协议' },
+    { terms: ['交割确认函', '交割确认书'], documentType: 'closing_confirmation', label: '交割确认文件' },
+    { terms: ['缴款通知书', '付款通知函'], documentType: 'payment_notice', label: '缴款通知文件' },
+    { terms: ['尽职调查报告', '尽调报告'], documentType: 'due_diligence_report', label: '尽职调查报告' },
+    { terms: ['投资合规性审查表', '合规性审查表'], documentType: 'investment_compliance_review', label: '投资合规性审查表' },
+  ];
+  const matched = rules.find(rule =>
+    rule.terms.some(term => identity.includes(term))
+  );
+  if (!matched) return facts;
+  const warning = `文档类型由明确文件名或标题“${matched.label}”保守恢复`;
   return {
     ...facts,
-    documentType: 'company_charter',
+    documentType: matched.documentType,
     warnings: facts.warnings.includes(warning)
       ? facts.warnings
       : [...facts.warnings, warning],
@@ -155,8 +171,14 @@ function projectDocumentViews(
         ? 'type_recovered'
         : document.facts.warnings.some(warning =>
               warning.includes('结构化事实抽取失败')
-            ) || document.facts.extractionConfidence === 0
+            )
           ? 'fallback'
+          : document.facts.warnings.some(warning =>
+                warning.includes('结构化输出已校正')
+              )
+            ? 'repaired'
+            : document.facts.extractionConfidence === 0
+              ? 'fallback'
           : 'extracted',
       warnings: document.facts.warnings,
       agentStatus: document.agentDecision?.status ?? null,
@@ -302,7 +324,7 @@ export async function rememberAndEvaluateProjectDocument(
         store.projects.get(projectId)
       );
       for (const document of project.documents.values()) {
-        document.facts = recoverCompanyCharterType(
+        document.facts = recoverDocumentType(
           document.sourcePath,
           document.facts
         );
@@ -317,7 +339,7 @@ export async function rememberAndEvaluateProjectDocument(
 
     if (params.projectContext) project.context = params.projectContext;
     const existing = project.documents.get(sourcePath);
-    const currentFacts = recoverCompanyCharterType(sourcePath, params.facts);
+    const currentFacts = recoverDocumentType(sourcePath, params.facts);
     project.documents.set(sourcePath, {
       sourcePath,
       facts: currentFacts,
