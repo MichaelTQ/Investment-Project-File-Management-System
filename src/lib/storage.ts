@@ -882,6 +882,7 @@ export async function getArchivedFile(id: string): Promise<ArchivedFile | null> 
 }
 
 export async function deleteArchivedFile(id: string): Promise<{
+  archivedFileId: string;
   projectId: string;
   originalName: string;
 } | null> {
@@ -908,7 +909,11 @@ export async function deleteArchivedFile(id: string): Promise<{
   const { error } = await db.from("archived_files").delete().eq("id", id);
   if (error) throw new Error(`删除归档文件失败: ${error.message}`);
   return file
-    ? { projectId: file.project_id, originalName: file.original_name }
+    ? {
+        archivedFileId: id,
+        projectId: file.project_id,
+        originalName: file.original_name,
+      }
     : null;
 }
 

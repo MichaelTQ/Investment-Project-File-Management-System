@@ -10,8 +10,13 @@ import {
 import {
   clearAllSessionProjectMemoryForTests,
   clearSessionProjectMemory,
+  commitArchivedProjectDocument,
+  evaluateProjectDocumentCandidate,
   forgetProjectDocument,
+  forgetProjectDocumentByArchivedFileId,
+  getProjectContextMemoryView,
   getSessionProjectMemorySnapshot,
+  rebuildProjectContext,
   rememberAndEvaluateProjectDocument,
 } from '../src/lib/classification/session-project-memory';
 
@@ -123,6 +128,94 @@ test('按业务顺序上传时，新章程会触发旧章程重新判断', async
   );
 });
 
+test('候选文件先使用已提交Context判断，归档提交后才进入正式记忆', async () => {
+  const evaluated = await evaluateProjectDocumentCandidate({
+    projectId: 'commit-boundary-project',
+    projectName: '提交边界项目',
+    sourcePath: '公司章程.pdf',
+    facts: preTransactionCharter,
+  });
+  assert.equal(evaluated.documentCount, 0);
+  assert.equal(evaluated.decisionContextVersion, 0);
+  assert.equal(
+    (await loadDurableProjectMemory('commit-boundary-project')).documents.size,
+    0
+  );
+
+  const committed = await commitArchivedProjectDocument({
+    projectId: 'commit-boundary-project',
+    projectName: '提交边界项目',
+    sourcePath: '公司章程.pdf',
+    facts: preTransactionCharter,
+    archivedFileId: 'archived-charter-1',
+  });
+  assert.equal(committed.documentCount, 1);
+  assert.equal(committed.contextState.status, 'clean');
+  assert.equal(committed.contextState.version, 1);
+});
+
+test('删除只标记Context过期，下次候选判断前自动重建', async () => {
+  let llmCalls = 0;
+  const contextSynthesizerClient = {
+    invoke: async () => {
+      llmCalls += 1;
+      return {
+        content: JSON.stringify({
+          schemaVersion: 1,
+          projectName: '延迟重建项目',
+          targetCompany: null,
+          contextStatus: 'llm_synthesized',
+          latestEvidencedStage: 'unknown',
+          stageConfidence: 'low',
+          timeline: [],
+          stageHypotheses: [],
+          documentRelations: [],
+          conflicts: [],
+          openQuestions: [],
+        }),
+      };
+    },
+  };
+  await commitArchivedProjectDocument({
+    projectId: 'deferred-rebuild-project',
+    projectName: '延迟重建项目',
+    sourcePath: '公司章程.pdf',
+    facts: preTransactionCharter,
+    archivedFileId: 'archived-delete-1',
+    contextSynthesizerClient: contextSynthesizerClient as never,
+  });
+  assert.equal(llmCalls, 1);
+  await commitArchivedProjectDocument({
+    projectId: 'deferred-rebuild-project',
+    projectName: '延迟重建项目',
+    sourcePath: '保留文件.pdf',
+    facts: postTransactionCharter,
+    archivedFileId: 'archived-keep-1',
+    contextSynthesizerClient: contextSynthesizerClient as never,
+  });
+  assert.equal(llmCalls, 2);
+
+  await forgetProjectDocumentByArchivedFileId(
+    'deferred-rebuild-project',
+    'archived-delete-1'
+  );
+  const dirty = await getProjectContextMemoryView('deferred-rebuild-project');
+  assert.equal(dirty.contextState.status, 'dirty');
+  assert.equal(llmCalls, 2);
+
+  const nextCandidate = await evaluateProjectDocumentCandidate({
+    projectId: 'deferred-rebuild-project',
+    projectName: '延迟重建项目',
+    sourcePath: '下一份文件.pdf',
+    facts: postTransactionCharter,
+    contextSynthesizerClient: contextSynthesizerClient as never,
+  });
+  assert.equal(llmCalls, 3);
+  assert.equal(nextCandidate.contextState.status, 'clean');
+  assert.equal(nextCandidate.documentCount, 1);
+  assert.equal(nextCandidate.decisionContextVersion, 3);
+});
+
 test('乱序上传时，收齐两个版本后仍能恢复正确阶段', async () => {
   const first = await rememberAndEvaluateProjectDocument({
     projectId: 'reverse-project',
@@ -179,7 +272,7 @@ test('同路径重复上传会幂等更新，删除项目时可完整清理', as
   });
 
   assert.equal(updated.documentCount, 1);
-  assert.equal(updated.revision, 2);
+  assert.equal(updated.contextState.version, 2);
   assert.equal(await clearSessionProjectMemory('replace-project'), true);
   assert.equal(getSessionProjectMemorySnapshot('replace-project'), null);
   assert.equal(durableBackend.objects.size, 0);
@@ -246,8 +339,12 @@ test('单文件 tombstone 在重启后仍阻止已删除事实恢复', async () 
   );
   const afterDelete = await loadDurableProjectMemory('forget-project');
   assert.equal(afterDelete.documents.size, 0);
-  assert.equal(afterDelete.context?.sourceDocumentCount, 0);
-  assert.equal(afterDelete.context?.timeline.length, 0);
+  assert.equal(afterDelete.contextState.status, 'dirty');
+  assert.equal(afterDelete.context?.sourceDocumentCount, 1);
+  const rebuilt = await rebuildProjectContext('forget-project');
+  assert.equal(rebuilt.contextState.status, 'clean');
+  assert.equal(rebuilt.projectContext?.sourceDocumentCount, 0);
+  assert.equal(rebuilt.projectContext?.timeline.length, 0);
   clearAllSessionProjectMemoryForTests();
 
   const result = await rememberAndEvaluateProjectDocument({
@@ -332,7 +429,7 @@ test('非章程文件也会随项目上下文变化被重新判断', async () =>
     first.currentDecision.decision.selectedCategory?.folderId,
     'investment-implementation'
   );
-  assert.equal(first.contextSynthesis.llmCallCount, 1);
+  assert.equal(first.contextSynthesis?.llmCallCount, 1);
 
   const second = await rememberAndEvaluateProjectDocument({
     projectId: 'generic-re-evaluation-project',

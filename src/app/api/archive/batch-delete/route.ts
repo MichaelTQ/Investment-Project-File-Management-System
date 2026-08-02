@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { HeaderUtils } from "coze-coding-dev-sdk";
 import { deleteArchivedFile } from "@/lib/storage";
-import { forgetProjectDocumentsByFileName } from "@/lib/classification/session-project-memory";
+import { forgetProjectDocumentByArchivedFileId } from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -28,9 +28,9 @@ export async function POST(request: NextRequest) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
         try {
-          await forgetProjectDocumentsByFileName(
+          await forgetProjectDocumentByArchivedFileId(
             deleted.projectId,
-            deleted.originalName,
+            deleted.archivedFileId,
             {
               customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
             }

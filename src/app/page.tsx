@@ -149,6 +149,16 @@ interface ProjectSessionMemoryResult {
     openQuestions: string[];
     synthesisWarnings?: string[];
   } | null;
+  contextState: {
+    status: 'clean' | 'dirty' | 'rebuilding' | 'failed';
+    version: number;
+    basedOnRevision: number;
+    dirtyReasons: string[];
+    updatedAt: number | null;
+    lastAttemptAt: number | null;
+    lastError?: string;
+  };
+  decisionContextVersion?: number;
   contextSynthesis?: {
     status: 'llm_synthesized' | 'deterministic_fallback';
     llmCallCount: number;
@@ -184,6 +194,7 @@ interface ClassifyResult {
   process: ClassifyProcess;
   agentDecision?: AgentDecisionResult;
   projectSessionMemory?: ProjectSessionMemoryResult;
+  documentFacts?: unknown;
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
   sourceFile?: File;
@@ -313,6 +324,12 @@ function AgentDecisionPanel({
             {projectMemory.documentCount} 份文件，
             本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
           </p>
+          {projectMemory.decisionContextVersion !== undefined && (
+            <p className="mt-1 text-xs font-medium text-violet-800">
+              本次分类使用正式 Context v
+              {projectMemory.decisionContextVersion}；当前待归档文件尚未写入Context。
+            </p>
+          )}
           {projectMemory.contextSynthesis && (
             <div className="mt-2 rounded border border-violet-100 bg-violet-50/50 px-2 py-1.5 text-xs leading-5">
               <p className="font-medium text-violet-950">
@@ -1900,6 +1917,12 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
+  const [contextRefreshKey, setContextRefreshKey] = useState(0);
+  const [projectContextState, setProjectContextState] =
+    useState<ProjectSessionMemoryResult | null>(null);
+  const [projectContextLoading, setProjectContextLoading] = useState(false);
+  const [projectContextRebuilding, setProjectContextRebuilding] = useState(false);
+  const [projectContextError, setProjectContextError] = useState<string | null>(null);
   const [archiveTree, setArchiveTree] = useState<ArchiveTreeNode[]>([]);
   const [archivedFiles, setArchivedFiles] = useState<ArchivedFile[]>([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -1976,6 +1999,62 @@ export default function Home() {
     return () => controller.abort();
   }, [selectedProjectId, archiveRefreshKey]);
 
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setProjectContextState(null);
+      setProjectContextLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setProjectContextLoading(true);
+    setProjectContextError(null);
+    fetch(
+      `/api/project-context?projectId=${encodeURIComponent(selectedProjectId)}`,
+      { signal: controller.signal }
+    )
+      .then(async response => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || '读取项目Context失败');
+        }
+        setProjectContextState(data.projectContext ?? null);
+      })
+      .catch(error => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setProjectContextError(
+          error instanceof Error ? error.message : '读取项目Context失败'
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProjectContextLoading(false);
+      });
+    return () => controller.abort();
+  }, [selectedProjectId, contextRefreshKey]);
+
+  const handleRebuildProjectContext = useCallback(async () => {
+    if (!selectedProjectId) return;
+    setProjectContextRebuilding(true);
+    setProjectContextError(null);
+    try {
+      const response = await fetch('/api/project-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: selectedProjectId }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || '重建项目Context失败');
+      }
+      setProjectContextState(data.projectContext ?? null);
+    } catch (error) {
+      setProjectContextError(
+        error instanceof Error ? error.message : '重建项目Context失败'
+      );
+    } finally {
+      setProjectContextRebuilding(false);
+    }
+  }, [selectedProjectId]);
+
   const handleProjectCreated = (project: Project) => {
     setProjects(prev => [project, ...prev]);
     setSelectedProjectId(project.id);
@@ -2002,6 +2081,7 @@ export default function Home() {
 
     // 同时刷新归档记录，并从数据库重新读取项目计数进行校准。
     setArchiveRefreshKey(prev => prev + 1);
+    setContextRefreshKey(prev => prev + 1);
     fetch('/api/projects')
       .then(response => response.json())
       .then(data => {
@@ -2156,6 +2236,8 @@ export default function Home() {
               archiveTitle,
               confidence: pendingResult.confidence,
               reasoning: pendingResult.reasoning,
+              sourcePath: pendingResult.sourcePath || pendingResult.fileName,
+              documentFacts: pendingResult.documentFacts,
             }),
           })
         : await (() => {
@@ -2168,6 +2250,14 @@ export default function Home() {
             formData.append('archiveTitle', archiveTitle);
             formData.append('confidence', String(pendingResult.confidence));
             formData.append('reasoning', pendingResult.reasoning);
+            formData.append(
+              'sourcePath',
+              pendingResult.sourcePath || pendingResult.fileName
+            );
+            formData.append(
+              'documentFacts',
+              JSON.stringify(pendingResult.documentFacts ?? null)
+            );
             return fetch('/api/archive', { method: 'POST', body: formData });
           })();
       const data = await response.json();
@@ -2176,9 +2266,17 @@ export default function Home() {
         throw new Error(data.error || '归档失败，请重试');
       }
 
-      setResults(prev => prev.map(result =>
-        result.clientId === clientId
-          ? {
+      const reEvaluatedByPath = new Map<string, AgentDecisionResult>(
+        (
+          data.projectContext?.reEvaluatedDocuments ?? []
+        ).map((document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
+          document.sourcePath,
+          document.agentDecision,
+        ] as const)
+      );
+      setResults(prev => prev.map(result => {
+        if (result.clientId === clientId) {
+          return {
               ...result,
               category: selectedCategory,
               suggestedArchiveTitle: archiveTitle,
@@ -2188,10 +2286,27 @@ export default function Home() {
               sourceFile: undefined,
               sourceStorageKey: undefined,
               archived: data.archived,
-            }
-          : result
-      ));
+              projectSessionMemory:
+                data.projectContext
+                  ? {
+                      ...data.projectContext,
+                      decisionContextVersion:
+                        result.projectSessionMemory?.decisionContextVersion,
+                    }
+                  : result.projectSessionMemory,
+            };
+        }
+        const updatedAgent = reEvaluatedByPath.get(
+          result.sourcePath || result.fileName
+        );
+        return updatedAgent ? { ...result, agentDecision: updatedAgent } : result;
+      }));
       setArchiveRefreshKey(prev => prev + 1);
+      if (data.projectContext) {
+        setProjectContextState(data.projectContext);
+      } else {
+        setContextRefreshKey(prev => prev + 1);
+      }
       fetch('/api/projects')
         .then(response => response.json())
         .then(data => setProjects(data.projects || []));
@@ -2367,6 +2482,9 @@ export default function Home() {
         }
 
         const uploadedSourcePath = file.webkitRelativePath || file.name;
+        if (result.projectSessionMemory) {
+          setProjectContextState(result.projectSessionMemory);
+        }
         const reEvaluatedByPath = new Map(
           (
             result.projectSessionMemory?.reEvaluatedDocuments ?? []
@@ -2566,6 +2684,120 @@ export default function Home() {
                       ))}
                     </div>
                   </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Project-level committed Context */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Brain className="h-5 w-5 text-violet-600" />
+                    项目 Context
+                  </CardTitle>
+                  {projectContextState && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        projectContextState.contextState.status === 'clean'
+                          ? 'border-green-300 text-green-700'
+                          : projectContextState.contextState.status === 'dirty'
+                            ? 'border-amber-300 text-amber-700'
+                            : 'border-red-300 text-red-700'
+                      }
+                    >
+                      {{
+                        clean: '最新',
+                        dirty: '需要更新',
+                        rebuilding: '更新中',
+                        failed: '更新失败',
+                      }[projectContextState.contextState.status]}
+                    </Badge>
+                  )}
+                </div>
+                <CardDescription>
+                  只使用已成功归档且当前有效的文件生成
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0 text-xs leading-5">
+                {projectContextLoading ? (
+                  <p className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    正在读取项目Context…
+                  </p>
+                ) : projectContextState ? (
+                  <>
+                    <p>
+                      Context v{projectContextState.contextState.version}；依据{' '}
+                      {projectContextState.documentCount} 份正式文件
+                    </p>
+                    <p className="text-muted-foreground">
+                      最晚证据阶段：
+                      {PROJECT_STAGE_LABELS[
+                        projectContextState.projectContext
+                          ?.latestEvidencedStage ?? 'unknown'
+                      ] ?? '尚未确定'}
+                      ；事件{' '}
+                      {projectContextState.projectContext?.timeline.length ?? 0} 个
+                    </p>
+                    {projectContextState.contextState.dirtyReasons.length > 0 && (
+                      <ul className="space-y-1 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">
+                        {projectContextState.contextState.dirtyReasons.map(reason => (
+                          <li key={reason} className="break-words">
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {projectContextState.projectContext &&
+                      projectContextState.projectContext.timeline.length > 0 && (
+                        <details className="border-t pt-2">
+                          <summary className="cursor-pointer font-medium text-violet-800">
+                            查看事件时间线
+                          </summary>
+                          <ol className="mt-2 space-y-2 text-muted-foreground">
+                            {projectContextState.projectContext.timeline.map(
+                              (event, index) => (
+                                <li key={`${event.eventType}-${index}`}>
+                                  <span className="font-medium text-foreground">
+                                    {event.date ?? '日期待确认'} · {event.title}
+                                  </span>
+                                  <br />
+                                  证据：{event.evidenceFiles.join('；')}
+                                </li>
+                              )
+                            )}
+                          </ol>
+                        </details>
+                      )}
+                    <Button
+                      type="button"
+                      variant={
+                        projectContextState.contextState.status === 'clean'
+                          ? 'outline'
+                          : 'default'
+                      }
+                      size="sm"
+                      className="w-full"
+                      disabled={projectContextRebuilding || !selectedProjectId}
+                      onClick={() => void handleRebuildProjectContext()}
+                    >
+                      {projectContextRebuilding && (
+                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                      )}
+                      重新生成项目Context
+                    </Button>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    选择项目后显示正式Context。
+                  </p>
+                )}
+                {projectContextError && (
+                  <p className="break-words text-destructive">
+                    {projectContextError}
+                  </p>
                 )}
               </CardContent>
             </Card>
