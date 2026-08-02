@@ -12,9 +12,15 @@ import {
   archiveFile,
   archiveStoredFile,
   getProject,
+  type ArchivedFile,
 } from "@/lib/storage";
 import { FLAT_FILE_CATEGORIES } from "@/lib/folder-structure";
-import { forgetProjectDocumentsByFileName } from "@/lib/classification/session-project-memory";
+import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/document-facts";
+import {
+  commitArchivedProjectDocument,
+  forgetProjectDocumentByArchivedFileId,
+  markProjectContextDirty,
+} from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -36,6 +42,8 @@ export async function POST(request: NextRequest) {
     let reasoning = "";
     let parsedConfidence = 0;
     let folderPath: string[] = [];
+    let sourcePath = "";
+    let documentFacts: DocumentFacts | null = null;
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -55,6 +63,9 @@ export async function POST(request: NextRequest) {
               typeof segment === "string"
           )
         : [];
+      sourcePath = String(body.sourcePath || originalName);
+      const parsedFacts = DocumentFactsSchema.safeParse(body.documentFacts);
+      documentFacts = parsedFacts.success ? parsedFacts.data : null;
     } else {
       const formData = await request.formData();
       const formFile = formData.get("file");
@@ -68,6 +79,15 @@ export async function POST(request: NextRequest) {
       archiveTitle = String(formData.get("archiveTitle") ?? "").trim();
       reasoning = String(formData.get("reasoning") ?? "");
       parsedConfidence = Number(formData.get("confidence") ?? 0);
+      sourcePath = String(formData.get("sourcePath") ?? originalName);
+      try {
+        const parsedFacts = DocumentFactsSchema.safeParse(
+          JSON.parse(String(formData.get("documentFacts") ?? "null"))
+        );
+        documentFacts = parsedFacts.success ? parsedFacts.data : null;
+      } catch {
+        documentFacts = null;
+      }
 
       try {
         const parsedFolderPath = JSON.parse(
@@ -146,6 +166,30 @@ export async function POST(request: NextRequest) {
           archiveTitle,
         });
 
+    let projectContext;
+    try {
+      if (documentFacts) {
+        const committed = await commitArchivedProjectDocument({
+          projectId,
+          projectName: project.name,
+          sourcePath: sourcePath || originalName,
+          facts: documentFacts,
+          archivedFileId: archived.id,
+          customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+        });
+        const { currentDecision: _currentDecision, ...view } = committed;
+        void _currentDecision;
+        projectContext = view;
+      } else {
+        projectContext = await markProjectContextDirty(
+          projectId,
+          `文件“${originalName}”已归档，但缺少可提交的结构化事实`
+        );
+      }
+    } catch (contextError) {
+      console.error('Archive Context commit failed:', contextError);
+    }
+
     return NextResponse.json({
       success: true,
       archived: {
@@ -154,6 +198,7 @@ export async function POST(request: NextRequest) {
         projectName: archived.projectName,
         folderPath: archived.folderPath,
       },
+      projectContext,
     });
   } catch (error) {
     return NextResponse.json(
@@ -235,9 +280,9 @@ export async function DELETE(request: NextRequest) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
         try {
-          await forgetProjectDocumentsByFileName(
+          await forgetProjectDocumentByArchivedFileId(
             deleted.projectId,
-            deleted.originalName,
+            deleted.archivedFileId,
             {
               customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
             }
@@ -329,7 +374,7 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "批量移动参数格式错误" }, { status: 400 });
       }
 
-      const movedFiles = [];
+      const movedFiles: ArchivedFile[] = [];
       for (const move of moves) {
         const moved = await moveArchivedFile(move.id, move);
         if (!moved) {
@@ -340,11 +385,23 @@ export async function PATCH(request: NextRequest) {
         }
         movedFiles.push(moved);
       }
+      const projectContexts = await Promise.all(
+        [...new Set(movedFiles.map(file => file.projectId))].map(projectId =>
+          markProjectContextDirty(
+            projectId,
+            `人工移动了 ${movedFiles.filter(file => file.projectId === projectId).length} 份归档文件`
+          ).catch(error => {
+            console.error('Mark moved files Context dirty failed:', error);
+            return null;
+          })
+        )
+      );
 
       return NextResponse.json({
         success: true,
         movedCount: movedFiles.length,
         files: movedFiles,
+        projectContexts: projectContexts.filter(Boolean),
       });
     }
 
@@ -359,7 +416,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "文件不存在" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, file: result });
+    const projectContext = await markProjectContextDirty(
+      result.projectId,
+      `人工移动了归档文件“${result.originalName}”`
+    ).catch(error => {
+      console.error('Mark moved file Context dirty failed:', error);
+      return null;
+    });
+
+    return NextResponse.json({ success: true, file: result, projectContext });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "移动文件失败" },

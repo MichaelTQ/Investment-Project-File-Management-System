@@ -36,7 +36,8 @@ import {
   type ClassificationAgentResult,
 } from '@/lib/classification/classification-agent';
 import {
-  rememberAndEvaluateProjectDocument,
+  commitArchivedProjectDocument,
+  evaluateProjectDocumentCandidate,
   type ProjectSessionMemoryView,
 } from '@/lib/classification/session-project-memory';
 import {
@@ -110,11 +111,15 @@ interface ClassifyProcess {
     relatedDocumentCount?: number;
     reEvaluatedCount?: number;
     revision?: number;
-    contextStatus?: ProjectSessionMemoryView['contextSynthesis']['status'];
+    contextStatus?: NonNullable<
+      ProjectSessionMemoryView['contextSynthesis']
+    >['status'];
     contextLlmCallCount?: number;
     contextEventCount?: number;
     contextRelationCount?: number;
-    latestEvidencedStage?: ProjectSessionMemoryView['contextSynthesis']['latestEvidencedStage'];
+    latestEvidencedStage?: NonNullable<
+      ProjectSessionMemoryView['contextSynthesis']
+    >['latestEvidencedStage'];
     error?: string;
   };
   step1_keywordMatch: {
@@ -755,7 +760,7 @@ export async function POST(request: NextRequest) {
         if (project) {
           try {
             const memoryEvaluation =
-              await rememberAndEvaluateProjectDocument({
+              await evaluateProjectDocumentCandidate({
                 projectId: project.id,
                 projectName: project.name,
                 sourcePath: sourcePath || fileName,
@@ -777,12 +782,12 @@ export async function POST(request: NextRequest) {
               relatedDocumentCount: memoryView.relatedDocumentCount,
               reEvaluatedCount: memoryView.reEvaluatedDocuments.length,
               revision: memoryView.revision,
-              contextStatus: memoryView.contextSynthesis.status,
-              contextLlmCallCount: memoryView.contextSynthesis.llmCallCount,
-              contextEventCount: memoryView.contextSynthesis.eventCount,
-              contextRelationCount: memoryView.contextSynthesis.relationCount,
+              contextStatus: memoryView.contextSynthesis?.status,
+              contextLlmCallCount: memoryView.contextSynthesis?.llmCallCount,
+              contextEventCount: memoryView.contextSynthesis?.eventCount,
+              contextRelationCount: memoryView.contextSynthesis?.relationCount,
               latestEvidencedStage:
-                memoryView.contextSynthesis.latestEvidencedStage,
+                memoryView.contextSynthesis?.latestEvidencedStage,
             };
           } catch (memoryError) {
             const message =
@@ -1062,6 +1067,58 @@ export async function POST(request: NextRequest) {
           } catch (error) {
             console.error('Document fact archive link error:', error);
             factExtractionStep.persistence.archivedFileLink = 'failed';
+          }
+        }
+
+        if (documentFacts) {
+          try {
+            const committed = await commitArchivedProjectDocument({
+              projectId: project.id,
+              projectName: project.name,
+              sourcePath: sourcePath || fileName,
+              facts: documentFacts,
+              archivedFileId: archived.id,
+              customHeaders,
+            });
+            const { currentDecision: _committedDecision, ...committedView } =
+              committed;
+            void _committedDecision;
+            committedView.decisionContextVersion =
+              projectSessionMemory?.decisionContextVersion;
+            projectSessionMemory = committedView;
+            result.projectSessionMemory = committedView;
+            projectSessionMemoryStep = {
+              enabled: true,
+              status: 'success',
+              mode: committedView.mode,
+              persistent: committedView.persistent,
+              persistenceWarning: committedView.persistenceWarning,
+              documentCount: committedView.documentCount,
+              relatedDocumentCount: committedView.relatedDocumentCount,
+              reEvaluatedCount: committedView.reEvaluatedDocuments.length,
+              revision: committedView.revision,
+              contextStatus: committedView.contextSynthesis?.status,
+              contextLlmCallCount:
+                committedView.contextSynthesis?.llmCallCount,
+              contextEventCount: committedView.contextSynthesis?.eventCount,
+              contextRelationCount:
+                committedView.contextSynthesis?.relationCount,
+              latestEvidencedStage:
+                committedView.contextSynthesis?.latestEvidencedStage,
+            };
+          } catch (contextCommitError) {
+            console.error(
+              'Archived document Context commit failed:',
+              contextCommitError
+            );
+            projectSessionMemoryStep = {
+              enabled: true,
+              status: 'failed',
+              error:
+                contextCommitError instanceof Error
+                  ? contextCommitError.message
+                  : '归档成功，但项目Context提交失败',
+            };
           }
         }
       }

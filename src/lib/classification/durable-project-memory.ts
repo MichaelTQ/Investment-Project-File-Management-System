@@ -21,6 +21,7 @@ const MEMORY_SCHEMA_VERSION = 1 as const;
 
 export interface DurableDocumentRecord {
   sourcePath: string;
+  archivedFileId?: string;
   facts: DocumentFacts;
   agentDecision: ClassificationAgentResult | null;
   firstSeenAt: number;
@@ -30,8 +31,25 @@ export interface DurableDocumentRecord {
 export interface DurableProjectSnapshot {
   projectId: string;
   context: ProjectContextSnapshot | null;
+  contextState: ProjectContextLifecycleState;
   documents: Map<string, DurableDocumentRecord>;
   revision: number;
+}
+
+export type ProjectContextLifecycleStatus =
+  | 'clean'
+  | 'dirty'
+  | 'rebuilding'
+  | 'failed';
+
+export interface ProjectContextLifecycleState {
+  status: ProjectContextLifecycleStatus;
+  version: number;
+  basedOnRevision: number;
+  dirtyReasons: string[];
+  updatedAt: number | null;
+  lastAttemptAt: number | null;
+  lastError?: string;
 }
 
 interface PersistedDocumentVersion extends DurableDocumentRecord {
@@ -60,6 +78,7 @@ interface PersistedContextVersion {
   projectId: string;
   revisionId: string;
   context: ProjectContextSnapshot;
+  contextState?: ProjectContextLifecycleState;
   updatedAt: number;
 }
 
@@ -139,6 +158,8 @@ function parseDocumentEntry(value: Buffer): PersistedDocumentEntry | null {
       typeof parsed.projectId !== 'string' ||
       typeof parsed.revisionId !== 'string' ||
       typeof parsed.sourcePath !== 'string' ||
+      (parsed.archivedFileId !== undefined &&
+        typeof parsed.archivedFileId !== 'string') ||
       typeof parsed.firstSeenAt !== 'number' ||
       typeof parsed.updatedAt !== 'number' ||
       !facts.success ||
@@ -152,6 +173,7 @@ function parseDocumentEntry(value: Buffer): PersistedDocumentEntry | null {
       projectId: parsed.projectId,
       revisionId: parsed.revisionId,
       sourcePath: parsed.sourcePath,
+      archivedFileId: parsed.archivedFileId,
       facts: facts.data,
       agentDecision: parsed.agentDecision,
       firstSeenAt: parsed.firstSeenAt,
@@ -182,11 +204,41 @@ function parseContextVersion(value: Buffer): PersistedContextVersion | null {
       projectId: parsed.projectId,
       revisionId: parsed.revisionId,
       context: context.data,
+      contextState: parseContextState(parsed.contextState),
       updatedAt: parsed.updatedAt,
     };
   } catch {
     return null;
   }
+}
+
+function parseContextState(value: unknown): ProjectContextLifecycleState | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Partial<ProjectContextLifecycleState>;
+  if (
+    !['clean', 'dirty', 'rebuilding', 'failed'].includes(
+      candidate.status ?? ''
+    ) ||
+    typeof candidate.version !== 'number' ||
+    typeof candidate.basedOnRevision !== 'number' ||
+    !Array.isArray(candidate.dirtyReasons) ||
+    !candidate.dirtyReasons.every(reason => typeof reason === 'string') ||
+    (candidate.updatedAt !== null && typeof candidate.updatedAt !== 'number') ||
+    (candidate.lastAttemptAt !== null &&
+      typeof candidate.lastAttemptAt !== 'number')
+  ) {
+    return undefined;
+  }
+  return {
+    status: candidate.status as ProjectContextLifecycleStatus,
+    version: Math.max(0, Math.round(candidate.version)),
+    basedOnRevision: Math.max(0, Math.round(candidate.basedOnRevision)),
+    dirtyReasons: candidate.dirtyReasons.slice(0, 100),
+    updatedAt: candidate.updatedAt,
+    lastAttemptAt: candidate.lastAttemptAt,
+    lastError:
+      typeof candidate.lastError === 'string' ? candidate.lastError : undefined,
+  };
 }
 
 async function readInBatches<T>(
@@ -243,6 +295,7 @@ export async function appendDurableDocumentTombstone(params: {
 export async function appendDurableContextVersion(params: {
   projectId: string;
   context: ProjectContextSnapshot;
+  contextState: ProjectContextLifecycleState;
   updatedAt: number;
 }): Promise<void> {
   const revisionId = randomUUID();
@@ -252,6 +305,7 @@ export async function appendDurableContextVersion(params: {
     projectId: params.projectId,
     revisionId,
     context: params.context,
+    contextState: params.contextState,
     updatedAt: params.updatedAt,
   };
   await backend.write(versionKey(params.projectId, 'contexts'), encode(value));
@@ -287,18 +341,43 @@ export async function loadDurableProjectMemory(
     if (entry.kind === 'document-tombstone') continue;
     documents.set(entry.sourcePath, {
       sourcePath: entry.sourcePath,
+      archivedFileId: entry.archivedFileId,
       facts: entry.facts,
       agentDecision: entry.agentDecision,
       firstSeenAt: entry.firstSeenAt,
       updatedAt: entry.updatedAt,
     });
   }
-  const context = contextVersions
+  const latestContextVersion = contextVersions
     .filter(version => version.projectId === projectId)
-    .sort((left, right) => right.updatedAt - left.updatedAt)[0]?.context ?? null;
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0];
+  const context = latestContextVersion?.context ?? null;
+  const contextState =
+    latestContextVersion?.contextState ??
+    (context
+      ? {
+          status: 'clean' as const,
+          version: 1,
+          basedOnRevision: documentEntries.filter(
+            entry => entry.projectId === projectId
+          ).length,
+          dirtyReasons: [],
+          updatedAt: latestContextVersion?.updatedAt ?? null,
+          lastAttemptAt: latestContextVersion?.updatedAt ?? null,
+        }
+      : {
+          status: documents.size > 0 ? ('dirty' as const) : ('clean' as const),
+          version: 0,
+          basedOnRevision: 0,
+          dirtyReasons:
+            documents.size > 0 ? ['现有项目事实尚未生成正式Context'] : [],
+          updatedAt: null,
+          lastAttemptAt: null,
+        });
   return {
     projectId,
     context,
+    contextState,
     documents,
     revision: documentEntries.filter(entry => entry.projectId === projectId)
       .length,

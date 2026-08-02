@@ -12,6 +12,7 @@ import {
   appendDurableDocumentVersion,
   clearDurableProjectMemory,
   loadDurableProjectMemory,
+  type ProjectContextLifecycleState,
 } from './durable-project-memory';
 import type { DocumentFacts, DocumentType } from './document-facts';
 import {
@@ -28,6 +29,7 @@ const MAX_DOCUMENTS_PER_PROJECT = 200;
 
 interface SessionDocumentRecord {
   sourcePath: string;
+  archivedFileId?: string;
   facts: DocumentFacts;
   agentDecision: ClassificationAgentResult | null;
   firstSeenAt: number;
@@ -38,6 +40,7 @@ interface SessionProjectRecord {
   projectId: string;
   revision: number;
   context: ProjectContextSnapshot | null;
+  contextState: ProjectContextLifecycleState;
   documents: Map<string, SessionDocumentRecord>;
   updatedAt: number;
 }
@@ -82,7 +85,9 @@ export interface ProjectSessionMemoryView {
   relatedDocumentCount: number;
   documents: ProjectMemoryDocumentView[];
   projectContext: ProjectContextSnapshot | null;
-  contextSynthesis: {
+  contextState: ProjectContextLifecycleState;
+  decisionContextVersion?: number;
+  contextSynthesis?: {
     status: ProjectContextSynthesisResult['status'];
     llmCallCount: number;
     inputDocumentCount: number;
@@ -111,6 +116,11 @@ export interface RememberAndEvaluateParams {
   suppliedRelatedDocuments?: RelatedDocumentFacts[];
   customHeaders?: Record<string, string>;
   contextSynthesizerClient?: SynthesizeProjectContextParams['client'];
+}
+
+export interface CommitArchivedProjectDocumentParams
+  extends RememberAndEvaluateParams {
+  archivedFileId?: string;
 }
 
 export interface ProjectMemoryMutationContext {
@@ -279,9 +289,24 @@ function mergeProjects(
     }
   }
   if (!durable.context && local.context) durable.context = local.context;
+  if (local.contextState.version > durable.contextState.version) {
+    durable.contextState = local.contextState;
+    durable.context = local.context;
+  }
   durable.revision = Math.max(durable.revision, local.revision);
   durable.updatedAt = Math.max(durable.updatedAt, local.updatedAt);
   return durable;
+}
+
+function initialContextState(): ProjectContextLifecycleState {
+  return {
+    status: 'clean',
+    version: 0,
+    basedOnRevision: 0,
+    dirtyReasons: [],
+    updatedAt: null,
+    lastAttemptAt: null,
+  };
 }
 
 function combinedRelatedDocuments(
@@ -312,17 +337,121 @@ function fallbackProject(
       projectId,
       revision: 0,
       context: null,
+      contextState: initialContextState(),
       documents: new Map(),
       updatedAt: now,
     }
   );
 }
 
-async function reconcileProjectAfterMutation(
-  project: SessionProjectRecord,
-  options: ProjectMemoryMutationContext = {}
-): Promise<void> {
+interface LoadedProject {
+  project: SessionProjectRecord;
+  mode: ProjectSessionMemoryView['mode'];
+  persistenceWarning?: string;
+}
+
+async function loadProjectRecord(projectId: string): Promise<LoadedProject> {
+  const store = memoryStore();
   const now = Date.now();
+  pruneFallbackProjects(store, now);
+  try {
+    const durable = await loadDurableProjectMemory(projectId);
+    const project = mergeProjects(
+      {
+        projectId,
+        revision: durable.revision,
+        context: durable.context,
+        contextState: durable.contextState,
+        documents: durable.documents,
+        updatedAt: Math.max(
+          now,
+          ...[...durable.documents.values()].map(document => document.updatedAt)
+        ),
+      },
+      store.projects.get(projectId)
+    );
+    for (const document of project.documents.values()) {
+      document.facts = recoverDocumentType(document.sourcePath, document.facts);
+    }
+    store.projects.set(projectId, project);
+    return { project, mode: DURABLE_MEMORY_MODE };
+  } catch (error) {
+    console.error('Durable project memory load failed:', error);
+    return {
+      project: fallbackProject(projectId, store.projects.get(projectId), now),
+      mode: FALLBACK_MEMORY_MODE,
+      persistenceWarning:
+        error instanceof Error ? error.message : 'S3 项目记忆暂时不可用',
+    };
+  }
+}
+
+function synthesisView(result: ProjectContextSynthesisResult) {
+  return {
+    status: result.status,
+    llmCallCount: result.llmCallCount,
+    inputDocumentCount: result.inputDocumentCount,
+    includedDocumentCount: result.includedDocumentCount,
+    latestEvidencedStage: result.context.latestEvidencedStage,
+    stageConfidence: result.context.stageConfidence,
+    eventCount: result.context.timeline.length,
+    relationCount: result.context.documentRelations?.length ?? 0,
+    conflictCount: result.context.conflicts?.length ?? 0,
+    error: result.error,
+  };
+}
+
+function memoryView(params: {
+  loaded: LoadedProject;
+  relatedDocumentCount?: number;
+  reEvaluatedDocuments?: ReEvaluatedDocument[];
+  synthesis?: ProjectContextSynthesisResult;
+  decisionContextVersion?: number;
+}): ProjectSessionMemoryView {
+  const { project, mode, persistenceWarning } = params.loaded;
+  return {
+    mode,
+    persistent: mode === DURABLE_MEMORY_MODE,
+    persistenceWarning,
+    projectId: project.projectId,
+    revision: project.revision,
+    documentCount: project.documents.size,
+    relatedDocumentCount:
+      params.relatedDocumentCount ?? Math.max(0, project.documents.size - 1),
+    documents: projectDocumentViews(project),
+    projectContext: project.context,
+    contextState: project.contextState,
+    decisionContextVersion: params.decisionContextVersion,
+    contextSynthesis: params.synthesis
+      ? synthesisView(params.synthesis)
+      : undefined,
+    reEvaluatedDocuments: params.reEvaluatedDocuments ?? [],
+    expiresAt:
+      mode === FALLBACK_MEMORY_MODE
+        ? new Date(project.updatedAt + PROJECT_TTL_MS).toISOString()
+        : undefined,
+  };
+}
+
+async function rebuildLoadedProject(
+  loaded: LoadedProject,
+  options: ProjectMemoryMutationContext = {},
+  skipPersistSourcePath?: string
+): Promise<{
+  synthesis: ProjectContextSynthesisResult;
+  reEvaluatedDocuments: ReEvaluatedDocument[];
+}> {
+  const { project } = loaded;
+  const now = Math.max(
+    Date.now(),
+    (project.contextState.updatedAt ?? project.contextState.lastAttemptAt ?? 0) + 1
+  );
+  project.contextState = {
+    ...project.contextState,
+    status: 'rebuilding',
+    lastAttemptAt: now,
+    lastError: undefined,
+  };
   const documents = combinedRelatedDocuments(project, []);
   const synthesis = await synthesizeProjectContext({
     projectName:
@@ -335,150 +464,51 @@ async function reconcileProjectAfterMutation(
     client: options.contextSynthesizerClient,
     allowLlm: Boolean(options.contextSynthesizerClient || options.customHeaders),
   });
-  project.context = synthesis.context;
-  project.revision += 1;
+  const synthesisSucceeded = !synthesis.error;
+  if (synthesisSucceeded || !project.context) {
+    project.context = synthesis.context;
+  }
+  project.contextState = synthesisSucceeded
+    ? {
+        status: 'clean',
+        version: project.contextState.version + 1,
+        basedOnRevision: project.revision,
+        dirtyReasons: [],
+        updatedAt: now,
+        lastAttemptAt: now,
+      }
+    : {
+        ...project.contextState,
+        status: 'failed',
+        dirtyReasons:
+          project.contextState.dirtyReasons.length > 0
+            ? project.contextState.dirtyReasons
+            : ['项目Context重建失败，仍使用上一版Context'],
+        lastAttemptAt: now,
+        lastError: synthesis.error,
+      };
   project.updatedAt = now;
+
+  const reEvaluatedDocuments: ReEvaluatedDocument[] = [];
   const changedRecords: SessionDocumentRecord[] = [];
+  const availableDocuments = combinedRelatedDocuments(project, []);
   for (const record of project.documents.values()) {
     const previousDecision = record.agentDecision;
     const decision = await runClassificationAgent({
       sourcePath: record.sourcePath,
       facts: record.facts,
       projectContext: project.context,
-      availableRelatedDocuments: documents.filter(
+      availableRelatedDocuments: availableDocuments.filter(
         document => document.sourcePath !== record.sourcePath
       ),
     });
     record.agentDecision = decision;
     if (decisionSignature(previousDecision) !== decisionSignature(decision)) {
-      record.updatedAt = now;
+      record.updatedAt = Math.max(now, record.updatedAt + 1);
       changedRecords.push(record);
-    }
-  }
-  memoryStore().projects.set(project.projectId, project);
-  await Promise.all([
-    appendDurableContextVersion({
-      projectId: project.projectId,
-      context: project.context,
-      updatedAt: now,
-    }),
-    ...changedRecords.map(record =>
-      appendDurableDocumentVersion({ projectId: project.projectId, record })
-    ),
-  ]);
-}
-
-export async function rememberAndEvaluateProjectDocument(
-  params: RememberAndEvaluateParams
-): Promise<RememberAndEvaluateResult> {
-  const projectId = params.projectId.trim();
-  const sourcePath = normalizeSourcePath(params.sourcePath);
-  if (!projectId) throw new Error('项目记忆需要有效的 projectId');
-  if (!sourcePath) throw new Error('项目记忆需要有效的 sourcePath');
-
-  return withProjectLock(projectId, async () => {
-    const store = memoryStore();
-    const now = Date.now();
-    pruneFallbackProjects(store, now);
-    let mode: ProjectSessionMemoryView['mode'] = DURABLE_MEMORY_MODE;
-    let persistenceWarning: string | undefined;
-    let project: SessionProjectRecord;
-
-    try {
-      const durable = await loadDurableProjectMemory(projectId);
-      const latestUpdate = Math.max(
-        now,
-        ...[...durable.documents.values()].map(document => document.updatedAt)
-      );
-      project = mergeProjects(
-        {
-          projectId,
-          revision: durable.revision,
-          context: durable.context,
-          documents: durable.documents,
-          updatedAt: latestUpdate,
-        },
-        store.projects.get(projectId)
-      );
-      for (const document of project.documents.values()) {
-        document.facts = recoverDocumentType(
-          document.sourcePath,
-          document.facts
-        );
-      }
-    } catch (error) {
-      mode = FALLBACK_MEMORY_MODE;
-      persistenceWarning =
-        error instanceof Error ? error.message : 'S3 项目记忆暂时不可用';
-      console.error('Durable project memory load failed:', error);
-      project = fallbackProject(projectId, store.projects.get(projectId), now);
-    }
-
-    if (params.projectContext) project.context = params.projectContext;
-    const existing = project.documents.get(sourcePath);
-    const currentFacts = recoverDocumentType(sourcePath, params.facts);
-    project.documents.set(sourcePath, {
-      sourcePath,
-      facts: currentFacts,
-      agentDecision: existing?.agentDecision ?? null,
-      firstSeenAt: existing?.firstSeenAt ?? now,
-      updatedAt: now,
-    });
-    project.revision += 1;
-    project.updatedAt = now;
-    if (mode === FALLBACK_MEMORY_MODE) trimFallbackDocuments(project, sourcePath);
-    store.projects.set(projectId, project);
-
-    const availableDocuments = combinedRelatedDocuments(
-      project,
-      params.suppliedRelatedDocuments ?? []
-    );
-    const contextSynthesis = await synthesizeProjectContext({
-      projectName:
-        params.projectName?.trim() ||
-        params.projectContext?.projectName ||
-        project.context?.projectName ||
-        projectId,
-      documents: availableDocuments,
-      previousContext: params.projectContext ?? project.context,
-      customHeaders: params.customHeaders,
-      client: params.contextSynthesizerClient,
-      allowLlm: Boolean(params.contextSynthesizerClient || params.customHeaders),
-    });
-    project.context = contextSynthesis.context;
-    const currentRecord = project.documents.get(sourcePath);
-    if (!currentRecord) throw new Error('当前文件未写入项目记忆');
-
-    // 项目上下文发生变化后重新评估全部文件。当前仍是 Shadow 模式，
-    // 该操作只更新建议，不会覆盖正式分类或触发归档。
-    const targets = [...project.documents.values()];
-    const reEvaluatedDocuments: ReEvaluatedDocument[] = [];
-    const recordsToPersist = new Set<SessionDocumentRecord>([currentRecord]);
-    let currentDecision: ClassificationAgentResult | null = null;
-
-    for (const target of targets) {
-      const previousDecision = target.agentDecision;
-      const decision = await runClassificationAgent({
-        sourcePath: target.sourcePath,
-        facts: target.facts,
-        projectContext: project.context,
-        availableRelatedDocuments: availableDocuments.filter(
-          document => document.sourcePath !== target.sourcePath
-        ),
-      });
-      target.agentDecision = decision;
-      target.updatedAt = now;
-      if (decisionSignature(previousDecision) !== decisionSignature(decision)) {
-        recordsToPersist.add(target);
-      }
-      if (target.sourcePath === sourcePath) currentDecision = decision;
-      if (
-        target.sourcePath !== sourcePath &&
-        previousDecision &&
-        decisionSignature(previousDecision) !== decisionSignature(decision)
-      ) {
+      if (previousDecision) {
         reEvaluatedDocuments.push({
-          sourcePath: target.sourcePath,
+          sourcePath: record.sourcePath,
           previousStatus: previousDecision.status,
           status: decision.status,
           previousCategory: selectedCategoryName(previousDecision),
@@ -487,70 +517,161 @@ export async function rememberAndEvaluateProjectDocument(
         });
       }
     }
-
-    if (!currentDecision) {
-      currentDecision = await runClassificationAgent({
-        sourcePath,
-        facts: currentRecord.facts,
-        projectContext: project.context,
-        availableRelatedDocuments: availableDocuments.filter(
-          document => document.sourcePath !== sourcePath
-        ),
-      });
-      currentRecord.agentDecision = currentDecision;
-    }
-
-    if (mode === DURABLE_MEMORY_MODE) {
-      try {
-        await Promise.all([
-          ...[...recordsToPersist].map(record =>
-            appendDurableDocumentVersion({ projectId, record })
+  }
+  memoryStore().projects.set(project.projectId, project);
+  if (loaded.mode === DURABLE_MEMORY_MODE && project.context) {
+    try {
+      await Promise.all([
+        appendDurableContextVersion({
+          projectId: project.projectId,
+          context: project.context,
+          contextState: project.contextState,
+          updatedAt: now,
+        }),
+        ...changedRecords
+          .filter(record => record.sourcePath !== skipPersistSourcePath)
+          .map(record =>
+          appendDurableDocumentVersion({ projectId: project.projectId, record })
           ),
-          appendDurableContextVersion({
-            projectId,
-            context: project.context,
-            updatedAt: now,
-          }),
-        ]);
-      } catch (error) {
-        mode = FALLBACK_MEMORY_MODE;
-        persistenceWarning =
-          error instanceof Error ? error.message : 'S3 项目记忆写入失败';
-        console.error('Durable project memory write failed:', error);
-      }
+      ]);
+    } catch (error) {
+      loaded.mode = FALLBACK_MEMORY_MODE;
+      loaded.persistenceWarning =
+        error instanceof Error ? error.message : 'S3 项目记忆写入失败';
     }
+  }
+  return { synthesis, reEvaluatedDocuments };
+}
 
+export async function evaluateProjectDocumentCandidate(
+  params: RememberAndEvaluateParams
+): Promise<RememberAndEvaluateResult> {
+  const projectId = params.projectId.trim();
+  const sourcePath = normalizeSourcePath(params.sourcePath);
+  if (!projectId) throw new Error('项目记忆需要有效的 projectId');
+  if (!sourcePath) throw new Error('项目记忆需要有效的 sourcePath');
+
+  return withProjectLock(projectId, async () => {
+    const loaded = await loadProjectRecord(projectId);
+    const { project } = loaded;
+    let rebuildResult:
+      | Awaited<ReturnType<typeof rebuildLoadedProject>>
+      | undefined;
+    if (
+      project.contextState.status === 'dirty' ||
+      project.contextState.status === 'failed' ||
+      (!project.context && project.documents.size > 0)
+    ) {
+      rebuildResult = await rebuildLoadedProject(loaded, params);
+    }
+    const currentFacts = recoverDocumentType(sourcePath, params.facts);
+    const availableDocuments = combinedRelatedDocuments(
+      project,
+      params.suppliedRelatedDocuments ?? []
+    ).filter(document => document.sourcePath !== sourcePath);
+    const decisionContext = params.projectContext ?? project.context;
+    const currentDecision = await runClassificationAgent({
+      sourcePath,
+      facts: currentFacts,
+      projectContext: decisionContext,
+      availableRelatedDocuments: availableDocuments,
+    });
     return {
-      mode,
-      persistent: mode === DURABLE_MEMORY_MODE,
-      persistenceWarning,
-      projectId,
-      revision: project.revision,
-      documentCount: project.documents.size,
-      relatedDocumentCount: Math.max(0, availableDocuments.length - 1),
-      documents: projectDocumentViews(project),
-      projectContext: project.context,
-      contextSynthesis: {
-        status: contextSynthesis.status,
-        llmCallCount: contextSynthesis.llmCallCount,
-        inputDocumentCount: contextSynthesis.inputDocumentCount,
-        includedDocumentCount: contextSynthesis.includedDocumentCount,
-        latestEvidencedStage: contextSynthesis.context.latestEvidencedStage,
-        stageConfidence: contextSynthesis.context.stageConfidence,
-        eventCount: contextSynthesis.context.timeline.length,
-        relationCount:
-          contextSynthesis.context.documentRelations?.length ?? 0,
-        conflictCount: contextSynthesis.context.conflicts?.length ?? 0,
-        error: contextSynthesis.error,
-      },
-      reEvaluatedDocuments,
-      expiresAt:
-        mode === FALLBACK_MEMORY_MODE
-          ? new Date(project.updatedAt + PROJECT_TTL_MS).toISOString()
-          : undefined,
+      ...memoryView({
+        loaded,
+        relatedDocumentCount: availableDocuments.length,
+        reEvaluatedDocuments: rebuildResult?.reEvaluatedDocuments,
+        synthesis: rebuildResult?.synthesis,
+        decisionContextVersion: project.contextState.version,
+      }),
       currentDecision,
     };
   });
+}
+
+export async function commitArchivedProjectDocument(
+  params: CommitArchivedProjectDocumentParams
+): Promise<RememberAndEvaluateResult> {
+  const projectId = params.projectId.trim();
+  const sourcePath = normalizeSourcePath(params.sourcePath);
+  if (!projectId || !sourcePath) throw new Error('提交项目事实缺少项目或源路径');
+  return withProjectLock(projectId, async () => {
+    const loaded = await loadProjectRecord(projectId);
+    const { project } = loaded;
+    const now = Date.now();
+    const existing = project.documents.get(sourcePath);
+    const currentRecord: SessionDocumentRecord = {
+      sourcePath,
+      archivedFileId: params.archivedFileId,
+      facts: recoverDocumentType(sourcePath, params.facts),
+      agentDecision: existing?.agentDecision ?? null,
+      firstSeenAt: existing?.firstSeenAt ?? now,
+      updatedAt: now,
+    };
+    project.documents.set(sourcePath, currentRecord);
+    project.revision += 1;
+    project.updatedAt = now;
+    if (loaded.mode === FALLBACK_MEMORY_MODE) {
+      trimFallbackDocuments(project, sourcePath);
+    }
+    memoryStore().projects.set(projectId, project);
+
+    // 先提交正式文件事实，再生成依赖该事实的下一版Context。
+    if (loaded.mode === DURABLE_MEMORY_MODE) {
+      try {
+        await appendDurableDocumentVersion({ projectId, record: currentRecord });
+      } catch (error) {
+        loaded.mode = FALLBACK_MEMORY_MODE;
+        loaded.persistenceWarning =
+          error instanceof Error ? error.message : '归档事实写入S3失败';
+      }
+    }
+
+    const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(
+      loaded,
+      params,
+      sourcePath
+    );
+    const availableDocuments = combinedRelatedDocuments(project, []).filter(
+      document => document.sourcePath !== sourcePath
+    );
+    const currentDecision =
+      project.documents.get(sourcePath)?.agentDecision ??
+      (await runClassificationAgent({
+        sourcePath,
+        facts: currentRecord.facts,
+        projectContext: project.context,
+        availableRelatedDocuments: availableDocuments,
+      }));
+    currentRecord.agentDecision = currentDecision;
+    // Context重建后补写最新Agent建议；正式事实已经在Context之前提交。
+    if (loaded.mode === DURABLE_MEMORY_MODE) {
+      try {
+        await appendDurableDocumentVersion({ projectId, record: currentRecord });
+      } catch (error) {
+        loaded.mode = FALLBACK_MEMORY_MODE;
+        loaded.persistenceWarning =
+          error instanceof Error ? error.message : '归档事实写入S3失败';
+      }
+    }
+    return {
+      ...memoryView({
+        loaded,
+        relatedDocumentCount: availableDocuments.length,
+        reEvaluatedDocuments,
+        synthesis,
+      }),
+      currentDecision,
+    };
+  });
+}
+
+/** 兼容测试和内部调用：按“先评估、后提交”顺序完成一次完整生命周期。 */
+export async function rememberAndEvaluateProjectDocument(
+  params: CommitArchivedProjectDocumentParams
+): Promise<RememberAndEvaluateResult> {
+  await evaluateProjectDocumentCandidate(params);
+  return commitArchivedProjectDocument(params);
 }
 
 export async function clearSessionProjectMemory(
@@ -562,33 +683,114 @@ export async function clearSessionProjectMemory(
   return localDeleted;
 }
 
+async function persistDirtyState(
+  loaded: LoadedProject,
+  reason: string
+): Promise<void> {
+  const { project } = loaded;
+  const now = Math.max(
+    Date.now(),
+    (project.contextState.updatedAt ?? project.contextState.lastAttemptAt ?? 0) +
+      1
+  );
+  if (!project.context) {
+    const fallback = await synthesizeProjectContext({
+      projectName: project.projectId,
+      documents: combinedRelatedDocuments(project, []),
+      allowLlm: false,
+    });
+    project.context = fallback.context;
+  }
+  project.contextState = {
+    ...project.contextState,
+    status: 'dirty',
+    dirtyReasons: [...new Set([...project.contextState.dirtyReasons, reason])],
+    lastError: undefined,
+  };
+  project.updatedAt = now;
+  memoryStore().projects.set(project.projectId, project);
+  if (loaded.mode === DURABLE_MEMORY_MODE) {
+    await appendDurableContextVersion({
+      projectId: project.projectId,
+      context: project.context,
+      contextState: project.contextState,
+      updatedAt: now,
+    });
+  }
+}
+
+export async function markProjectContextDirty(
+  projectId: string,
+  reason: string
+): Promise<ProjectSessionMemoryView> {
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) throw new Error('标记Context需要有效的项目ID');
+  return withProjectLock(normalizedProjectId, async () => {
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    await persistDirtyState(loaded, reason.trim() || '项目档案发生变化');
+    return memoryView({ loaded });
+  });
+}
+
 export async function forgetProjectDocument(
   projectId: string,
   sourcePath: string,
   options: ProjectMemoryMutationContext = {}
 ): Promise<boolean> {
+  void options;
   const normalizedProjectId = projectId.trim();
   const normalizedSourcePath = normalizeSourcePath(sourcePath);
   if (!normalizedProjectId || !normalizedSourcePath) return false;
   return withProjectLock(normalizedProjectId, async () => {
-    const durable = await loadDurableProjectMemory(normalizedProjectId);
-    const project = mergeProjects(
-      {
-        projectId: normalizedProjectId,
-        revision: durable.revision,
-        context: durable.context,
-        documents: durable.documents,
-        updatedAt: Date.now(),
-      },
-      memoryStore().projects.get(normalizedProjectId)
-    );
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    const { project } = loaded;
     const existed = project.documents.delete(normalizedSourcePath);
+    project.revision += 1;
     await appendDurableDocumentTombstone({
       projectId: normalizedProjectId,
       sourcePath: normalizedSourcePath,
     });
-    await reconcileProjectAfterMutation(project, options);
+    await persistDirtyState(
+      loaded,
+      `已删除文件“${normalizedSourcePath}”，正式Context尚未重建`
+    );
     return existed;
+  });
+}
+
+export async function forgetProjectDocumentByArchivedFileId(
+  projectId: string,
+  archivedFileId: string,
+  options: ProjectMemoryMutationContext = {}
+): Promise<boolean> {
+  void options;
+  const normalizedProjectId = projectId.trim();
+  const normalizedArchivedFileId = archivedFileId.trim();
+  if (!normalizedProjectId || !normalizedArchivedFileId) return false;
+  return withProjectLock(normalizedProjectId, async () => {
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    const { project } = loaded;
+    const record = [...project.documents.values()].find(
+      document => document.archivedFileId === normalizedArchivedFileId
+    );
+    if (!record) {
+      await persistDirtyState(
+        loaded,
+        `归档文件 ${normalizedArchivedFileId} 已删除，但旧项目记忆缺少精确关联`
+      );
+      return false;
+    }
+    project.documents.delete(record.sourcePath);
+    project.revision += 1;
+    await appendDurableDocumentTombstone({
+      projectId: normalizedProjectId,
+      sourcePath: record.sourcePath,
+    });
+    await persistDirtyState(
+      loaded,
+      `已删除文件“${record.sourcePath}”，正式Context尚未重建`
+    );
+    return true;
   });
 }
 
@@ -597,31 +799,24 @@ export async function forgetProjectDocumentsByFileName(
   fileName: string,
   options: ProjectMemoryMutationContext = {}
 ): Promise<number> {
+  void options;
   const normalizedProjectId = projectId.trim();
   const normalizedFileName = fileName.trim();
   if (!normalizedProjectId || !normalizedFileName) return 0;
   return withProjectLock(normalizedProjectId, async () => {
-    const durable = await loadDurableProjectMemory(normalizedProjectId);
-    const local = memoryStore().projects.get(normalizedProjectId);
-    const project = mergeProjects(
-      {
-        projectId: normalizedProjectId,
-        revision: durable.revision,
-        context: durable.context,
-        documents: durable.documents,
-        updatedAt: Date.now(),
-      },
-      local
-    );
-    const paths = new Set<string>([
-      ...project.documents.keys(),
-    ]);
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    const { project } = loaded;
+    const paths = new Set<string>(project.documents.keys());
     const matchingPaths = [...paths].filter(
       path => path.split('/').pop() === normalizedFileName
     );
     if (matchingPaths.length > 1) {
       console.warn(
         `文件名“${normalizedFileName}”对应 ${matchingPaths.length} 条项目记忆，缺少精确 sourcePath，本次不自动删除记忆`
+      );
+      await persistDirtyState(
+        loaded,
+        `文件“${normalizedFileName}”已删除，但存在多个同名事实，需要人工重建Context`
       );
       return 0;
     }
@@ -636,8 +831,40 @@ export async function forgetProjectDocumentsByFileName(
     for (const sourcePath of matchingPaths) {
       project.documents.delete(sourcePath);
     }
-    await reconcileProjectAfterMutation(project, options);
+    project.revision += matchingPaths.length;
+    await persistDirtyState(
+      loaded,
+      matchingPaths.length > 0
+        ? `已删除文件“${normalizedFileName}”，正式Context尚未重建`
+        : `归档文件“${normalizedFileName}”已删除，但旧项目记忆没有对应事实`
+    );
     return matchingPaths.length;
+  });
+}
+
+export async function getProjectContextMemoryView(
+  projectId: string
+): Promise<ProjectSessionMemoryView> {
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) throw new Error('读取Context需要有效的项目ID');
+  return withProjectLock(normalizedProjectId, async () =>
+    memoryView({ loaded: await loadProjectRecord(normalizedProjectId) })
+  );
+}
+
+export async function rebuildProjectContext(
+  projectId: string,
+  options: ProjectMemoryMutationContext = {}
+): Promise<ProjectSessionMemoryView> {
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) throw new Error('重建Context需要有效的项目ID');
+  return withProjectLock(normalizedProjectId, async () => {
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(
+      loaded,
+      options
+    );
+    return memoryView({ loaded, synthesis, reEvaluatedDocuments });
   });
 }
 
