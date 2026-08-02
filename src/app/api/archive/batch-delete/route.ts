@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { HeaderUtils } from "coze-coding-dev-sdk";
 import { deleteArchivedFile } from "@/lib/storage";
 import { forgetProjectDocumentsByFileName } from "@/lib/classification/session-project-memory";
 
@@ -29,7 +30,10 @@ export async function POST(request: NextRequest) {
         try {
           await forgetProjectDocumentsByFileName(
             deleted.projectId,
-            deleted.originalName
+            deleted.originalName,
+            {
+              customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+            }
           );
         } catch (memoryError) {
           console.error('Batch delete memory cleanup failed:', memoryError);

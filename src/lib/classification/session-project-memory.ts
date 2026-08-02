@@ -14,6 +14,11 @@ import {
   loadDurableProjectMemory,
 } from './durable-project-memory';
 import type { DocumentFacts, DocumentType } from './document-facts';
+import {
+  synthesizeProjectContext,
+  type ProjectContextSynthesisResult,
+  type SynthesizeProjectContextParams,
+} from './project-context-synthesizer';
 
 const DURABLE_MEMORY_MODE = 's3-durable-shadow' as const;
 const FALLBACK_MEMORY_MODE = 'process-local-fallback' as const;
@@ -76,6 +81,19 @@ export interface ProjectSessionMemoryView {
   documentCount: number;
   relatedDocumentCount: number;
   documents: ProjectMemoryDocumentView[];
+  projectContext: ProjectContextSnapshot | null;
+  contextSynthesis: {
+    status: ProjectContextSynthesisResult['status'];
+    llmCallCount: number;
+    inputDocumentCount: number;
+    includedDocumentCount: number;
+    latestEvidencedStage: ProjectContextSnapshot['latestEvidencedStage'];
+    stageConfidence: ProjectContextSnapshot['stageConfidence'];
+    eventCount: number;
+    relationCount: number;
+    conflictCount: number;
+    error?: string;
+  };
   reEvaluatedDocuments: ReEvaluatedDocument[];
   expiresAt?: string;
 }
@@ -86,10 +104,19 @@ export interface RememberAndEvaluateResult extends ProjectSessionMemoryView {
 
 export interface RememberAndEvaluateParams {
   projectId: string;
+  projectName?: string;
   sourcePath: string;
   facts: DocumentFacts;
   projectContext?: ProjectContextSnapshot | null;
   suppliedRelatedDocuments?: RelatedDocumentFacts[];
+  customHeaders?: Record<string, string>;
+  contextSynthesizerClient?: SynthesizeProjectContextParams['client'];
+}
+
+export interface ProjectMemoryMutationContext {
+  projectName?: string;
+  customHeaders?: Record<string, string>;
+  contextSynthesizerClient?: SynthesizeProjectContextParams['client'];
 }
 
 function memoryStore(): SessionMemoryStore {
@@ -291,6 +318,56 @@ function fallbackProject(
   );
 }
 
+async function reconcileProjectAfterMutation(
+  project: SessionProjectRecord,
+  options: ProjectMemoryMutationContext = {}
+): Promise<void> {
+  const now = Date.now();
+  const documents = combinedRelatedDocuments(project, []);
+  const synthesis = await synthesizeProjectContext({
+    projectName:
+      options.projectName?.trim() ||
+      project.context?.projectName ||
+      project.projectId,
+    documents,
+    previousContext: project.context,
+    customHeaders: options.customHeaders,
+    client: options.contextSynthesizerClient,
+    allowLlm: Boolean(options.contextSynthesizerClient || options.customHeaders),
+  });
+  project.context = synthesis.context;
+  project.revision += 1;
+  project.updatedAt = now;
+  const changedRecords: SessionDocumentRecord[] = [];
+  for (const record of project.documents.values()) {
+    const previousDecision = record.agentDecision;
+    const decision = await runClassificationAgent({
+      sourcePath: record.sourcePath,
+      facts: record.facts,
+      projectContext: project.context,
+      availableRelatedDocuments: documents.filter(
+        document => document.sourcePath !== record.sourcePath
+      ),
+    });
+    record.agentDecision = decision;
+    if (decisionSignature(previousDecision) !== decisionSignature(decision)) {
+      record.updatedAt = now;
+      changedRecords.push(record);
+    }
+  }
+  memoryStore().projects.set(project.projectId, project);
+  await Promise.all([
+    appendDurableContextVersion({
+      projectId: project.projectId,
+      context: project.context,
+      updatedAt: now,
+    }),
+    ...changedRecords.map(record =>
+      appendDurableDocumentVersion({ projectId: project.projectId, record })
+    ),
+  ]);
+}
+
 export async function rememberAndEvaluateProjectDocument(
   params: RememberAndEvaluateParams
 ): Promise<RememberAndEvaluateResult> {
@@ -356,16 +433,27 @@ export async function rememberAndEvaluateProjectDocument(
       project,
       params.suppliedRelatedDocuments ?? []
     );
+    const contextSynthesis = await synthesizeProjectContext({
+      projectName:
+        params.projectName?.trim() ||
+        params.projectContext?.projectName ||
+        project.context?.projectName ||
+        projectId,
+      documents: availableDocuments,
+      previousContext: params.projectContext ?? project.context,
+      customHeaders: params.customHeaders,
+      client: params.contextSynthesizerClient,
+      allowLlm: Boolean(params.contextSynthesizerClient || params.customHeaders),
+    });
+    project.context = contextSynthesis.context;
     const currentRecord = project.documents.get(sourcePath);
     if (!currentRecord) throw new Error('当前文件未写入项目记忆');
 
-    const targets =
-      currentFacts.documentType === 'company_charter'
-        ? [...project.documents.values()].filter(
-            document => document.facts.documentType === 'company_charter'
-          )
-        : [currentRecord];
+    // 项目上下文发生变化后重新评估全部文件。当前仍是 Shadow 模式，
+    // 该操作只更新建议，不会覆盖正式分类或触发归档。
+    const targets = [...project.documents.values()];
     const reEvaluatedDocuments: ReEvaluatedDocument[] = [];
+    const recordsToPersist = new Set<SessionDocumentRecord>([currentRecord]);
     let currentDecision: ClassificationAgentResult | null = null;
 
     for (const target of targets) {
@@ -380,6 +468,9 @@ export async function rememberAndEvaluateProjectDocument(
       });
       target.agentDecision = decision;
       target.updatedAt = now;
+      if (decisionSignature(previousDecision) !== decisionSignature(decision)) {
+        recordsToPersist.add(target);
+      }
       if (target.sourcePath === sourcePath) currentDecision = decision;
       if (
         target.sourcePath !== sourcePath &&
@@ -412,18 +503,14 @@ export async function rememberAndEvaluateProjectDocument(
     if (mode === DURABLE_MEMORY_MODE) {
       try {
         await Promise.all([
-          ...targets.map(record =>
+          ...[...recordsToPersist].map(record =>
             appendDurableDocumentVersion({ projectId, record })
           ),
-          ...(params.projectContext
-            ? [
-                appendDurableContextVersion({
-                  projectId,
-                  context: params.projectContext,
-                  updatedAt: now,
-                }),
-              ]
-            : []),
+          appendDurableContextVersion({
+            projectId,
+            context: project.context,
+            updatedAt: now,
+          }),
         ]);
       } catch (error) {
         mode = FALLBACK_MEMORY_MODE;
@@ -442,6 +529,20 @@ export async function rememberAndEvaluateProjectDocument(
       documentCount: project.documents.size,
       relatedDocumentCount: Math.max(0, availableDocuments.length - 1),
       documents: projectDocumentViews(project),
+      projectContext: project.context,
+      contextSynthesis: {
+        status: contextSynthesis.status,
+        llmCallCount: contextSynthesis.llmCallCount,
+        inputDocumentCount: contextSynthesis.inputDocumentCount,
+        includedDocumentCount: contextSynthesis.includedDocumentCount,
+        latestEvidencedStage: contextSynthesis.context.latestEvidencedStage,
+        stageConfidence: contextSynthesis.context.stageConfidence,
+        eventCount: contextSynthesis.context.timeline.length,
+        relationCount:
+          contextSynthesis.context.documentRelations?.length ?? 0,
+        conflictCount: contextSynthesis.context.conflicts?.length ?? 0,
+        error: contextSynthesis.error,
+      },
       reEvaluatedDocuments,
       expiresAt:
         mode === FALLBACK_MEMORY_MODE
@@ -463,27 +564,38 @@ export async function clearSessionProjectMemory(
 
 export async function forgetProjectDocument(
   projectId: string,
-  sourcePath: string
+  sourcePath: string,
+  options: ProjectMemoryMutationContext = {}
 ): Promise<boolean> {
   const normalizedProjectId = projectId.trim();
   const normalizedSourcePath = normalizeSourcePath(sourcePath);
   if (!normalizedProjectId || !normalizedSourcePath) return false;
   return withProjectLock(normalizedProjectId, async () => {
+    const durable = await loadDurableProjectMemory(normalizedProjectId);
+    const project = mergeProjects(
+      {
+        projectId: normalizedProjectId,
+        revision: durable.revision,
+        context: durable.context,
+        documents: durable.documents,
+        updatedAt: Date.now(),
+      },
+      memoryStore().projects.get(normalizedProjectId)
+    );
+    const existed = project.documents.delete(normalizedSourcePath);
     await appendDurableDocumentTombstone({
       projectId: normalizedProjectId,
       sourcePath: normalizedSourcePath,
     });
-    return (
-      memoryStore()
-        .projects.get(normalizedProjectId)
-        ?.documents.delete(normalizedSourcePath) ?? false
-    );
+    await reconcileProjectAfterMutation(project, options);
+    return existed;
   });
 }
 
 export async function forgetProjectDocumentsByFileName(
   projectId: string,
-  fileName: string
+  fileName: string,
+  options: ProjectMemoryMutationContext = {}
 ): Promise<number> {
   const normalizedProjectId = projectId.trim();
   const normalizedFileName = fileName.trim();
@@ -491,9 +603,18 @@ export async function forgetProjectDocumentsByFileName(
   return withProjectLock(normalizedProjectId, async () => {
     const durable = await loadDurableProjectMemory(normalizedProjectId);
     const local = memoryStore().projects.get(normalizedProjectId);
+    const project = mergeProjects(
+      {
+        projectId: normalizedProjectId,
+        revision: durable.revision,
+        context: durable.context,
+        documents: durable.documents,
+        updatedAt: Date.now(),
+      },
+      local
+    );
     const paths = new Set<string>([
-      ...durable.documents.keys(),
-      ...(local ? local.documents.keys() : []),
+      ...project.documents.keys(),
     ]);
     const matchingPaths = [...paths].filter(
       path => path.split('/').pop() === normalizedFileName
@@ -513,8 +634,9 @@ export async function forgetProjectDocumentsByFileName(
       )
     );
     for (const sourcePath of matchingPaths) {
-      local?.documents.delete(sourcePath);
+      project.documents.delete(sourcePath);
     }
+    await reconcileProjectAfterMutation(project, options);
     return matchingPaths.length;
   });
 }

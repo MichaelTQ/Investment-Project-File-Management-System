@@ -133,6 +133,34 @@ interface ProjectSessionMemoryResult {
     agentStatus: 'decided' | 'needs_review' | null;
     selectedCategory: string | null;
   }>;
+  projectContext?: {
+    contextStatus: string;
+    latestEvidencedStage: string;
+    stageConfidence: 'low' | 'medium' | 'high';
+    timeline: Array<{
+      date: string | null;
+      eventType: string;
+      stage: string;
+      title: string;
+      evidenceFiles: string[];
+      evidence: string;
+      confidence: 'low' | 'medium' | 'high';
+    }>;
+    openQuestions: string[];
+    synthesisWarnings?: string[];
+  } | null;
+  contextSynthesis?: {
+    status: 'llm_synthesized' | 'deterministic_fallback';
+    llmCallCount: number;
+    inputDocumentCount: number;
+    includedDocumentCount: number;
+    latestEvidencedStage: string;
+    stageConfidence: 'low' | 'medium' | 'high';
+    eventCount: number;
+    relationCount: number;
+    conflictCount: number;
+    error?: string;
+  };
   reEvaluatedDocuments: Array<{
     sourcePath: string;
     previousStatus: 'decided' | 'needs_review';
@@ -173,6 +201,18 @@ const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
   context_decision: '上下文决策',
   complete: '形成建议',
   human_review: '转人工复核',
+};
+
+const PROJECT_STAGE_LABELS: Record<string, string> = {
+  pre_initiation: '立项前',
+  initiation: '项目立项',
+  due_diligence: '尽职调查',
+  investment_decision: '投资决策',
+  investment_execution: '投资实施',
+  post_investment: '投后管理',
+  exit_decision: '退出决策',
+  exit_execution: '退出执行',
+  unknown: '尚未确定',
 };
 
 function AgentDecisionPanel({
@@ -273,6 +313,35 @@ function AgentDecisionPanel({
             {projectMemory.documentCount} 份文件，
             本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
           </p>
+          {projectMemory.contextSynthesis && (
+            <div className="mt-2 rounded border border-violet-100 bg-violet-50/50 px-2 py-1.5 text-xs leading-5">
+              <p className="font-medium text-violet-950">
+                项目上下文：
+                {PROJECT_STAGE_LABELS[
+                  projectMemory.contextSynthesis.latestEvidencedStage
+                ] ?? projectMemory.contextSynthesis.latestEvidencedStage}
+                （{projectMemory.contextSynthesis.stageConfidence === 'high'
+                  ? '高可信'
+                  : projectMemory.contextSynthesis.stageConfidence === 'medium'
+                    ? '中等可信'
+                    : '低可信'}）
+              </p>
+              <p className="text-muted-foreground">
+                {projectMemory.contextSynthesis.status === 'llm_synthesized'
+                  ? 'LLM 已综合当前全部有效事实卡片'
+                  : '当前使用确定性降级快照'}
+                ；事件 {projectMemory.contextSynthesis.eventCount} 个；关系{' '}
+                {projectMemory.contextSynthesis.relationCount} 个；冲突{' '}
+                {projectMemory.contextSynthesis.conflictCount} 个；上下文 LLM{' '}
+                {projectMemory.contextSynthesis.llmCallCount} 次。
+              </p>
+              {projectMemory.contextSynthesis.error && (
+                <p className="break-words text-amber-700">
+                  上下文综合降级：{projectMemory.contextSynthesis.error}
+                </p>
+              )}
+            </div>
+          )}
           {!projectMemory.persistent && projectMemory.persistenceWarning && (
             <p className="mt-1 break-words text-xs leading-5 text-amber-700">
               持久化失败：{projectMemory.persistenceWarning}
@@ -317,6 +386,36 @@ function AgentDecisionPanel({
               ))}
             </ul>
           </details>
+          {projectMemory.projectContext && (
+            <details className="mt-2 border-t pt-2">
+              <summary className="cursor-pointer text-xs font-medium text-violet-900">
+                查看项目事件时间线（{projectMemory.projectContext.timeline.length}）
+              </summary>
+              <ol className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
+                {projectMemory.projectContext.timeline.map((event, index) => (
+                  <li
+                    key={`${event.eventType}-${event.date ?? 'unknown'}-${index}`}
+                    className="rounded border border-violet-100 bg-violet-50/40 px-2 py-1.5"
+                  >
+                    <p className="font-medium text-violet-950">
+                      {event.date ?? '日期待确认'} · {event.title}
+                    </p>
+                    <p>
+                      阶段：{PROJECT_STAGE_LABELS[event.stage] ?? event.stage}；
+                      证据：{event.evidenceFiles.join('；')}
+                    </p>
+                    <p className="break-words">{event.evidence}</p>
+                  </li>
+                ))}
+              </ol>
+              {(projectMemory.projectContext.synthesisWarnings?.length ?? 0) > 0 && (
+                <p className="mt-2 break-words text-xs leading-5 text-amber-700">
+                  上下文提示：
+                  {projectMemory.projectContext.synthesisWarnings?.join('；')}
+                </p>
+              )}
+            </details>
+          )}
           {projectMemory.reEvaluatedDocuments.length > 0 && (
             <div className="mt-2 border-t pt-2">
               <p className="text-xs font-medium text-green-800">
