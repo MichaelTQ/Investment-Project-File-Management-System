@@ -33,7 +33,7 @@ src/
 ├── lib/
 │   ├── folder-structure.ts           # 文件夹结构定义 + 类型
 │   ├── classification/
-│   │   ├── document-facts.ts         # 文档事实 Schema + 安全解析/降级
+│   │   ├── document-facts.ts         # 文档事实 Schema + 字段校正/安全降级
 │   │   ├── fact-extractor.ts         # 文档事实 LLM 抽取器（shadow mode）
 │   │   ├── context-decision.ts       # 项目上下文证据决策器
 │   │   ├── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）

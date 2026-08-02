@@ -26,6 +26,7 @@
 - 6 个君柔金标准分类用例已于 2026-08-01 通过业务验收；
 - 已将“投资合规性审查表”加入投资决策/上会材料，并建立正证据、排除项和默认人工复核规则；
 - 已实现 `DocumentFactsSchema`、事实响应安全解析和降级结果；
+- 事实响应适配器可逐字段校正非标准日期、缺失数组、超长交易变化和越界完整度，并保留校正警告；只有缺少最小核心载荷或 JSON 无法解析时才整份降级；
 - 已实现事实抽取器，并通过 `extractFacts=true` 或 `ENABLE_DOCUMENT_FACTS_SHADOW=true` 以 shadow mode 接入 `/api/classify`；
 - 已新增 `project_contexts`、`project_events`、`document_facts` 和 `classification_decisions` Drizzle Schema 与 SQL 迁移；
 - 已实现项目记忆存储层、源指纹幂等 upsert、预归档事实记录和归档后关联；
@@ -39,7 +40,7 @@
 - `/api/classify` 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true`，返回 Agent 决策与完整执行轨迹；
 - 已实现按 `projectId` 隔离的 Coze S3 持久化项目记忆：逐份上传时自动检索同项目事实，新章程到达后重新判断旧章程，顺序、乱序和模拟重启恢复均通过测试；
 - 项目记忆结果已接入 Agent Shadow 面板，可显示持久化状态、当前记忆文件数、关联事实数和被新证据改判的历史文件；S3 故障时明确降级为临时进程缓存；
-- 项目记忆面板可展开查看每份文件的事实类型、抽取完整度、来源、警告和 Agent 结论；扫描件类型为 `unknown/other` 但文件名或标题明确为“公司章程”时，可进行带警告的保守类型恢复；
+- 项目记忆面板可展开查看每份文件的事实类型、抽取/校正状态、完整度、来源、警告和 Agent 结论；扫描件类型为 `unknown/other` 但文件名或标题明确指向章程、股东会决议、增资协议、交割/缴款文件、尽调报告或合规审查表时，可进行带警告的保守类型恢复；
 - 公司章程 Agent 除关联章程外，还会检索股东会决议和增资协议，并用“注册资本由 A 增至 B”与当前章程资本进行关系判断；
 - 取消待归档文件或删除单个归档文件时写入 S3 tombstone，避免已删除文件重新进入 Agent 项目记忆；
 - 君柔 Agent shadow 评测中明确建议 6 份且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按类别策略继续转人工；

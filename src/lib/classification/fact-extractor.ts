@@ -55,6 +55,8 @@ shareholder_register, other, unknown
 5. evidenceQuotes 只能包含当前输入中真实出现的短句或关键数据。
 6. 如果内容来自扫描 PDF 视觉摘要，应将 sourceQuality 设为 visual_summary 或 mixed，并在 warnings 中说明信息可能不完整。
 7. extractionConfidence 表示事实抽取完整度，不表示归档分类置信度。
+8. dates、parties、transactionChanges、explicitStageClues、evidenceQuotes、warnings 必须始终输出数组；没有内容时输出 []，不得省略字段。
+9. transactionChanges 的 before 和 after 各不超过 200 字，evidence 不超过 300 字；内容过长时只保留能够证明变化的关键数字和短句。
 
 只输出一个 JSON 对象，不要输出 Markdown 或其他说明。JSON 必须严格符合：
 {

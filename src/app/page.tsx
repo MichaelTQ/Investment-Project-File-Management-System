@@ -128,7 +128,7 @@ interface ProjectSessionMemoryResult {
     title: string;
     sourceQuality: string;
     extractionConfidence: number;
-    factStatus: 'extracted' | 'fallback' | 'type_recovered';
+    factStatus: 'extracted' | 'repaired' | 'fallback' | 'type_recovered';
     warnings: string[];
     agentStatus: 'decided' | 'needs_review' | null;
     selectedCategory: string | null;
@@ -298,6 +298,7 @@ function AgentDecisionPanel({
                     类型：{document.documentType}；抽取状态：
                     {{
                       extracted: '成功',
+                      repaired: '成功（局部字段已校正）',
                       fallback: '降级',
                       type_recovered: '类型已保守恢复',
                     }[document.factStatus]}
