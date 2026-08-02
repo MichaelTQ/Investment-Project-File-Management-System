@@ -881,13 +881,16 @@ export async function getArchivedFile(id: string): Promise<ArchivedFile | null> 
   return mapArchivedFile(data);
 }
 
-export async function deleteArchivedFile(id: string): Promise<void> {
+export async function deleteArchivedFile(id: string): Promise<{
+  projectId: string;
+  originalName: string;
+} | null> {
   const db = getDb();
 
   // 先获取文件信息
   const { data: file } = await db
     .from("archived_files")
-    .select("storage_key")
+    .select("storage_key, project_id, original_name")
     .eq("id", id)
     .single();
 
@@ -904,6 +907,9 @@ export async function deleteArchivedFile(id: string): Promise<void> {
   // 从数据库删除
   const { error } = await db.from("archived_files").delete().eq("id", id);
   if (error) throw new Error(`删除归档文件失败: ${error.message}`);
+  return file
+    ? { projectId: file.project_id, originalName: file.original_name }
+    : null;
 }
 
 // ============ 文件下载 ============

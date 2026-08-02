@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteArchivedFile } from "@/lib/storage";
+import { forgetProjectDocumentsByFileName } from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,17 @@ export async function POST(request: NextRequest) {
     }
 
     for (const fileId of uniqueIds) {
-      await deleteArchivedFile(fileId);
+      const deleted = await deleteArchivedFile(fileId);
+      if (deleted) {
+        try {
+          await forgetProjectDocumentsByFileName(
+            deleted.projectId,
+            deleted.originalName
+          );
+        } catch (memoryError) {
+          console.error('Batch delete memory cleanup failed:', memoryError);
+        }
+      }
     }
 
     return NextResponse.json({

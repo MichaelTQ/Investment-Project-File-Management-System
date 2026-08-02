@@ -169,7 +169,7 @@ function extractRegisteredCapital(facts: DocumentFacts): number | null {
       .map(match => Number(match[1].replaceAll(',', '')))
       .filter(Number.isFinite);
   });
-  const contributionAmounts = facts.evidenceQuotes
+  let contributionAmounts = facts.evidenceQuotes
     .filter(quote => quote.includes('认缴出资额'))
     .flatMap(quote =>
       Array.from(quote.matchAll(/([\d,.]+)\s*万元/g)).map(match =>
@@ -177,15 +177,59 @@ function extractRegisteredCapital(facts: DocumentFacts): number | null {
       )
     )
     .filter(Number.isFinite);
+  if (contributionAmounts.length > 0 && contributionAmounts.length % 2 === 0) {
+    const half = contributionAmounts.length / 2;
+    const duplicatedSequence = contributionAmounts
+      .slice(0, half)
+      .every(
+        (amount, index) =>
+          Math.abs(amount - contributionAmounts[index + half]) < 0.000001
+      );
+    if (duplicatedSequence) contributionAmounts = contributionAmounts.slice(0, half);
+  }
   const contributionTotal = contributionAmounts.reduce(
     (sum, amount) => sum + amount,
     0
   );
-  const candidates = [
-    ...explicitAmounts,
-    ...(contributionTotal > 0 ? [contributionTotal] : []),
-  ];
-  return candidates.length > 0 ? Math.max(...candidates) : null;
+  if (explicitAmounts.length > 0) return Math.max(...explicitAmounts);
+  return contributionTotal > 0 ? contributionTotal : null;
+}
+
+function parseAmount(value: string | null): number | null {
+  if (!value) return null;
+  const match = value.match(/[\d,.]+/);
+  if (!match) return null;
+  const amount = Number(match[0].replaceAll(',', ''));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function extractRegisteredCapitalTransition(facts: DocumentFacts): {
+  before: number;
+  after: number;
+} | null {
+  for (const change of facts.transactionChanges) {
+    if (!change.field.includes('注册资本')) continue;
+    const before = parseAmount(change.before);
+    const after = parseAmount(change.after);
+    if (before !== null && after !== null && before !== after) {
+      return { before, after };
+    }
+  }
+
+  const text = combinedFactsText(facts);
+  const match = text.match(
+    /注册资本由(?:人民币)?\s*([\d,.]+)\s*万元\s*(?:增加至|增至|变更为)(?:人民币)?\s*([\d,.]+)\s*万元/
+  );
+  if (!match) return null;
+  const before = Number(match[1].replaceAll(',', ''));
+  const after = Number(match[2].replaceAll(',', ''));
+  return Number.isFinite(before) && Number.isFinite(after) && before !== after
+    ? { before, after }
+    : null;
+}
+
+function approximatelyEqual(left: number, right: number): boolean {
+  return Math.abs(left - right) <= Math.max(0.00001, Math.abs(right) * 0.0001);
 }
 
 function createCandidate(
@@ -337,6 +381,35 @@ function scoreCompanyCharter(
         execution,
         30,
         `项目内关联章程“${lower.sourcePath}”注册资本更低，当前文件更可能是增资后版本`
+      );
+    }
+  }
+
+  const transactionEvidence = (params.relatedDocuments ?? [])
+    .filter(item =>
+      ['shareholder_resolution', 'capital_increase_agreement'].includes(
+        item.facts.documentType
+      )
+    )
+    .map(item => ({
+      sourcePath: item.sourcePath,
+      transition: extractRegisteredCapitalTransition(item.facts),
+    }))
+    .find(item => item.transition !== null);
+  if (currentCapital !== null && transactionEvidence?.transition) {
+    if (approximatelyEqual(currentCapital, transactionEvidence.transition.after)) {
+      addEvidence(
+        execution,
+        30,
+        `关联交易文件“${transactionEvidence.sourcePath}”确认注册资本由 ${transactionEvidence.transition.before} 万元增至 ${transactionEvidence.transition.after} 万元，当前章程与增资后资本一致`
+      );
+    } else if (
+      approximatelyEqual(currentCapital, transactionEvidence.transition.before)
+    ) {
+      addEvidence(
+        decision,
+        30,
+        `关联交易文件“${transactionEvidence.sourcePath}”确认交易前注册资本为 ${transactionEvidence.transition.before} 万元，当前章程与交易前资本一致`
       );
     }
   }

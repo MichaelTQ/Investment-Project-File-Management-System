@@ -5,6 +5,7 @@ import {
   getProject,
   uploadTemporaryFile,
 } from "@/lib/storage";
+import { forgetProjectDocument } from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -79,6 +80,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const storageKey = request.nextUrl.searchParams.get("storageKey") || "";
     const projectId = request.nextUrl.searchParams.get("projectId") || "";
+    const sourcePath = request.nextUrl.searchParams.get("sourcePath") || "";
     const expectedPrefix = `uploads/${projectId}/`;
 
     if (!storageKey || !projectId || !storageKey.startsWith(expectedPrefix)) {
@@ -86,6 +88,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     await deleteStoredFile(storageKey);
+    if (sourcePath) {
+      await forgetProjectDocument(projectId, sourcePath);
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

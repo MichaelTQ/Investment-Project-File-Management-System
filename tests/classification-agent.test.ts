@@ -84,6 +84,26 @@ test('Agent在章程缺少关联文件时不猜测并转人工', async () => {
   assert.equal(result.selectedRelatedDocuments.length, 0);
 });
 
+test('Agent可用股东会决议的注册资本变化识别增资后章程', async () => {
+  const post = reportCase('junrou-charter-post-transaction');
+  const resolution = reportCase('junrou-shareholder-resolution');
+  const result = await runClassificationAgent({
+    sourcePath: post.relativePath,
+    facts: post.facts,
+    availableRelatedDocuments: [
+      { sourcePath: resolution.relativePath, facts: resolution.facts },
+    ],
+  });
+
+  assert.equal(result.status, 'decided');
+  assert.equal(
+    result.decision.selectedCategory?.fileName,
+    '项目公司章程'
+  );
+  assert.equal(result.selectedRelatedDocuments.length, 1);
+  assert.match(result.decision.evidence.join('\n'), /注册资本由 11\.73624 万元增至 13\.04027 万元/);
+});
+
 test('Agent对合规审查表给出建议但遵守默认人工复核策略', async () => {
   const compliance = reportCase('junrou-investment-compliance-review');
   const result = await runClassificationAgent({

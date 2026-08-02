@@ -13,6 +13,7 @@ import {
   getProject,
 } from "@/lib/storage";
 import { FLAT_FILE_CATEGORIES } from "@/lib/folder-structure";
+import { forgetProjectDocumentsByFileName } from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -230,7 +231,17 @@ export async function DELETE(request: NextRequest) {
     }
 
     for (const fileId of [...new Set(ids)]) {
-      await deleteArchivedFile(fileId);
+      const deleted = await deleteArchivedFile(fileId);
+      if (deleted) {
+        try {
+          await forgetProjectDocumentsByFileName(
+            deleted.projectId,
+            deleted.originalName
+          );
+        } catch (memoryError) {
+          console.error('Delete archive memory cleanup failed:', memoryError);
+        }
+      }
     }
 
     return NextResponse.json({ success: true, deletedCount: ids.length });

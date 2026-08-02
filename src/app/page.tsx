@@ -122,6 +122,17 @@ interface ProjectSessionMemoryResult {
   revision: number;
   documentCount: number;
   relatedDocumentCount: number;
+  documents: Array<{
+    sourcePath: string;
+    documentType: string;
+    title: string;
+    sourceQuality: string;
+    extractionConfidence: number;
+    factStatus: 'extracted' | 'fallback' | 'type_recovered';
+    warnings: string[];
+    agentStatus: 'decided' | 'needs_review' | null;
+    selectedCategory: string | null;
+  }>;
   reEvaluatedDocuments: Array<{
     sourcePath: string;
     previousStatus: 'decided' | 'needs_review';
@@ -270,6 +281,41 @@ function AgentDecisionPanel({
                 : ''}
             </p>
           )}
+          <details className="mt-2 border-t pt-2">
+            <summary className="cursor-pointer text-xs font-medium text-violet-900">
+              查看项目记忆明细（{projectMemory.documents.length}）
+            </summary>
+            <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
+              {projectMemory.documents.map(document => (
+                <li
+                  key={document.sourcePath}
+                  className="rounded border border-violet-100 bg-violet-50/40 px-2 py-1.5"
+                >
+                  <p className="break-words font-medium text-violet-950">
+                    {document.sourcePath}
+                  </p>
+                  <p>
+                    类型：{document.documentType}；抽取状态：
+                    {{
+                      extracted: '成功',
+                      fallback: '降级',
+                      type_recovered: '类型已保守恢复',
+                    }[document.factStatus]}
+                    ；事实完整度：
+                    {document.extractionConfidence}；来源：{document.sourceQuality}
+                  </p>
+                  <p>
+                    Agent：{document.selectedCategory ?? document.agentStatus ?? '尚无结论'}
+                  </p>
+                  {document.warnings.length > 0 && (
+                    <p className="break-words text-amber-700">
+                      提示：{document.warnings.join('；')}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
           {projectMemory.reEvaluatedDocuments.length > 0 && (
             <div className="mt-2 border-t pt-2">
               <p className="text-xs font-medium text-green-800">
@@ -2068,6 +2114,7 @@ export default function Home() {
       const params = new URLSearchParams({
         storageKey: pendingResult.sourceStorageKey,
         projectId: pendingResult.sourceProjectId,
+        sourcePath: pendingResult.sourcePath || pendingResult.fileName,
       });
       void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
     }
@@ -2276,6 +2323,7 @@ export default function Home() {
           const params = new URLSearchParams({
             storageKey: uploadedStorageKey,
             projectId: selectedProjectId,
+            sourcePath: file.webkitRelativePath || file.name,
           });
           void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
         }
