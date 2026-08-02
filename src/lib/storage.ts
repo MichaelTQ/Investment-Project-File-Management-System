@@ -236,6 +236,23 @@ export async function createProject(
 
 export async function listProjects(): Promise<Project[]> {
   const db = getDb();
+  const aggregateResult = await db
+    .from("projects")
+    .select("*, archived_files(count)")
+    .order("updated_at", { ascending: false });
+
+  if (!aggregateResult.error) {
+    return (aggregateResult.data ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description ?? "",
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      fileCount: p.archived_files?.[0]?.count ?? 0,
+    }));
+  }
+
+  // 兼容尚未向 PostgREST 暴露外键关系的既有环境。
   const { data, error } = await db
     .from("projects")
     .select("*")
