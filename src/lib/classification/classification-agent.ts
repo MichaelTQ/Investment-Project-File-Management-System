@@ -70,6 +70,8 @@ function evidencePlanFor(documentType: DocumentType): string[] {
   if (documentType === 'company_charter') {
     return [
       'related_document:company_charter',
+      'related_document:shareholder_resolution',
+      'related_document:capital_increase_agreement',
       'project_event:shareholders_approved_transaction',
     ];
   }
@@ -101,10 +103,15 @@ function remainingRelatedDocuments(
     state.selectedRelatedDocuments.map(item => item.sourcePath)
   );
   if (state.facts.documentType !== 'company_charter') return [];
+  const relevantTypes = new Set<DocumentType>([
+    'company_charter',
+    'shareholder_resolution',
+    'capital_increase_agreement',
+  ]);
   return state.availableRelatedDocuments.filter(
     item =>
       item.sourcePath !== state.sourcePath &&
-      item.facts.documentType === 'company_charter' &&
+      relevantTypes.has(item.facts.documentType) &&
       !selectedPaths.has(item.sourcePath)
   );
 }
@@ -120,7 +127,7 @@ const planEvidenceNode: typeof AgentState.Node = state => {
         tool: 'inspect_document_facts',
         summary:
           remaining.length > 0
-            ? `文档类型为 ${state.facts.documentType}，发现 ${remaining.length} 份尚未比较的关联文件`
+            ? `文档类型为 ${state.facts.documentType}，发现 ${remaining.length} 份尚未比较的章程或交易证据`
             : `文档类型为 ${state.facts.documentType}，当前没有可继续检索的关联文件`,
         round: state.rounds,
       },

@@ -41,6 +41,19 @@ interface PersistedDocumentVersion extends DurableDocumentRecord {
   revisionId: string;
 }
 
+interface PersistedDocumentTombstone {
+  schemaVersion: typeof MEMORY_SCHEMA_VERSION;
+  kind: 'document-tombstone';
+  projectId: string;
+  revisionId: string;
+  sourcePath: string;
+  updatedAt: number;
+}
+
+type PersistedDocumentEntry =
+  | PersistedDocumentVersion
+  | PersistedDocumentTombstone;
+
 interface PersistedContextVersion {
   schemaVersion: typeof MEMORY_SCHEMA_VERSION;
   kind: 'context-version';
@@ -99,9 +112,26 @@ function isAgentDecision(value: unknown): value is ClassificationAgentResult {
   );
 }
 
-function parseDocumentVersion(value: Buffer): PersistedDocumentVersion | null {
+function parseDocumentEntry(value: Buffer): PersistedDocumentEntry | null {
   try {
-    const parsed = JSON.parse(value.toString('utf8')) as Partial<PersistedDocumentVersion>;
+    const parsed = JSON.parse(value.toString('utf8')) as Record<string, unknown>;
+    if (
+      parsed.schemaVersion === MEMORY_SCHEMA_VERSION &&
+      parsed.kind === 'document-tombstone' &&
+      typeof parsed.projectId === 'string' &&
+      typeof parsed.revisionId === 'string' &&
+      typeof parsed.sourcePath === 'string' &&
+      typeof parsed.updatedAt === 'number'
+    ) {
+      return {
+        schemaVersion: MEMORY_SCHEMA_VERSION,
+        kind: 'document-tombstone',
+        projectId: parsed.projectId,
+        revisionId: parsed.revisionId,
+        sourcePath: parsed.sourcePath,
+        updatedAt: parsed.updatedAt,
+      };
+    }
     const facts = DocumentFactsSchema.safeParse(parsed.facts);
     if (
       parsed.schemaVersion !== MEMORY_SCHEMA_VERSION ||
@@ -191,6 +221,25 @@ export async function appendDurableDocumentVersion(params: {
   await backend.write(versionKey(params.projectId, 'documents'), encode(value));
 }
 
+export async function appendDurableDocumentTombstone(params: {
+  projectId: string;
+  sourcePath: string;
+  updatedAt?: number;
+}): Promise<void> {
+  const value: PersistedDocumentTombstone = {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    kind: 'document-tombstone',
+    projectId: params.projectId,
+    revisionId: randomUUID(),
+    sourcePath: params.sourcePath,
+    updatedAt: params.updatedAt ?? Date.now(),
+  };
+  await backend.write(
+    versionKey(params.projectId, 'documents'),
+    encode(value)
+  );
+}
+
 export async function appendDurableContextVersion(params: {
   projectId: string;
   context: ProjectContextSnapshot;
@@ -216,23 +265,33 @@ export async function loadDurableProjectMemory(
     backend.list(`${prefix}/documents/`),
     backend.list(`${prefix}/contexts/`),
   ]);
-  const [documentVersions, contextVersions] = await Promise.all([
-    readInBatches(documentKeys, parseDocumentVersion),
+  const [documentEntries, contextVersions] = await Promise.all([
+    readInBatches(documentKeys, parseDocumentEntry),
     readInBatches(contextKeys, parseContextVersion),
   ]);
-  const documents = new Map<string, DurableDocumentRecord>();
-  for (const version of documentVersions) {
-    if (version.projectId !== projectId) continue;
-    const existing = documents.get(version.sourcePath);
-    if (!existing || version.updatedAt >= existing.updatedAt) {
-      documents.set(version.sourcePath, {
-        sourcePath: version.sourcePath,
-        facts: version.facts,
-        agentDecision: version.agentDecision,
-        firstSeenAt: version.firstSeenAt,
-        updatedAt: version.updatedAt,
-      });
+  const latestEntries = new Map<string, PersistedDocumentEntry>();
+  for (const entry of documentEntries) {
+    if (entry.projectId !== projectId) continue;
+    const existing = latestEntries.get(entry.sourcePath);
+    if (
+      !existing ||
+      entry.updatedAt > existing.updatedAt ||
+      (entry.updatedAt === existing.updatedAt &&
+        entry.kind === 'document-tombstone')
+    ) {
+      latestEntries.set(entry.sourcePath, entry);
     }
+  }
+  const documents = new Map<string, DurableDocumentRecord>();
+  for (const entry of latestEntries.values()) {
+    if (entry.kind === 'document-tombstone') continue;
+    documents.set(entry.sourcePath, {
+      sourcePath: entry.sourcePath,
+      facts: entry.facts,
+      agentDecision: entry.agentDecision,
+      firstSeenAt: entry.firstSeenAt,
+      updatedAt: entry.updatedAt,
+    });
   }
   const context = contextVersions
     .filter(version => version.projectId === projectId)
@@ -241,7 +300,7 @@ export async function loadDurableProjectMemory(
     projectId,
     context,
     documents,
-    revision: documentVersions.filter(version => version.projectId === projectId)
+    revision: documentEntries.filter(entry => entry.projectId === projectId)
       .length,
   };
 }

@@ -9,6 +9,7 @@ import {
 import {
   clearAllSessionProjectMemoryForTests,
   clearSessionProjectMemory,
+  forgetProjectDocument,
   getSessionProjectMemorySnapshot,
   rememberAndEvaluateProjectDocument,
 } from '../src/lib/classification/session-project-memory';
@@ -206,6 +207,51 @@ test('清空进程缓存模拟重启后，仍从 S3 恢复项目事实', async (
     restored.reEvaluatedDocuments[0]?.selectedCategory,
     '公司章程'
   );
+});
+
+test('明确章程文件名可保守恢复 unknown 类型并展示诊断明细', async () => {
+  const unknownCharter: DocumentFacts = {
+    ...preTransactionCharter,
+    documentType: 'unknown',
+    rawDocumentType: '未知',
+    title: '公司章程',
+    warnings: ['扫描件事实抽取不完整'],
+  };
+  const result = await rememberAndEvaluateProjectDocument({
+    projectId: 'recover-type-project',
+    sourcePath: '投资决策/公司章程.pdf',
+    facts: unknownCharter,
+  });
+
+  assert.equal(result.documents[0]?.documentType, 'company_charter');
+  assert.match(
+    result.documents[0]?.warnings.join('\n') ?? '',
+    /保守恢复/
+  );
+});
+
+test('单文件 tombstone 在重启后仍阻止已删除事实恢复', async () => {
+  await rememberAndEvaluateProjectDocument({
+    projectId: 'forget-project',
+    sourcePath: '投资决策/公司章程.pdf',
+    facts: preTransactionCharter,
+  });
+  assert.equal(
+    await forgetProjectDocument(
+      'forget-project',
+      '投资决策/公司章程.pdf'
+    ),
+    true
+  );
+  clearAllSessionProjectMemoryForTests();
+
+  const result = await rememberAndEvaluateProjectDocument({
+    projectId: 'forget-project',
+    sourcePath: '投资实施/项目公司章程.pdf',
+    facts: postTransactionCharter,
+  });
+  assert.equal(result.documentCount, 1);
+  assert.equal(result.currentDecision.status, 'needs_review');
 });
 
 test('S3 不可用时降级为有明确告警的进程内记忆', async () => {

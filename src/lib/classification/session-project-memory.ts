@@ -8,6 +8,7 @@ import type {
 } from './context-decision';
 import {
   appendDurableContextVersion,
+  appendDurableDocumentTombstone,
   appendDurableDocumentVersion,
   clearDurableProjectMemory,
   loadDurableProjectMemory,
@@ -54,6 +55,18 @@ export interface ReEvaluatedDocument {
   agentDecision: ClassificationAgentResult;
 }
 
+export interface ProjectMemoryDocumentView {
+  sourcePath: string;
+  documentType: DocumentFacts['documentType'];
+  title: string;
+  sourceQuality: DocumentFacts['sourceQuality'];
+  extractionConfidence: number;
+  factStatus: 'extracted' | 'fallback' | 'type_recovered';
+  warnings: string[];
+  agentStatus: ClassificationAgentResult['status'] | null;
+  selectedCategory: string | null;
+}
+
 export interface ProjectSessionMemoryView {
   mode: typeof DURABLE_MEMORY_MODE | typeof FALLBACK_MEMORY_MODE;
   persistent: boolean;
@@ -62,6 +75,7 @@ export interface ProjectSessionMemoryView {
   revision: number;
   documentCount: number;
   relatedDocumentCount: number;
+  documents: ProjectMemoryDocumentView[];
   reEvaluatedDocuments: ReEvaluatedDocument[];
   expiresAt?: string;
 }
@@ -105,6 +119,49 @@ function decisionSignature(decision: ClassificationAgentResult | null): string {
     fileName: selectedCategoryName(decision),
     requiresHumanReview: decision?.decision.requiresHumanReview ?? true,
   });
+}
+
+function recoverCompanyCharterType(
+  sourcePath: string,
+  facts: DocumentFacts
+): DocumentFacts {
+  if (!['unknown', 'other'].includes(facts.documentType)) return facts;
+  const identity = [sourcePath, facts.title, facts.rawDocumentType].join('\n');
+  if (!identity.includes('公司章程')) return facts;
+  const warning = '文档类型由明确文件名或标题“公司章程”保守恢复';
+  return {
+    ...facts,
+    documentType: 'company_charter',
+    warnings: facts.warnings.includes(warning)
+      ? facts.warnings
+      : [...facts.warnings, warning],
+  };
+}
+
+function projectDocumentViews(
+  project: SessionProjectRecord
+): ProjectMemoryDocumentView[] {
+  return [...project.documents.values()]
+    .sort((left, right) => left.firstSeenAt - right.firstSeenAt)
+    .map(document => ({
+      sourcePath: document.sourcePath,
+      documentType: document.facts.documentType,
+      title: document.facts.title,
+      sourceQuality: document.facts.sourceQuality,
+      extractionConfidence: document.facts.extractionConfidence,
+      factStatus: document.facts.warnings.some(warning =>
+        warning.includes('保守恢复')
+      )
+        ? 'type_recovered'
+        : document.facts.warnings.some(warning =>
+              warning.includes('结构化事实抽取失败')
+            ) || document.facts.extractionConfidence === 0
+          ? 'fallback'
+          : 'extracted',
+      warnings: document.facts.warnings,
+      agentStatus: document.agentDecision?.status ?? null,
+      selectedCategory: selectedCategoryName(document.agentDecision),
+    }));
 }
 
 function pruneFallbackProjects(store: SessionMemoryStore, now: number): void {
@@ -244,6 +301,12 @@ export async function rememberAndEvaluateProjectDocument(
         },
         store.projects.get(projectId)
       );
+      for (const document of project.documents.values()) {
+        document.facts = recoverCompanyCharterType(
+          document.sourcePath,
+          document.facts
+        );
+      }
     } catch (error) {
       mode = FALLBACK_MEMORY_MODE;
       persistenceWarning =
@@ -254,9 +317,10 @@ export async function rememberAndEvaluateProjectDocument(
 
     if (params.projectContext) project.context = params.projectContext;
     const existing = project.documents.get(sourcePath);
+    const currentFacts = recoverCompanyCharterType(sourcePath, params.facts);
     project.documents.set(sourcePath, {
       sourcePath,
-      facts: params.facts,
+      facts: currentFacts,
       agentDecision: existing?.agentDecision ?? null,
       firstSeenAt: existing?.firstSeenAt ?? now,
       updatedAt: now,
@@ -274,7 +338,7 @@ export async function rememberAndEvaluateProjectDocument(
     if (!currentRecord) throw new Error('当前文件未写入项目记忆');
 
     const targets =
-      params.facts.documentType === 'company_charter'
+      currentFacts.documentType === 'company_charter'
         ? [...project.documents.values()].filter(
             document => document.facts.documentType === 'company_charter'
           )
@@ -355,6 +419,7 @@ export async function rememberAndEvaluateProjectDocument(
       revision: project.revision,
       documentCount: project.documents.size,
       relatedDocumentCount: Math.max(0, availableDocuments.length - 1),
+      documents: projectDocumentViews(project),
       reEvaluatedDocuments,
       expiresAt:
         mode === FALLBACK_MEMORY_MODE
@@ -372,6 +437,64 @@ export async function clearSessionProjectMemory(
   const localDeleted = memoryStore().projects.delete(normalizedProjectId);
   await clearDurableProjectMemory(normalizedProjectId);
   return localDeleted;
+}
+
+export async function forgetProjectDocument(
+  projectId: string,
+  sourcePath: string
+): Promise<boolean> {
+  const normalizedProjectId = projectId.trim();
+  const normalizedSourcePath = normalizeSourcePath(sourcePath);
+  if (!normalizedProjectId || !normalizedSourcePath) return false;
+  return withProjectLock(normalizedProjectId, async () => {
+    await appendDurableDocumentTombstone({
+      projectId: normalizedProjectId,
+      sourcePath: normalizedSourcePath,
+    });
+    return (
+      memoryStore()
+        .projects.get(normalizedProjectId)
+        ?.documents.delete(normalizedSourcePath) ?? false
+    );
+  });
+}
+
+export async function forgetProjectDocumentsByFileName(
+  projectId: string,
+  fileName: string
+): Promise<number> {
+  const normalizedProjectId = projectId.trim();
+  const normalizedFileName = fileName.trim();
+  if (!normalizedProjectId || !normalizedFileName) return 0;
+  return withProjectLock(normalizedProjectId, async () => {
+    const durable = await loadDurableProjectMemory(normalizedProjectId);
+    const local = memoryStore().projects.get(normalizedProjectId);
+    const paths = new Set<string>([
+      ...durable.documents.keys(),
+      ...(local ? local.documents.keys() : []),
+    ]);
+    const matchingPaths = [...paths].filter(
+      path => path.split('/').pop() === normalizedFileName
+    );
+    if (matchingPaths.length > 1) {
+      console.warn(
+        `文件名“${normalizedFileName}”对应 ${matchingPaths.length} 条项目记忆，缺少精确 sourcePath，本次不自动删除记忆`
+      );
+      return 0;
+    }
+    await Promise.all(
+      matchingPaths.map(sourcePath =>
+        appendDurableDocumentTombstone({
+          projectId: normalizedProjectId,
+          sourcePath,
+        })
+      )
+    );
+    for (const sourcePath of matchingPaths) {
+      local?.documents.delete(sourcePath);
+    }
+    return matchingPaths.length;
+  });
 }
 
 export function getSessionProjectMemorySnapshot(projectId: string): {

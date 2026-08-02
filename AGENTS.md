@@ -37,7 +37,8 @@ src/
 │   │   ├── fact-extractor.ts         # 文档事实 LLM 抽取器（shadow mode）
 │   │   ├── context-decision.ts       # 项目上下文证据决策器
 │   │   ├── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）
-│   │   └── session-project-memory.ts # 按项目隔离的进程内临时事实记忆
+│   │   ├── session-project-memory.ts # 项目记忆编排、诊断与降级缓存
+│   │   └── durable-project-memory.ts # Coze S3 持久化版本记录与 tombstone
 │   ├── project-memory.ts             # 项目上下文、事件、文档事实和分类决策存储层
 │   └── storage.ts                    # 统一存储层（Supabase + S3）
 ├── storage/
@@ -75,7 +76,7 @@ src/
 - 支持 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true`，将事实和当前 legacy 分类决策写入项目记忆表；持久化失败不会阻断原分类
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
-- Agent shadow 请求具有有效 `projectId` 时自动使用进程内会话项目记忆；新关联文件可触发历史章程重新判断，结果不写入 Supabase
+- Agent shadow 请求具有有效 `projectId` 时自动使用 Coze S3 持久化项目记忆；关联章程、股东会决议和增资协议可触发历史章程重新判断，结果不写入 Supabase
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
@@ -84,7 +85,7 @@ src/
 - **一键下载全部**: 打包为 ZIP 保留完整文件夹结构
 - **分析记录面板**: 显示上传时间、原始文件名、归档后文件名、分类路径
 - **Agent Shadow 面板**: 在分类详情中展示 Agent 建议、证据、冲突、关联文件、执行轨迹和人工复核状态
-- **会话项目记忆提示**: 展示当前实例记住的项目文件数、可用关联事实及被新证据重新判断的历史文件
+- **项目记忆提示**: 展示持久化状态、项目文件数、事实类型与质量、可用关联事实及被新证据重新判断的历史文件
 
 ## 文件分类逻辑
 1. **关键词匹配**: 先进行快速关键词匹配（文件名 + 内容），阈值 5 分
