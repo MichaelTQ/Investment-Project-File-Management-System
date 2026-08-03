@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
   buildProjectContextPrompt,
+  diagnoseMissingContextJson,
   synthesizeProjectContext,
 } from '../src/lib/classification/project-context-synthesizer';
 
@@ -149,7 +150,16 @@ test('模型没有返回 JSON 时使用规则 Context 而不是标记更新失�
   assert.equal(result.context.latestEvidencedStage, 'investment_decision');
   assert.match(
     result.context.synthesisWarnings?.join('\n') ?? '',
-    /没有 JSON 对象|使用规则 Context/
+    /非 JSON 文本|使用规则 Context/
+  );
+});
+
+test('缺少 JSON 时区分空响应、非 JSON 文本和疑似截断', () => {
+  assert.match(diagnoseMissingContextJson('   '), /空文本/);
+  assert.match(diagnoseMissingContextJson('抱歉，无法完成。'), /非 JSON 文本/);
+  assert.match(
+    diagnoseMissingContextJson('{"timeline":[{"title":"未完成"}'),
+    /未闭合|疑似输出在完成前被截断/
   );
 });
 
