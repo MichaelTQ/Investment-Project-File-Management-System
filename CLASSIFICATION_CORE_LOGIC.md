@@ -138,6 +138,8 @@ businessStage 明确？
 
 Context 综合具有可恢复降级：如果大模型超时、返回空文本、没有完整 JSON 或返回内容不符合 Schema，系统会用当前有效文件事实生成确定性规则 Context，将具体原因写入 `synthesisWarnings`，但不会把更新标记为失败。文件日期不明确时使用 `date=null`。只有规则 Context 本身也无法生成时，才属于真正的 Context 更新失败。
 
+“没有完整 JSON”会进一步区分为三类：空文本、非 JSON 说明文字、JSON 未闭合（高度疑似输出被截断）。当前 `coze-coding-dev-sdk` 的 `invoke()` 只拼接并返回流式 `content`，不保留 `finish_reason` 和 token 使用量，因此系统能识别输出形态，但不能仅凭 SDK 返回值直接证明上游为何结束。Context 输入最多允许 100 份文件、约 60,000 字符事实卡片，输入较大且输出结构复杂时，截断风险会增加。
+
 ## 四、API 现在传什么
 
 分类响应的核心字段：

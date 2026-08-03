@@ -341,6 +341,39 @@ ${params.previousContext ? JSON.stringify(params.previousContext) : '[无上一�
   ];
 }
 
+export function diagnoseMissingContextJson(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return '模型返回了空文本；当前 SDK 的流式接口未提供结束原因，无法进一步判断是上游空响应还是流提前结束';
+  }
+
+  const firstOpeningBrace = trimmed.indexOf('{');
+  if (firstOpeningBrace < 0) {
+    return `模型返回了非 JSON 文本（共 ${trimmed.length} 个字符），说明模型没有遵守“只输出 JSON”的格式要求`;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = firstOpeningBrace; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === '{') depth += 1;
+    else if (character === '}') depth -= 1;
+  }
+
+  if (depth > 0 || inString) {
+    return `模型返回了未闭合的 JSON（共 ${trimmed.length} 个字符），高度疑似输出在完成前被截断；当前 SDK 未保留 finish_reason，不能直接确认截断来源`;
+  }
+  return `模型响应包含 JSON 起始符，但没有形成可提取的完整对象（共 ${trimmed.length} 个字符），属于异常的 JSON 结构`;
+}
+
 function validateEvidenceReferences(
   context: ProjectContextSnapshot,
   documents: RelatedDocumentFacts[],
@@ -431,7 +464,7 @@ export async function synthesizeProjectContext(
       { model: PROJECT_CONTEXT_MODEL, temperature: 0.1 }
     );
     const json = extractFirstJsonObject(response.content);
-    if (!json) throw new Error('项目上下文响应中没有 JSON 对象');
+    if (!json) throw new Error(diagnoseMissingContextJson(response.content));
     const parsed = ProjectContextSnapshotSchema.parse(JSON.parse(json));
     return {
       status: 'llm_synthesized',
