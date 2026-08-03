@@ -4,6 +4,7 @@ import {
   deleteStoredFilesByPrefix,
   listStoredFilesByPrefix,
   readStoredFile,
+  deleteStoredFile,
   writeStoredFile,
 } from '../storage';
 import type { ClassificationAgentResult } from './classification-agent';
@@ -35,6 +36,7 @@ export interface DurableProjectSnapshot {
   documents: Map<string, DurableDocumentRecord>;
   revision: number;
   loadedFrom?: 'snapshot' | 'legacy';
+  snapshotUpdatedAt?: number;
 }
 
 export type ProjectContextLifecycleStatus =
@@ -113,6 +115,7 @@ export interface DurableProjectMemoryBackend {
   write(storageKey: string, value: Buffer): Promise<string>;
   read(storageKey: string): Promise<Buffer>;
   list(prefix: string): Promise<string[]>;
+  delete(storageKey: string): Promise<void>;
   deletePrefix(prefix: string): Promise<void>;
 }
 
@@ -125,6 +128,7 @@ const s3Backend: DurableProjectMemoryBackend = {
     }),
   read: readStoredFile,
   list: listStoredFilesByPrefix,
+  delete: deleteStoredFile,
   deletePrefix: deleteStoredFilesByPrefix,
 };
 
@@ -300,10 +304,59 @@ function parseProjectSnapshot(value: Buffer): DurableProjectSnapshot | null {
       contextState,
       documents,
       loadedFrom: 'snapshot',
+      snapshotUpdatedAt: parsed.updatedAt,
     };
   } catch {
     return null;
   }
+}
+
+function parseProjectRevision(value: Buffer): PersistedProjectRevision | null {
+  try {
+    const parsed = JSON.parse(
+      value.toString('utf8')
+    ) as Partial<PersistedProjectRevision>;
+    return parsed.schemaVersion === MEMORY_SCHEMA_VERSION &&
+      parsed.kind === 'project-revision' &&
+      typeof parsed.projectId === 'string' &&
+      typeof parsed.revision === 'number' &&
+      typeof parsed.updatedAt === 'number'
+      ? {
+          schemaVersion: MEMORY_SCHEMA_VERSION,
+          kind: 'project-revision',
+          projectId: parsed.projectId,
+          revision: Math.max(0, Math.round(parsed.revision)),
+          updatedAt: parsed.updatedAt,
+        }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadLatestProjectSnapshot(
+  projectId: string
+): Promise<DurableProjectSnapshot | null> {
+  const keys = await backend.list(snapshotKey(projectId).replace(/\.json$/, ''));
+  const snapshots = (await readInBatches(keys, parseProjectSnapshot))
+    .filter(snapshot => snapshot.projectId === projectId)
+    .sort(
+      (left, right) =>
+        (right.snapshotUpdatedAt ?? 0) - (left.snapshotUpdatedAt ?? 0) ||
+        right.contextState.version - left.contextState.version
+    );
+  return snapshots[0] ?? null;
+}
+
+async function deletePreviousObjects(
+  previousKeys: string[],
+  currentKey: string
+): Promise<void> {
+  await Promise.all(
+    previousKeys
+      .filter(key => key !== currentKey)
+      .map(key => backend.delete(key))
+  );
 }
 
 function parseContextState(value: unknown): ProjectContextLifecycleState | undefined {
@@ -443,7 +496,7 @@ export async function loadDurableProjectMemory(
   projectId: string
 ): Promise<DurableProjectSnapshot> {
   try {
-    const snapshot = parseProjectSnapshot(await backend.read(snapshotKey(projectId)));
+    const snapshot = await loadLatestProjectSnapshot(projectId);
     if (snapshot?.projectId === projectId) return snapshot;
   } catch {
     // 尚无快照时兼容读取旧的追加式版本记录，并在下一次写入时完成压缩。
@@ -538,9 +591,18 @@ export async function saveDurableProjectMemorySnapshot(params: {
     documents: [...params.documents.values()],
     updatedAt: params.updatedAt,
   };
-  const key = snapshotKey(params.projectId);
-  await backend.write(key, encode(value));
-  const verified = parseProjectSnapshot(await backend.read(key));
+  const requestedSnapshotKey = snapshotKey(params.projectId);
+  const requestedRevisionKey = revisionKey(params.projectId);
+  // Coze S3Storage 会自动给上传文件名增加随机后缀，因此必须使用返回的真实 key。
+  const [previousSnapshotKeys, previousRevisionKeys] = await Promise.all([
+    backend.list(requestedSnapshotKey.replace(/\.json$/, '')),
+    backend.list(requestedRevisionKey.replace(/\.json$/, '')),
+  ]);
+  const actualSnapshotKey = await backend.write(
+    requestedSnapshotKey,
+    encode(value)
+  );
+  const verified = parseProjectSnapshot(await backend.read(actualSnapshotKey));
   if (
     !verified ||
     verified.projectId !== params.projectId ||
@@ -556,22 +618,36 @@ export async function saveDurableProjectMemorySnapshot(params: {
     revision: params.revision,
     updatedAt: params.updatedAt,
   };
-  await backend.write(revisionKey(params.projectId), encode(revision));
+  const actualRevisionKey = await backend.write(
+    requestedRevisionKey,
+    encode(revision)
+  );
+  const verifiedRevision = parseProjectRevision(
+    await backend.read(actualRevisionKey)
+  );
+  if (
+    !verifiedRevision ||
+    verifiedRevision.projectId !== params.projectId ||
+    verifiedRevision.revision !== params.revision
+  ) {
+    throw new Error('S3 项目记忆版本标记写入后校验失败');
+  }
+  // 只删除本次写入前已经列出的旧对象；不会误删并发实例刚写入的新快照。
+  await Promise.all([
+    deletePreviousObjects(previousSnapshotKeys, actualSnapshotKey),
+    deletePreviousObjects(previousRevisionKeys, actualRevisionKey),
+  ]);
 }
 
 export async function loadDurableProjectRevision(
   projectId: string
 ): Promise<number | null> {
   try {
-    const parsed = JSON.parse(
-      (await backend.read(revisionKey(projectId))).toString('utf8')
-    ) as Partial<PersistedProjectRevision>;
-    return parsed.schemaVersion === MEMORY_SCHEMA_VERSION &&
-      parsed.kind === 'project-revision' &&
-      parsed.projectId === projectId &&
-      typeof parsed.revision === 'number'
-      ? Math.max(0, Math.round(parsed.revision))
-      : null;
+    const keys = await backend.list(revisionKey(projectId).replace(/\.json$/, ''));
+    const revisions = (await readInBatches(keys, parseProjectRevision))
+      .filter(revision => revision.projectId === projectId)
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+    return revisions[0]?.revision ?? null;
   } catch {
     return null;
   }
@@ -579,7 +655,7 @@ export async function loadDurableProjectRevision(
 
 /** 新快照已验证后，清理旧追加式日志；不会触碰 snapshot.json 或业务文件。 */
 export async function compactLegacyProjectMemory(projectId: string): Promise<void> {
-  const verified = parseProjectSnapshot(await backend.read(snapshotKey(projectId)));
+  const verified = await loadLatestProjectSnapshot(projectId);
   if (!verified || verified.projectId !== projectId) {
     throw new Error('项目记忆快照尚未验证，禁止清理历史版本');
   }

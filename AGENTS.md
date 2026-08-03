@@ -75,7 +75,7 @@ src/
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
 - Agent shadow 请求具有有效 `projectId` 时自动使用 Coze S3 持久化项目记忆；关联章程、股东会决议和增资协议可触发历史章程重新判断，结果不写入 Supabase
-- 项目记忆使用稳定 `snapshot.json` 与轻量 `revision.json`；版本未变化时复用进程缓存，旧追加式历史只在快照验证成功后清理
+- 项目记忆使用逻辑 `snapshot` 与轻量 `revision` 对象；物理对象使用 Coze 上传返回的真实随机后缀 key，版本未变化时复用进程缓存，旧追加式历史只在快照验证成功后清理
 - 分类与归档响应包含分阶段耗时和 LLM 输入/输出诊断，Context/事实/OCR 输出上限分别为 3072/2048/1200 tokens
 
 ### page.tsx（主页面组件）

@@ -65,6 +65,10 @@ class MemoryBackend implements DurableProjectMemoryBackend {
     return [...this.objects.keys()].filter(key => key.startsWith(prefix));
   }
 
+  async delete(storageKey: string): Promise<void> {
+    this.objects.delete(storageKey);
+  }
+
   async deletePrefix(prefix: string): Promise<void> {
     for (const key of this.objects.keys()) {
       if (key.startsWith(prefix)) this.objects.delete(key);
@@ -74,6 +78,20 @@ class MemoryBackend implements DurableProjectMemoryBackend {
   resetMetrics(): void {
     this.readKeys = [];
     this.listPrefixes = [];
+  }
+}
+
+class RandomizingKeyMemoryBackend extends MemoryBackend {
+  private sequence = 0;
+
+  override async write(storageKey: string, value: Buffer): Promise<string> {
+    this.sequence += 1;
+    const actualKey = storageKey.replace(
+      /\.json$/,
+      `_${String(this.sequence).padStart(4, '0')}.json`
+    );
+    this.objects.set(actualKey, Buffer.from(value));
+    return actualKey;
   }
 }
 
@@ -187,9 +205,46 @@ test('进程内缓存版本未变化时只读取轻量 revision，不重复下�
   const view = await getProjectContextMemoryView('warm-cache-project');
 
   assert.equal(view.documentCount, 1);
-  assert.deepEqual(durableBackend.listPrefixes, []);
+  assert.equal(durableBackend.listPrefixes.length, 1);
+  assert.match(durableBackend.listPrefixes[0] ?? '', /\/revision$/);
   assert.equal(durableBackend.readKeys.length, 1);
   assert.match(durableBackend.readKeys[0] ?? '', /\/revision\.json$/);
+});
+
+test('Coze 自动改写上传 key 时仍使用真实 key 校验并压缩旧快照', async () => {
+  const randomizingBackend = new RandomizingKeyMemoryBackend();
+  durableBackend = randomizingBackend;
+  setDurableProjectMemoryBackendForTests(randomizingBackend);
+
+  const first = await commitArchivedProjectDocument({
+    projectId: 'random-key-project',
+    projectName: '随机Key项目',
+    sourcePath: '立项申请.pdf',
+    facts: preTransactionCharter,
+    archivedFileId: 'random-key-file-1',
+  });
+  const second = await rebuildProjectContext('random-key-project');
+
+  assert.equal(first.persistent, true);
+  assert.equal(second.persistent, true);
+  assert.equal(second.persistenceWarning, undefined);
+  assert.equal(
+    [...randomizingBackend.objects.keys()].filter(key =>
+      /\/snapshot_\d+\.json$/.test(key)
+    ).length,
+    1
+  );
+  assert.equal(
+    [...randomizingBackend.objects.keys()].filter(key =>
+      /\/revision_\d+\.json$/.test(key)
+    ).length,
+    1
+  );
+
+  clearAllSessionProjectMemoryForTests();
+  const restored = await getProjectContextMemoryView('random-key-project');
+  assert.equal(restored.persistent, true);
+  assert.equal(restored.documentCount, 1);
 });
 
 test('删除只标记Context过期，下次候选判断前自动重建', async () => {
@@ -491,6 +546,9 @@ test('S3 不可用时降级为有明确告警的进程内记忆', async () => {
       throw new Error('storage unavailable');
     },
     list: async () => {
+      throw new Error('storage unavailable');
+    },
+    delete: async () => {
       throw new Error('storage unavailable');
     },
     deletePrefix: async () => {
