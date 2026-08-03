@@ -149,7 +149,7 @@ interface ClassifyProcess {
     error?: string;
   };
   finalDecision: {
-    method: 'keyword' | 'llm' | 'fallback' | 'none';
+    method: 'agent' | 'keyword' | 'llm' | 'fallback' | 'none';
     explanation: string;
   };
 }
@@ -163,6 +163,7 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  classificationMode: 'agent' | 'comparison';
   suggestedArchiveTitle?: string;
   documentFacts?: DocumentFacts;
   contextDecision?: ContextClassificationDecision;
@@ -467,6 +468,7 @@ export async function POST(request: NextRequest) {
     let projectId = '';
     let sourcePath = '';
     let autoArchive = true;
+    let runLegacyDecision = true;
     let extractFacts =
       globalThis.process.env.ENABLE_DOCUMENT_FACTS_SHADOW === 'true';
     let persistFacts =
@@ -490,6 +492,7 @@ export async function POST(request: NextRequest) {
       sourcePath =
         typeof body.sourcePath === 'string' ? body.sourcePath : fileName;
       autoArchive = body.autoArchive !== false;
+      runLegacyDecision = body.legacyDecision !== false;
       extractFacts =
         typeof body.extractFacts === 'boolean'
           ? body.extractFacts
@@ -526,6 +529,7 @@ export async function POST(request: NextRequest) {
       projectId = String(formData.get('projectId') || '');
       sourcePath = String(formData.get('sourcePath') || file?.name || '');
       autoArchive = formData.get('autoArchive') !== 'false';
+      runLegacyDecision = formData.get('legacyDecision') !== 'false';
       const extractFactsValue = formData.get('extractFacts');
       extractFacts =
         extractFactsValue === null
@@ -560,6 +564,12 @@ export async function POST(request: NextRequest) {
         { error: '未提供文件' },
         { status: 400 }
       );
+    }
+
+    // Agent 主模式必须运行 Agent，并始终由用户确认后再归档。
+    if (!runLegacyDecision) {
+      runAgentDecision = true;
+      autoArchive = false;
     }
 
     // 持久化必须以结构化事实为输入，因此显式请求持久化时自动启用抽取。
@@ -890,8 +900,31 @@ export async function POST(request: NextRequest) {
 
     let result: ClassifyResult;
 
-    // 如果关键词匹配置信度高，直接返回
-    if (!imageDataUrl && keywordAssessment.passed) {
+    if (!runLegacyDecision) {
+      const agentDecision = agentClassificationResult?.decision;
+      const selectedCategory = agentDecision?.selectedCategory ?? null;
+      process.finalDecision = {
+        method: 'agent',
+        explanation: selectedCategory
+          ? `Agent 使用项目 Context 形成「${selectedCategory.fileName}」建议；正式归档前仍需人工确认`
+          : 'Agent 当前证据不足或存在冲突，需要人工选择归档位置',
+      };
+      result = {
+        fileName,
+        fileSize,
+        category: selectedCategory,
+        confidence: agentDecision?.confidence ?? 0,
+        reasoning:
+          agentDecision?.reasoning ??
+          'Agent 未能形成有效建议，请检查事实抽取和项目 Context。',
+        contentPreview,
+        process,
+        classificationMode: 'agent',
+        suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
+        requiresArchiveConfirmation: true,
+      };
+      // 传统分类关闭时，Agent 建议作为唯一外层结果。
+    } else if (!imageDataUrl && keywordAssessment.passed) {
       const bestMatch = keywordMatches[0];
       const evidencePolicy = getCategoryEvidencePolicy(
         bestMatch.category.folderId,
@@ -914,6 +947,7 @@ export async function POST(request: NextRequest) {
         reasoning: `文件名和内容匹配关键词："${bestMatch.matchedKeywords.join('、')}"，归类到「${bestMatch.category.fileName}」`,
         contentPreview,
         process,
+        classificationMode: 'comparison',
         requiresArchiveConfirmation: requiresPolicyReview
       };
     } else {
@@ -962,6 +996,7 @@ export async function POST(request: NextRequest) {
           reasoning: llmResult.reasoning,
           contentPreview,
           process,
+          classificationMode: 'comparison',
           suggestedArchiveTitle:
             llmResult.suggestedArchiveTitle || finalCategory?.fileName || '',
           requiresArchiveConfirmation: Boolean(finalCategory)
@@ -980,6 +1015,7 @@ export async function POST(request: NextRequest) {
           reasoning: `根据关键词匹配，归类到「${keywordMatches[0].category.fileName}」`,
           contentPreview,
           process,
+          classificationMode: 'comparison',
           suggestedArchiveTitle: keywordMatches[0].category.fileName,
           requiresArchiveConfirmation: true
         };
@@ -996,7 +1032,8 @@ export async function POST(request: NextRequest) {
           confidence: 0,
           reasoning: '无法确定文件归档位置，请手动分类。文件内容未匹配任何已知分类关键词。',
           contentPreview,
-          process
+          process,
+          classificationMode: 'comparison',
         };
       }
     }
@@ -1148,14 +1185,20 @@ export async function POST(request: NextRequest) {
           ],
           contradictions: [],
           decisionScore: result.confidence,
-          decisionSource: process.finalDecision.method,
+          decisionSource:
+            process.finalDecision.method === 'agent'
+              ? 'context'
+              : process.finalDecision.method,
           reasoning: result.reasoning,
           modelVersion:
             process.finalDecision.method === 'llm' ||
             process.finalDecision.method === 'fallback'
               ? 'doubao-seed-2-0-lite-260215'
               : undefined,
-          policyVersion: 'legacy-classification-v1',
+          policyVersion:
+            process.finalDecision.method === 'agent'
+              ? agentClassificationResult?.graphVersion ?? 'classification-agent'
+              : 'legacy-classification-v1',
           requiresReview:
             Boolean(result.requiresArchiveConfirmation) || !result.category,
         });

@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -77,7 +78,7 @@ interface ClassifyProcess {
     };
   };
   finalDecision: {
-    method: 'keyword' | 'llm' | 'fallback' | 'none';
+    method: 'agent' | 'keyword' | 'llm' | 'fallback' | 'none';
     explanation: string;
   };
 }
@@ -192,6 +193,12 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
+  classificationMode: 'agent' | 'comparison';
+  legacyClassification?: {
+    category: FlatFileCategory | null;
+    confidence: number;
+    reasoning: string;
+  };
   agentDecision?: AgentDecisionResult;
   projectSessionMemory?: ProjectSessionMemoryResult;
   documentFacts?: unknown;
@@ -477,7 +484,7 @@ function AgentDecisionPanel({
         <span>Agent 调度 LLM：{agent.llmCallCount} 次</span>
       </div>
       <p className="text-[11px] leading-4 text-violet-700">
-        当前仅用于对照评估，不会覆盖上方正式分类或直接触发归档。
+        Agent 建议会作为人工归档确认的默认选项，但不会绕过人工确认直接写入档案。
       </p>
     </div>
   );
@@ -573,7 +580,7 @@ function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
           <Zap className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">查看分类过程</span>
           <Badge variant="outline" className="text-xs">
-            {process.finalDecision.method === 'keyword' ? '关键词匹配' : process.finalDecision.method === 'llm' ? 'AI 分析' : process.finalDecision.method === 'fallback' ? '降级匹配' : '未分类'}
+            {process.finalDecision.method === 'agent' ? 'Agent 建议' : process.finalDecision.method === 'keyword' ? '关键词匹配' : process.finalDecision.method === 'llm' ? 'AI 分析' : process.finalDecision.method === 'fallback' ? '降级匹配' : '未分类'}
           </Badge>
         </div>
         {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -657,10 +664,12 @@ function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
 // ============ 分类结果项 ============
 function ClassifyResultItem({
   result,
+  showLegacyClassification,
   onConfirmArchive,
   onCancelArchive,
 }: {
   result: ClassifyResult;
+  showLegacyClassification: boolean;
   onConfirmArchive: (
     clientId: string,
     archiveTitle: string,
@@ -670,13 +679,24 @@ function ClassifyResultItem({
 }) {
   const getCategorySelectionValue = (category: FlatFileCategory) =>
     `${category.folderId}:${category.fileName}`;
+  const agentCategory = result.agentDecision?.decision.selectedCategory ?? null;
+  const legacyClassification = result.legacyClassification;
+  const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
+  const agentNeedsReview = result.agentDecision?.status !== 'decided';
+  const agentSelectionValue = agentCategory
+    ? getCategorySelectionValue(agentCategory)
+    : '';
   const [archiveTitle, setArchiveTitle] = useState(
-    result.suggestedArchiveTitle || result.category?.fileName || ''
+    result.fileName.replace(/\.[^.]+$/, '') || agentCategory?.fileName || ''
   );
   const [selectedCategoryId, setSelectedCategoryId] = useState(
-    result.category ? getCategorySelectionValue(result.category) : ''
+    agentSelectionValue
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => {
+    if (result.archiveStatus !== 'pending' || !agentSelectionValue) return;
+    setSelectedCategoryId(current => current || agentSelectionValue);
+  }, [agentSelectionValue, result.archiveStatus]);
   const selectedCategory = FLAT_FILE_CATEGORIES.find(
     category => getCategorySelectionValue(category) === selectedCategoryId
   );
@@ -685,154 +705,218 @@ function ClassifyResultItem({
     result.requiresArchiveConfirmation &&
     !result.archived &&
     result.archiveStatus !== 'cancelled';
+  const classificationsDisagree = Boolean(
+    agentCategory &&
+    legacyClassification?.category &&
+    getCategorySelectionValue(agentCategory) !==
+      getCategorySelectionValue(legacyClassification.category)
+  );
 
   return (
     <div
       className={`w-full min-w-0 overflow-hidden rounded-lg border bg-background ${
-        result.category ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'
+        result.agentDecision?.status === 'decided'
+          ? 'border-l-4 border-l-violet-500'
+          : 'border-l-4 border-l-amber-500'
       }`}
     >
       <div className="flex min-w-0 items-start gap-2.5 border-b bg-muted/20 p-3">
-        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${result.category ? 'bg-green-100' : 'bg-amber-100'}`}>
-          {result.category
-            ? <CheckCircle2 className="h-4 w-4 text-green-600" />
-            : <AlertCircle className="h-4 w-4 text-amber-600" />}
+        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${agentNeedsReview ? 'bg-amber-100' : 'bg-violet-100'}`}>
+          {agentNeedsReview
+            ? <AlertCircle className="h-4 w-4 text-amber-600" />
+            : <Brain className="h-4 w-4 text-violet-600" />}
         </div>
         <div className="min-w-0 flex-1">
           <p className="break-all text-sm font-medium leading-5">{result.fileName}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
             <span>·</span>
-            <span>置信度 {result.confidence}%</span>
+            <span>Agent 置信度 {agentConfidence}%</span>
+            <Badge variant="outline" className="border-violet-300 bg-violet-50 text-[10px] text-violet-700">
+              Agent 主模式
+            </Badge>
           </div>
         </div>
       </div>
 
       <div className="min-w-0 space-y-3 p-3">
-        {result.category ? (
-          <>
-            <div className="min-w-0">
-              <p className="mb-1 text-xs text-muted-foreground">归档位置</p>
-              <p className="break-words text-sm font-medium leading-5 text-primary">
-                {result.category.folderPath.join(' / ')} / {result.category.fileName}
+        <div className={`grid gap-3 ${showLegacyClassification ? 'lg:grid-cols-2' : ''}`}>
+          <div className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
+                <Brain className="h-3.5 w-3.5" />
+                Agent 分类结果
+              </p>
+              <Badge
+                variant="outline"
+                className={agentNeedsReview
+                  ? 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'
+                  : 'border-green-300 bg-green-50 text-[10px] text-green-700'}
+              >
+                {agentNeedsReview ? '需要复核' : '证据充分'}
+              </Badge>
+            </div>
+            <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
+              {agentCategory
+                ? `${agentCategory.folderPath.join(' / ')} / ${agentCategory.fileName}`
+                : '暂未形成唯一分类建议'}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <Progress value={agentConfidence} className="h-1.5 flex-1" />
+              <span className="text-xs text-violet-800">{agentConfidence}%</span>
+            </div>
+            <p className="mt-2 break-words text-xs leading-5 text-violet-800">
+              {result.agentDecision?.decision.reasoning ??
+                'Agent 未成功返回结果，请查看详情中的诊断信息。'}
+            </p>
+            {(result.agentDecision?.decision.evidence.length ?? 0) > 0 && (
+              <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-green-800">
+                {result.agentDecision?.decision.evidence.slice(0, 2).map(evidence => (
+                  <li key={evidence} className="break-words">✓ {evidence}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {showLegacyClassification && (
+            <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-slate-800">
+                  <Zap className="h-3.5 w-3.5" />
+                  传统分类结果
+                </p>
+                {legacyClassification ? (
+                  <Badge variant="outline" className="bg-white text-[10px]">
+                    {legacyClassification.confidence}%
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="bg-white text-[10px] text-muted-foreground">
+                    本次未运行
+                  </Badge>
+                )}
+              </div>
+              <p className="mt-2 break-words text-sm font-medium leading-5 text-slate-900">
+                {legacyClassification?.category
+                  ? `${legacyClassification.category.folderPath.join(' / ')} / ${legacyClassification.category.fileName}`
+                  : legacyClassification
+                    ? '未能确定归档类别'
+                    : '该文件上传时传统分类开关处于关闭状态'}
+              </p>
+              <p className="mt-2 break-words text-xs leading-5 text-slate-600">
+                {legacyClassification?.reasoning ??
+                  '打开开关后，新上传文件会同时运行传统分类用于并列对照。'}
               </p>
             </div>
+          )}
+        </div>
 
-            <Progress value={result.confidence} className="h-1.5 w-full" />
+        {classificationsDisagree && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            Agent 与传统分类结果不一致，请结合证据后确认最终归档位置。
+          </div>
+        )}
 
-            {result.archived && (
-              <div className="min-w-0 rounded-md bg-green-50 p-2.5 text-sm text-green-700">
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Archive className="h-4 w-4 shrink-0" />
-                  已完成归档
-                </div>
-                <p className="mt-1 break-words text-xs leading-5">
-                  项目：{result.archived.projectName}
-                  <br />
-                  文件名：<span className="font-mono break-all">{result.archived.archivedName}</span>
-                </p>
-              </div>
-            )}
+        {result.archived && (
+          <div className="min-w-0 rounded-md bg-green-50 p-2.5 text-sm text-green-700">
+            <div className="flex items-center gap-1.5 font-medium">
+              <Archive className="h-4 w-4 shrink-0" />
+              已按人工确认结果完成归档
+            </div>
+            <p className="mt-1 break-words text-xs leading-5">
+              项目：{result.archived.projectName}
+              <br />
+              文件名：<span className="font-mono break-all">{result.archived.archivedName}</span>
+            </p>
+          </div>
+        )}
 
-            {needsConfirmation && (
-              <div className="min-w-0 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-                <div>
-                  <p className="text-sm font-medium text-amber-900">请确认分类和归档名称</p>
-                  <p className="mt-1 text-xs leading-5 text-amber-700">
-                    该结果经过 AI 分析或歧义降级，确认分类位置和标题后才会归档。
-                  </p>
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <Label className="text-xs" htmlFor={`archive-category-${result.clientId}`}>
-                    归档分类
-                  </Label>
-                  <Select
-                    value={selectedCategoryId}
-                    disabled={isArchiving}
-                    onValueChange={setSelectedCategoryId}
-                  >
-                    <SelectTrigger
-                      id={`archive-category-${result.clientId}`}
-                      className="w-full bg-background"
+        {needsConfirmation && (
+          <div className="min-w-0 space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div>
+              <p className="text-sm font-medium text-amber-900">确认 Agent 建议并归档</p>
+              <p className="mt-1 text-xs leading-5 text-amber-700">
+                Agent 建议已作为默认选项；证据不足时请人工选择分类。确认后才会正式归档并更新项目 Context。
+              </p>
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label className="text-xs" htmlFor={`archive-category-${result.clientId}`}>
+                最终归档分类
+              </Label>
+              <Select
+                value={selectedCategoryId}
+                disabled={isArchiving}
+                onValueChange={setSelectedCategoryId}
+              >
+                <SelectTrigger id={`archive-category-${result.clientId}`} className="w-full bg-background">
+                  <SelectValue placeholder="请选择归档分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FLAT_FILE_CATEGORIES.map(category => (
+                    <SelectItem
+                      key={`${category.folderId}-${category.fileName}`}
+                      value={getCategorySelectionValue(category)}
                     >
-                      <SelectValue placeholder="请选择归档分类" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FLAT_FILE_CATEGORIES.map(category => (
-                        <SelectItem
-                          key={`${category.folderId}-${category.fileName}`}
-                          value={getCategorySelectionValue(category)}
-                        >
-                          {category.folderPath.slice(1).join(' / ')} / {category.fileName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <Label className="text-xs" htmlFor={`archive-title-${result.clientId}`}>
-                    档案标题（不含扩展名）
-                  </Label>
-                  <Input
-                    id={`archive-title-${result.clientId}`}
-                    className="w-full min-w-0 bg-background"
-                    value={archiveTitle}
-                    maxLength={50}
-                    disabled={isArchiving}
-                    onChange={(event) => setArchiveTitle(event.target.value)}
-                    placeholder={result.category.fileName}
-                  />
-                  <p className="break-words text-[11px] leading-4 text-muted-foreground">
-                    {archiveTitle.length}/50 字；扩展名及重名序号由系统自动补充。
-                  </p>
-                </div>
-                {result.archiveError && (
-                  <p className="break-words text-xs text-destructive">{result.archiveError}</p>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    disabled={isArchiving}
-                    onClick={() => onCancelArchive(result.clientId)}
-                  >
-                    取消归档
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="w-full"
-                    disabled={!archiveTitle.trim() || !selectedCategory || isArchiving}
-                    onClick={() => {
-                      if (selectedCategory) {
-                        onConfirmArchive(
-                          result.clientId,
-                          archiveTitle.trim(),
-                          selectedCategory
-                        );
-                      }
-                    }}
-                  >
-                    {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
-                    确认归档
-                  </Button>
-                </div>
-              </div>
+                      {category.folderPath.slice(1).join(' / ')} / {category.fileName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label className="text-xs" htmlFor={`archive-title-${result.clientId}`}>
+                档案标题（不含扩展名）
+              </Label>
+              <Input
+                id={`archive-title-${result.clientId}`}
+                className="w-full min-w-0 bg-background"
+                value={archiveTitle}
+                maxLength={50}
+                disabled={isArchiving}
+                onChange={(event) => setArchiveTitle(event.target.value)}
+                placeholder={agentCategory?.fileName || '请输入档案标题'}
+              />
+              <p className="break-words text-[11px] leading-4 text-muted-foreground">
+                {archiveTitle.length}/50 字；扩展名及重名序号由系统自动补充。
+              </p>
+            </div>
+            {result.archiveError && (
+              <p className="break-words text-xs text-destructive">{result.archiveError}</p>
             )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={isArchiving}
+                onClick={() => onCancelArchive(result.clientId)}
+              >
+                取消归档
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="w-full"
+                disabled={!archiveTitle.trim() || !selectedCategory || isArchiving}
+                onClick={() => {
+                  if (selectedCategory) {
+                    onConfirmArchive(result.clientId, archiveTitle.trim(), selectedCategory);
+                  }
+                }}
+              >
+                {isArchiving && <Loader2 className="h-4 w-4 animate-spin" />}
+                确认归档
+              </Button>
+            </div>
+          </div>
+        )}
 
-            {result.archiveStatus === 'cancelled' && (
-              <div className="flex items-center gap-2 rounded-md bg-muted p-2.5 text-sm text-muted-foreground">
-                <X className="h-4 w-4 shrink-0" />
-                已取消归档
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="break-words rounded-md bg-amber-50 p-2.5 text-sm leading-5 text-amber-700">
-            未能确定归档类别，请查看详细分析。
-          </p>
+        {result.archiveStatus === 'cancelled' && (
+          <div className="flex items-center gap-2 rounded-md bg-muted p-2.5 text-sm text-muted-foreground">
+            <X className="h-4 w-4 shrink-0" />
+            已取消归档
+          </div>
         )}
 
         <Button
@@ -852,41 +936,36 @@ function ClassifyResultItem({
           <DialogHeader className="shrink-0">
             <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
             <DialogDescription>
-              查看分类理由、文件内容摘要和完整处理过程
+              查看 Agent 证据、项目 Context 和处理过程
             </DialogDescription>
           </DialogHeader>
           <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
             <div className="space-y-4 pb-4">
-              <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">分类结果</p>
-                  <p className="mt-1 break-words text-sm font-medium">
-                    {result.category
-                      ? `${result.category.folderPath.join(' / ')} / ${result.category.fileName}`
-                      : '未能确定归档类别'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">分类置信度</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Progress value={result.confidence} className="h-1.5 w-28" />
-                    <span className="text-sm">{result.confidence}%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="text-sm font-medium">详细理由</h4>
-                <p className="whitespace-pre-wrap break-words rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
-                  {result.reasoning || '暂无详细理由'}
-                </p>
-              </div>
-
               {result.agentDecision && (
                 <AgentDecisionPanel
                   agent={result.agentDecision}
                   projectMemory={result.projectSessionMemory}
                 />
+              )}
+
+              {showLegacyClassification && legacyClassification && (
+                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-2 text-sm font-medium">
+                      <Zap className="h-4 w-4" />传统分类详情
+                    </h4>
+                    <Badge variant="outline">{legacyClassification.confidence}%</Badge>
+                  </div>
+                  <p className="break-words text-sm font-medium">
+                    {legacyClassification.category
+                      ? `${legacyClassification.category.folderPath.join(' / ')} / ${legacyClassification.category.fileName}`
+                      : '未能确定归档类别'}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {legacyClassification.reasoning || '暂无详细理由'}
+                  </p>
+                  <ClassifyProcessPanel process={result.process} />
+                </div>
               )}
 
               {result.contentPreview && (
@@ -898,12 +977,6 @@ function ClassifyResultItem({
                 </div>
               )}
 
-              {result.process && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">分类处理过程</h4>
-                  <ClassifyProcessPanel process={result.process} />
-                </div>
-              )}
             </div>
           </ScrollArea>
         </DialogContent>
@@ -1912,6 +1985,7 @@ export default function Home() {
   const [results, setResults] = useState<ClassifyResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [showLegacyClassification, setShowLegacyClassification] = useState(false);
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2202,8 +2276,7 @@ export default function Home() {
     const pendingResult = results.find(result => result.clientId === clientId);
     if (
       (!pendingResult?.sourceFile && !pendingResult?.sourceStorageKey) ||
-      !pendingResult.sourceProjectId ||
-      !pendingResult.category
+      !pendingResult.sourceProjectId
     ) {
       setResults(prev => prev.map(result =>
         result.clientId === clientId
@@ -2220,6 +2293,12 @@ export default function Home() {
     ));
 
     try {
+      const archiveConfidence =
+        pendingResult.agentDecision?.decision.confidence ??
+        pendingResult.confidence;
+      const archiveReasoning =
+        pendingResult.agentDecision?.decision.reasoning ??
+        pendingResult.reasoning;
       const response = pendingResult.sourceStorageKey
         ? await fetch('/api/archive', {
             method: 'POST',
@@ -2234,8 +2313,8 @@ export default function Home() {
               categoryName: selectedCategory.fileName,
               folderPath: selectedCategory.folderPath,
               archiveTitle,
-              confidence: pendingResult.confidence,
-              reasoning: pendingResult.reasoning,
+              confidence: archiveConfidence,
+              reasoning: archiveReasoning,
               sourcePath: pendingResult.sourcePath || pendingResult.fileName,
               documentFacts: pendingResult.documentFacts,
             }),
@@ -2248,8 +2327,8 @@ export default function Home() {
             formData.append('categoryName', selectedCategory.fileName);
             formData.append('folderPath', JSON.stringify(selectedCategory.folderPath));
             formData.append('archiveTitle', archiveTitle);
-            formData.append('confidence', String(pendingResult.confidence));
-            formData.append('reasoning', pendingResult.reasoning);
+            formData.append('confidence', String(archiveConfidence));
+            formData.append('reasoning', archiveReasoning);
             formData.append(
               'sourcePath',
               pendingResult.sourcePath || pendingResult.fileName
@@ -2460,8 +2539,9 @@ export default function Home() {
             fileSize: file.size,
             mimeType: file.type || 'application/octet-stream',
             projectId: selectedProjectId,
-            autoArchive: true,
+            autoArchive: false,
             agentDecision: true,
+            legacyDecision: showLegacyClassification,
             sourcePath: file.webkitRelativePath || file.name,
           }),
         });
@@ -2506,25 +2586,21 @@ export default function Home() {
             ...result,
             clientId,
             sourcePath: uploadedSourcePath,
-            sourceStorageKey: result.requiresArchiveConfirmation
-              ? uploadedStorageKey
-              : undefined,
+            legacyClassification:
+              result.classificationMode === 'comparison'
+                ? {
+                    category: result.category,
+                    confidence: result.confidence,
+                    reasoning: result.reasoning,
+                  }
+                : undefined,
+            requiresArchiveConfirmation: true,
+            sourceStorageKey: uploadedStorageKey,
             sourceMimeType: file.type || 'application/octet-stream',
             sourceProjectId: selectedProjectId,
-            archiveStatus: result.requiresArchiveConfirmation
-              ? 'pending'
-              : result.archived
-                ? 'archived'
-                : undefined,
+            archiveStatus: 'pending',
           },
         ]);
-        if (!result.requiresArchiveConfirmation && !result.archived) {
-          const params = new URLSearchParams({
-            storageKey: uploadedStorageKey,
-            projectId: selectedProjectId,
-          });
-          void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
-        }
       } catch (error) {
         if (chunkUploadId) {
           await fetch('/api/uploads/chunk', {
@@ -2552,6 +2628,7 @@ export default function Home() {
           clientId,
           fileName: file.name, fileSize: file.size, category: null, confidence: 0,
           reasoning: `文件处理失败：${errorMessage}`,
+          classificationMode: showLegacyClassification ? 'comparison' : 'agent',
           process: {
             step1_keywordMatch: { totalCategories: 0, matchedCategories: 0, details: [], threshold: 5, passed: false },
             finalDecision: { method: 'none' as const, explanation: `文件处理失败：${errorMessage}` }
@@ -2568,7 +2645,7 @@ export default function Home() {
     fetch('/api/projects')
       .then(r => r.json())
       .then(data => setProjects(data.projects || []));
-  }, [selectedProjectId, results]);
+  }, [selectedProjectId, results, showLegacyClassification]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const archiveDataMatchesSelection =
@@ -2820,7 +2897,7 @@ export default function Home() {
           </div>
 
           {/* Middle: Upload + Results */}
-          <div className="md:col-span-4 lg:col-span-5 space-y-4">
+          <div className="md:col-span-4 lg:col-span-4 space-y-4">
             {/* Upload Section */}
             <Card>
               <CardHeader>
@@ -2830,7 +2907,7 @@ export default function Home() {
                 </CardTitle>
                 <CardDescription>
                   {selectedProject
-                    ? `当前项目：${selectedProject.name} — 上传文件将自动分类并归档`
+                    ? `当前项目：${selectedProject.name} — Agent 分析后由你确认归档`
                     : '请先在左侧选择或创建一个项目'}
                 </CardDescription>
               </CardHeader>
@@ -2841,7 +2918,7 @@ export default function Home() {
                 />
                 {hasPendingArchiveConfirmation && (
                   <p className="mt-2 text-xs text-amber-700">
-                    请先确认或取消下方 AI 分析文件的归档名称。
+                    请先确认或取消下方 Agent 建议，再上传下一批文件。
                   </p>
                 )}
                 {isProcessing && (
@@ -2891,18 +2968,36 @@ export default function Home() {
           </div>
 
           {/* Right: Classification Results + Analysis History */}
-          <div className="md:col-span-6 lg:col-span-4 flex min-w-0 flex-col gap-4">
+          <div className="md:col-span-6 lg:col-span-5 flex min-w-0 flex-col gap-4">
             {/* Classification Results */}
             <Card className="flex min-w-0 flex-col overflow-hidden">
-              <CardHeader className="pb-3 shrink-0">
-                <CardTitle className="text-base md:text-lg flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  分类结果
-                </CardTitle>
+              <CardHeader className="shrink-0 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <CardTitle className="flex items-center gap-2 text-base md:text-lg">
+                    <Brain className="h-5 w-5 text-violet-600" />
+                    Agent 分类结果
+                  </CardTitle>
+                  <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
+                    <Label
+                      htmlFor="legacy-classification-toggle"
+                      className="cursor-pointer text-xs font-normal text-muted-foreground"
+                    >
+                      显示传统分类
+                    </Label>
+                    <Switch
+                      id="legacy-classification-toggle"
+                      checked={showLegacyClassification}
+                      onCheckedChange={setShowLegacyClassification}
+                      aria-label="运行并显示传统分类对照"
+                    />
+                  </div>
+                </div>
                 <CardDescription>
                   {results.length > 0
-                    ? `已处理 ${results.length} 个文件`
-                    : '上传文件后将在此显示本次分类结果'}
+                    ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}`
+                    : showLegacyClassification
+                      ? '上传后并列显示 Agent 与传统分类结果'
+                      : '传统分类默认关闭，上传后直接显示 Agent 建议'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">
@@ -2913,6 +3008,7 @@ export default function Home() {
                         <ClassifyResultItem
                           key={result.clientId}
                           result={result}
+                          showLegacyClassification={showLegacyClassification}
                           onConfirmArchive={handleConfirmArchive}
                           onCancelArchive={handleCancelArchive}
                         />

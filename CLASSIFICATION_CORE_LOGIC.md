@@ -8,7 +8,9 @@
 
 ## 一、整体流程
 
-系统采用“关键词初筛 → AI 消歧 → 人工确认或自动归档”的流程：
+分类 API 保留传统分类链路，但主页面默认采用“结构化事实抽取 → 项目 Context → Agent 建议 → 人工确认归档”的流程。用户可打开“显示传统分类”开关，让后续上传同时运行传统分类并与 Agent 结果并列对照。
+
+传统分类链路为：
 
 1. 从文件名和文件内容中提取分类关键词。
 2. 对所有档案类别计算关键词得分并排序。
@@ -18,6 +20,15 @@
 6. LLM 结果达到置信度阈值时，采用其类别，但归档前要求人工确认。
 7. LLM 结果不可靠时，暂用关键词最佳结果，并要求人工确认分类位置。
 8. 关键词和 LLM 均无法提供候选类别时，返回未分类结果。
+
+主页面的默认 Agent 模式：
+
+1. 请求 `/api/classify` 时传入 `agentDecision=true`、`legacyDecision=false` 和 `autoArchive=false`；
+2. 服务端跳过传统关键词/LLM 分类决策，使用最新正式 Context 运行 Agent；
+3. Agent 建议直接显示在外层结果卡片，并作为人工归档确认的默认分类；
+4. Agent 证据不足时不猜测，用户需要手动选择最终归档位置；
+5. 只有人工确认并归档成功后，文件事实才进入正式项目 Context；
+6. 打开传统分类对照开关后，后续上传改为 `legacyDecision=true`，外层并列展示两套结果和差异提示。
 
 ## 二、文件内容提取
 
@@ -117,7 +128,9 @@
 
 请求可同时提供 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`。返回值包含 `agentDecision` 及 `process.step0_agentOrchestration`，可查看最终状态、检索轮数、节点轨迹和调度层模型调用数。
 
-当前 Agent 调度层的 `llmCallCount` 固定为 0：LangGraph 负责工作流和工具调度，前置事实抽取器才可能调用一次 Coze LLM。Agent 仍为 shadow mode，不修改 legacy `category`，不触发额外归档；项目事实写入 Coze S3，但不写入 Supabase 业务表。
+当前 Agent 调度层的 `llmCallCount` 固定为 0：LangGraph 负责工作流和工具调度，前置事实抽取器才可能调用一次 Coze LLM。Agent 不触发自动归档；项目事实写入 Coze S3，但不写入 Supabase 业务表。在双轨对照模式中，Agent 与传统分类结果仍分别保存和展示，不会互相覆盖。
+
+主页面已进入 Agent-first 展示模式：传统分类开关默认关闭，此时 API 跳过传统分类决策，并把 Agent 建议作为顶层展示结果；打开开关后，下一次上传才同时运行并列对照。这里的 Shadow 边界指 Agent 仍不能自行写入档案或绕过人工确认，并不再表示 Agent 结果只能藏在详情弹窗中。
 
 ### Shadow mode：会话项目记忆
 
