@@ -44,7 +44,7 @@ export interface ClassificationAgentResult {
   graphVersion: string;
 }
 
-const GRAPH_VERSION = 'classification-agent-langgraph-v1';
+const GRAPH_VERSION = 'classification-agent-langgraph-v2';
 
 const AgentState = Annotation.Root({
   sourcePath: Annotation<string>(),

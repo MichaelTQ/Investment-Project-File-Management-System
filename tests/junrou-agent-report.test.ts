@@ -43,7 +43,7 @@ function reportCase(id: string): AgentReportCase {
 
 test('君柔Agent报告使用当前LangGraph版本并覆盖六个金标准', () => {
   assert.equal(report.schemaVersion, 1);
-  assert.equal(report.graphVersion, 'classification-agent-langgraph-v1');
+  assert.equal(report.graphVersion, 'classification-agent-langgraph-v2');
   assert.equal(report.mode, 'non-persistent-shadow');
   assert.equal(report.summary.evaluatedCaseCount, 6);
   assert.equal(report.cases.length, 6);
@@ -75,7 +75,7 @@ test('不同文档类型走不同Agent节点路径', () => {
   const resolution = reportCase('junrou-shareholder-resolution');
   assert.deepEqual(
     resolution.trace.map(step => step.node),
-    ['plan_evidence', 'context_decision', 'complete']
+    ['plan_evidence', 'retrieve_related_document', 'context_decision', 'complete']
   );
   assert.equal(resolution.matchesGold, true);
   assert.equal(resolution.safeAbstention, false);
@@ -95,6 +95,7 @@ test('Markdown报告明确记录shadow与现有环境边界', () => {
   assert.match(markdown, /LangGraph/);
   assert.match(markdown, /6\/6/);
   assert.match(markdown, /不写入 Supabase/);
-  assert.match(markdown, /不改变 Coze 环境/);
+  assert.match(markdown, /Coze S3/);
+  assert.match(markdown, /不会绕过人工确认自动归档/);
   assert.match(markdown, /调度层 LLM 调用：0/);
 });

@@ -146,7 +146,7 @@ test('文档事实 upsert 使用项目与源指纹作为幂等键', async () => 
   assert.equal(result.id, 'fact-1');
 });
 
-test('legacy shadow 分类决策保存策略版本和复核状态', async () => {
+test('阶段文件夹决策通过旧物理列保存策略版本和复核状态', async () => {
   let capturedRow: Record<string, unknown> | undefined;
   const fakeClient = {
     from(table: string) {
@@ -173,24 +173,24 @@ test('legacy shadow 分类决策保存策略版本和复核状态', async () => 
     {
       projectId: 'project-1',
       documentFactId: 'fact-1',
-      selectedCategoryId: 'investment-implementation',
-      selectedCategoryName: '项目公司章程',
-      selectedFolderPath: ['投资项目档案', '投资实施'],
-      candidateCategories: [],
+      selectedFolderId: 'investment-implementation',
+      selectedFolderName: '投资实施',
+      selectedFolderPath: ['投资项目档案', '基金投资及投资执行', '投资实施'],
+      candidateFolders: [],
       evidence: ['注册资本发生变化'],
       contradictions: [],
       decisionScore: 82,
-      decisionSource: 'llm',
+      decisionSource: 'context',
       reasoning: '测试',
       modelVersion: 'test-model',
-      policyVersion: 'legacy-classification-v1',
+      policyVersion: 'stage-folder-classification-v5',
       requiresReview: true,
     },
     fakeClient
   );
 
   assert.equal(id, 'decision-1');
-  assert.equal(capturedRow?.policy_version, 'legacy-classification-v1');
+  assert.equal(capturedRow?.policy_version, 'stage-folder-classification-v5');
   assert.equal(capturedRow?.review_status, 'pending');
   assert.equal(capturedRow?.document_fact_id, 'fact-1');
 });

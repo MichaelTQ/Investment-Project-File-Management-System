@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -10,7 +9,6 @@ import { Separator } from '@/components/ui/separator';
 import { 
   Folder, 
   FolderOpen, 
-  FileText, 
   Upload, 
   CheckCircle2, 
   AlertCircle,
@@ -19,12 +17,12 @@ import {
   Loader2,
   ArrowRight
 } from 'lucide-react';
-import { FOLDER_STRUCTURE, type FolderNode, type FlatFileCategory } from '@/lib/folder-structure';
+import { FOLDER_STRUCTURE, type FolderNode, type ArchiveFolder } from '@/lib/folder-structure';
 
 interface ClassifyResult {
   fileName: string;
   fileSize: number;
-  category: FlatFileCategory | null;
+  targetFolder: ArchiveFolder | null;
   confidence: number;
   reasoning: string;
   contentPreview?: string;
@@ -44,7 +42,6 @@ function FolderTree({
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
-  const hasFiles = node.files && node.files.length > 0;
   const isSelected = selectedFolder === node.id;
 
   return (
@@ -70,7 +67,6 @@ function FolderTree({
           <Folder className="h-4 w-4 text-muted-foreground" />
         )}
         <span className="text-sm font-medium">{node.name}</span>
-        {hasFiles && <Badge variant="outline" className="ml-auto text-xs">{node.files?.length}</Badge>}
       </div>
       
       {isOpen && hasChildren && (
@@ -87,16 +83,6 @@ function FolderTree({
         </div>
       )}
       
-      {isOpen && hasFiles && (
-        <div style={{ paddingLeft: `${(level + 1) * 16 + 24}px` }}>
-          {node.files!.map((file, idx) => (
-            <div key={idx} className="flex items-center gap-2 py-1 text-muted-foreground">
-              <FileText className="h-3 w-3" />
-              <span className="text-xs">{file.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -164,11 +150,11 @@ function UploadZone({ onFileUpload }: { onFileUpload: (files: FileList) => void 
 // 分类结果项
 function ClassifyResultItem({ result }: { result: ClassifyResult }) {
   return (
-    <Card className={`transition-all ${result.category ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'}`}>
+    <Card className={`transition-all ${result.targetFolder ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-amber-500'}`}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-lg ${result.category ? 'bg-green-100' : 'bg-amber-100'}`}>
-            {result.category ? (
+          <div className={`p-2 rounded-lg ${result.targetFolder ? 'bg-green-100' : 'bg-amber-100'}`}>
+            {result.targetFolder ? (
               <CheckCircle2 className="h-5 w-5 text-green-600" />
             ) : (
               <AlertCircle className="h-5 w-5 text-amber-600" />
@@ -182,12 +168,12 @@ function ClassifyResultItem({ result }: { result: ClassifyResult }) {
               </span>
             </div>
             
-            {result.category ? (
+            {result.targetFolder ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
                   <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   <span className="text-primary font-medium">
-                    {result.category.folderPath.join(' / ')} / {result.category.fileName}
+                    {result.targetFolder.folderPath.join(' / ')}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -248,11 +234,11 @@ export default function Home() {
 
         const result = await response.json();
         setResults(prev => [...prev, result]);
-      } catch (error) {
+      } catch {
         setResults(prev => [...prev, {
           fileName: file.name,
           fileSize: file.size,
-          category: null,
+          targetFolder: null,
           confidence: 0,
           reasoning: '文件处理失败，请重试'
         }]);

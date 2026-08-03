@@ -5,21 +5,11 @@ import {
   Config,
   HeaderUtils,
   type ContentPart,
-  type Message,
 } from 'coze-coding-dev-sdk';
 import {
-  ARCHIVE_CLASSIFICATION_TARGETS,
-  getCategoriesForBusinessStage,
-  type FlatFileCategory,
+  getFolderForBusinessStage,
+  type ArchiveFolder,
 } from '@/lib/folder-structure';
-import {
-  assessKeywordMatches,
-  getCategoryByLlmIndex,
-  KEYWORD_SCORE_THRESHOLD,
-  LLM_CONFIDENCE_THRESHOLD,
-  matchByKeywords,
-  normalizeConfidence,
-} from '@/lib/classification';
 import {
   DOCUMENT_FACTS_EXTRACTOR_VERSION,
   DOCUMENT_FACTS_MODEL,
@@ -30,7 +20,6 @@ import {
   inferBusinessStage,
   type BusinessStageDecision,
 } from '@/lib/classification/business-stage';
-import { getCategoryEvidencePolicy } from '@/lib/classification/category-policies';
 import {
   decideWithProjectContext,
   parseProjectContextSnapshot,
@@ -66,16 +55,6 @@ export const runtime = 'nodejs';
 
 /** 大文件阈值：超过此大小的 multipart 文件先上传 S3 临时目录，避免 Base64 膨胀导致 502 */
 const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
-
-// 关键词匹配详情
-interface KeywordMatchDetail {
-  categoryName: string;
-  folderPath: string[];
-  score: number;
-  matchedKeywords: string[];
-  fileNameMatches: string[];
-  contentMatches: string[];
-}
 
 // 分类过程详情
 interface ClassifyProcess {
@@ -131,34 +110,13 @@ interface ClassifyProcess {
     >['latestEvidencedStage'];
     error?: string;
   };
-  step1_keywordMatch: {
-    totalCategories: number;
-    matchedCategories: number;
-    details: KeywordMatchDetail[];
-    bestMatch?: KeywordMatchDetail;
-    threshold: number;
-    scoreGap?: number;
-    ambiguous?: boolean;
-    passed: boolean;
-  };
-  step2_llmAnalysis?: {
-    triggered: boolean;
-    reason: string;
-    result?: {
-      categoryIndex: number | null;
-      categoryName: string;
-      confidence: number;
-      reasoning: string;
-      suggestedArchiveTitle: string;
-    };
-  };
   decisionPersistence?: {
     status: 'success' | 'failed';
     recordId?: string;
     error?: string;
   };
   finalDecision: {
-    method: 'agent' | 'keyword' | 'llm' | 'fallback' | 'none';
+    method: 'agent' | 'stage' | 'none';
     explanation: string;
   };
 }
@@ -167,7 +125,7 @@ interface ClassifyProcess {
 interface ClassifyResult {
   fileName: string;
   fileSize: number;
-  category: FlatFileCategory | null;
+  targetFolder: ArchiveFolder | null;
   confidence: number;
   reasoning: string;
   contentPreview?: string;
@@ -279,200 +237,6 @@ async function extractScannedPdfText(
 }
 
 // 使用 LLM 进行智能分类
-async function classifyWithLLM(
-  fileName: string,
-  contentText: string,
-  projectName: string,
-  customHeaders: Record<string, string>,
-  categories: FlatFileCategory[],
-  lockedBusinessStage?: string,
-  imageDataUrl?: string
-): Promise<{
-  categoryIndex: number | null;
-  category: FlatFileCategory | null;
-  categoryName: string;
-  confidence: number;
-  reasoning: string;
-  suggestedArchiveTitle: string;
-}> {
-  const config = new Config();
-  const client = new LLMClient(config, customHeaders);
-
-  const categoryOptions = categories.map((cat, index) =>
-    `${index + 1}. ${cat.folderPath.join('/')} / ${cat.fileName} (关键词: ${cat.keywords.join(', ')})`
-  ).join('\n');
-
-  const systemPrompt = `你是一个专业的投资项目档案分类与命名助手。
-
-你的任务包括：
-1. 根据文件名、文件文字内容以及可能提供的图片，判断文件所属的档案分类
-2. 为文件生成一个准确、清晰、方便检索的建议档案标题
-
-以下是可选的归档位置：
-${categoryOptions}
-
-请严格从以上分类中选择，不得自行创造新的分类。
-
-${lockedBusinessStage
-    ? `【阶段锁定】系统已根据文件事实将业务阶段锁定为 ${lockedBusinessStage}。以上候选均属于该阶段，不得改选其他业务阶段。如果没有更准确的细分类型，必须选择该阶段的“其他材料”安全兜底项。`
-    : '【阶段安全】如果无法确定业务阶段，不得仅凭文档类型猜测其他阶段的同名类别。'}
-
-【分类规则】
-1. 综合判断文件名、正文主题、文件结构和可见图片内容
-2. 文件名只能作为线索，不能在文件内容与文件名冲突时盲目采用文件名
-3. 如果提供图片，需要分析图片中的场景、主体、物体、印章、证件和可见文字
-4. 选择语义最匹配的归档位置
-5. 无法充分判断时降低置信度，不得编造内容
-
-【建议档案标题规则】
-建议标题必须比分类名称更具体。生成标题前，按以下顺序提取核心信息：
-1. 文件编号、英文简称或封面标题，例如“NDA”“BP”“第8号决议”
-2. 文件涉及的全部主体，例如目标公司、被投企业、协议双方、交易对方、基金或项目主体
-3. 文件对应的业务期间，例如“2025年度”“2026年上半年”“2024-2026年”
-4. 文件的具体事项，例如“A轮增资”“苏州工厂实地调研”“重大风险事件”
-5. 文件类型，例如“财务尽调报告”“增资协议”“投委会决议”“保密协议”
-6. 文件中明确出现的版本或状态，例如“签署版”“最终版”“修订版”
-
-推荐标题结构：
-文件编号或英文简称 + 非项目方核心主体 + 业务期间或关键事项 + 文件类型 + 明确的版本信息
-
-【协议、合同及决议类文件的强制规则】
-1. 必须识别封面、标题或正文中的文件编号、英文简称和签约主体
-2. 将签约主体与当前项目名称“${projectName || '未提供'}”进行语义比较
-3. 与当前项目名称相同或高度相关的主体可以省略，因为最终文件名会自动附加项目名称
-4. 与当前项目名称不同的另一方主体必须保留，不得只输出“保密协议”“增资协议”等分类名称
-5. 文件中明确出现“NDA”“BP”等编号或英文简称时，必须保留在建议标题中
-6. 公司名称可以去掉“深圳”“北京”等行政区划前缀，但应保留足以识别主体的核心商号和公司性质
-7. 默认按信息顺序直接拼接；只有信息边界不清晰时才使用短横线分隔
-
-标题示例：
-星云科技-2025年度财务尽调报告
-远航医疗-A轮增资协议-签署版
-华辰新能源-2026年上半年投后管理报告
-星云科技-苏州工厂实地调研照片
-远航医疗-重大风险事件处置方案
-NDA国创致远私募股权基金管理有限公司保密协议
-
-协议类示例：
-当前项目名称为“君柔”，文件封面出现“编号：NDA”“深圳国创致远私募股权基金管理有限公司”“深圳君柔科技有限公司”“保密协议”时：
-- “深圳君柔科技有限公司”与项目名称重复，应省略
-- “深圳国创致远私募股权基金管理有限公司”是非项目方，应保留其核心主体名称
-- “NDA”是明确编号，应保留
-- 正确建议标题为“NDA国创致远私募股权基金管理有限公司保密协议”
-- 错误建议标题为“保密协议”
-
-生成标题时必须遵守：
-1. 标题只能使用文件中真实存在的信息，不得猜测公司名称、年份、轮次、地点或版本
-2. 公司全称过长时，可以保留核心商号和公司性质，但不得缩短到无法识别主体
-3. 如果主体名称与当前项目名称“${projectName || '未提供'}”高度重复，可以不在建议标题中重复，因为系统会在最终文件名中自动添加项目名称
-4. 如果文件涉及的主体与当前项目名称不同，应当保留该主体名称
-5. 业务年份指文件内容对应的年份，不是上传时间或归档时间
-6. 不包含系统归档日期和文件扩展名
-7. 不使用 / \\ : * ? " < > | 等非法字符
-8. 不机械复制“扫描件”“新建文档”“最终最终版”等无意义内容
-9. 建议控制在15至40个字符，最长不得超过50个字符
-10. 只要文件中存在可识别的编号、主体、期间、事项或版本，建议标题就不得仅等于分类名称
-11. 只有文件中完全没有可核实的核心信息时，才允许使用所选分类名称
-
-【输出前自检】
-输出前必须检查 suggestedArchiveTitle：
-1. 是否遗漏了文件中明确出现的编号或英文简称
-2. 是否遗漏了与当前项目不同的公司、交易对方或协议另一方
-3. 是否错误地只返回了分类名称
-4. 是否包含了文件中不存在的猜测信息
-如有任一问题，必须先重写标题再输出。
-
-【输出要求】
-只输出一个合法JSON对象，不要使用Markdown代码块，不要添加任何额外说明。
-
-格式必须为：
-{
-  "categoryIndex": 对应归档位置的数字编号,
-  "confidence": 0到100之间的数字,
-  "reasoning": "说明分类依据，包括文件名、正文或图片中的关键信息",
-  "suggestedArchiveTitle": "建议档案标题"
-}`;
-
-  const userPrompt = `请分析以下文件，选择归档分类并生成建议档案标题。
-
-当前项目名称：
-${projectName || '未提供'}
-
-原始文件名：
-${fileName}
-
-提取到的文件内容（前2000字）：
-${contentText.slice(0, 2000)}
-
-${imageDataUrl
-    ? '已附上原始图片。请结合图片中的场景、主体、物体、印章、证件和可见文字进行判断，并在理由中说明视觉依据。'
-    : '本次没有提供图片，请根据文件名和提取到的文字判断。'}
-
-请严格按照系统要求，只返回JSON对象。`;
-
-  const userContent: Message['content'] = imageDataUrl
-    ? [
-        { type: 'text', text: userPrompt },
-        {
-          type: 'image_url',
-          image_url: {
-            url: imageDataUrl,
-            detail: 'high',
-          },
-        },
-      ]
-    : userPrompt;
-
-  const messages: Message[] = [
-    { role: 'system', content: systemPrompt },
-    {
-      role: 'user',
-      content: userContent,
-    }
-  ];
-
-  try {
-    const response = await client.invoke(messages, {
-      model: 'doubao-seed-2-0-lite-260215',
-      temperature: 0.3,
-    });
-
-    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const { categoryIndex, category } = getCategoryByLlmIndex(
-        parsed.categoryIndex,
-        categories
-      );
-      return {
-        categoryIndex,
-        category,
-        categoryName: category?.fileName || '',
-        confidence: normalizeConfidence(parsed.confidence),
-        reasoning:
-          typeof parsed.reasoning === 'string' && parsed.reasoning.trim()
-            ? parsed.reasoning.trim()
-            : 'AI分析判断',
-        suggestedArchiveTitle:
-          typeof parsed.suggestedArchiveTitle === 'string'
-            ? parsed.suggestedArchiveTitle.trim()
-            : ''
-      };
-    }
-  } catch (error) {
-    console.error('LLM classification error:', error);
-  }
-
-  return {
-    categoryIndex: null,
-    category: null,
-    categoryName: '',
-    confidence: 0,
-    reasoning: 'AI分类失败',
-    suggestedArchiveTitle: ''
-  };
-}
-
 export async function POST(request: NextRequest) {
   try {
     const isJsonRequest = request.headers
@@ -870,29 +634,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 第一步：先判业务阶段。阶段明确后，传统分类也只能在该阶段内选择。
+    // 最终只判断业务阶段；阶段文件夹本身就是归档目标。
     const legacyStageDecision = inferBusinessStage({
       sourcePath: sourcePath || fileName,
       text: contentText,
+      facts: documentFacts,
+      projectContext,
+      relatedDocuments: relatedDocumentFacts,
     });
-    const legacyCategories = legacyStageDecision.selectedStage
-      ? getCategoriesForBusinessStage(legacyStageDecision.selectedStage)
-      : ARCHIVE_CLASSIFICATION_TARGETS;
-    const keywordMatches = matchByKeywords(
-      fileName,
-      contentText,
-      legacyCategories
-    );
-    const keywordAssessment = assessKeywordMatches(keywordMatches);
-
-    const keywordMatchDetails: KeywordMatchDetail[] = keywordMatches.slice(0, 5).map(m => ({
-      categoryName: m.category.fileName,
-      folderPath: m.category.folderPath,
-      score: m.score,
-      matchedKeywords: m.matchedKeywords,
-      fileNameMatches: m.fileNameMatches,
-      contentMatches: m.contentMatches
-    }));
 
     const process: ClassifyProcess = {
       step0_businessStage: legacyStageDecision,
@@ -912,184 +661,46 @@ export async function POST(request: NextRequest) {
         : undefined,
       step0_agentOrchestration: agentOrchestrationStep,
       step0_projectSessionMemory: projectSessionMemoryStep,
-      step1_keywordMatch: {
-        totalCategories: legacyCategories.length,
-        matchedCategories: keywordMatches.length,
-        details: keywordMatchDetails,
-        bestMatch: keywordMatchDetails[0],
-        threshold: KEYWORD_SCORE_THRESHOLD,
-        scoreGap: keywordAssessment.scoreGap ?? undefined,
-        ambiguous: keywordAssessment.ambiguous,
-        passed:
-          Boolean(legacyStageDecision.selectedStage) &&
-          !imageDataUrl &&
-          keywordAssessment.passed
-      },
-      finalDecision: {
-        method: 'none',
-        explanation: ''
-      }
+      finalDecision: { method: 'none', explanation: '' },
     };
 
-    let result: ClassifyResult;
+    const agentDecision = agentClassificationResult?.decision;
+    const targetFolder = !runLegacyDecision
+      ? agentDecision?.selectedFolder ?? null
+      : legacyStageDecision.selectedStage
+        ? getFolderForBusinessStage(legacyStageDecision.selectedStage)
+        : null;
 
-    if (!runLegacyDecision) {
-      const agentDecision = agentClassificationResult?.decision;
-      const selectedCategory = agentDecision?.selectedCategory ?? null;
+    if (targetFolder) {
       process.finalDecision = {
-        method: 'agent',
-        explanation: selectedCategory
-          ? `Agent 使用项目 Context 形成「${selectedCategory.fileName}」建议；正式归档前仍需人工确认`
-          : 'Agent 当前证据不足或存在冲突，需要人工选择归档位置',
-      };
-      result = {
-        fileName,
-        fileSize,
-        category: selectedCategory,
-        confidence: agentDecision?.confidence ?? 0,
-        reasoning:
-          agentDecision?.reasoning ??
-          'Agent 未能形成有效建议，请检查事实抽取和项目 Context。',
-        contentPreview,
-        process,
-        classificationMode: 'agent',
-        suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
-        requiresArchiveConfirmation: true,
-      };
-      // 传统分类关闭时，Agent 建议作为唯一外层结果。
-    } else if (!legacyStageDecision.selectedStage) {
-      process.finalDecision = {
-        method: 'none',
-        explanation:
-          '业务阶段无法唯一确定，传统分类仅保留关键词诊断，不再从全局同名文件类型中猜测归档目录',
-      };
-      result = {
-        fileName,
-        fileSize,
-        category: null,
-        confidence: legacyStageDecision.confidence,
-        reasoning: legacyStageDecision.reasoning,
-        contentPreview,
-        process,
-        classificationMode: 'comparison',
-        requiresArchiveConfirmation: true,
-      };
-    } else if (!imageDataUrl && keywordAssessment.passed) {
-      const bestMatch = keywordMatches[0];
-      const evidencePolicy = getCategoryEvidencePolicy(
-        bestMatch.category.folderId,
-        bestMatch.category.fileName
-      );
-      const requiresPolicyReview =
-        evidencePolicy?.defaultRequiresHumanReview ?? false;
-      process.finalDecision = {
-        method: 'keyword',
-        explanation: requiresPolicyReview
-          ? `关键词匹配得分 ${bestMatch.score} 分，选择「${bestMatch.category.fileName}」；该类别按证据策略需人工复核后归档`
-          : `关键词匹配得分 ${bestMatch.score} 分，且领先候选类别 ${keywordAssessment.scoreGap ?? bestMatch.score} 分，直接使用关键词匹配结果`
-      };
-
-      result = {
-        fileName,
-        fileSize,
-        category: bestMatch.category,
-        confidence: Math.min(bestMatch.score * 10, 95),
-        reasoning: `文件名和内容匹配关键词："${bestMatch.matchedKeywords.join('、')}"，归类到「${bestMatch.category.fileName}」`,
-        contentPreview,
-        process,
-        classificationMode: 'comparison',
-        requiresArchiveConfirmation: requiresPolicyReview
+        method: !runLegacyDecision ? 'agent' : 'stage',
+        explanation: !runLegacyDecision
+          ? `Agent 建议归入“${targetFolder.folderPath.slice(1).join(' / ')}”；正式归档前由用户确认`
+          : `业务阶段已确定，直接归入“${targetFolder.folderPath.slice(1).join(' / ')}”`,
       };
     } else {
-      // 第二步：使用 LLM 进行智能分析
-      process.step2_llmAnalysis = {
-        triggered: true,
-        reason: imageDataUrl
-          ? '检测到图片文件，需要 AI 分析画面内容和可见文字'
-          : keywordAssessment.ambiguous
-            ? `关键词最高分与次高分差距不足 ${keywordAssessment.scoreGap ?? 0} 分，存在多个相近类别，需要 AI 消歧`
-          : `关键词匹配得分不足（最高 ${keywordMatches[0]?.score || 0} 分 < 阈值 ${KEYWORD_SCORE_THRESHOLD} 分），需要 AI 智能分析`
+      process.finalDecision = {
+        method: 'none',
+        explanation: '业务阶段无法唯一确定，需要人工选择阶段文件夹',
       };
-
-      const llmResult = await classifyWithLLM(
-        fileName,
-        contentText,
-        project?.name || '',
-        customHeaders,
-        legacyCategories,
-        legacyStageDecision.selectedStage ?? undefined,
-        imageDataUrl
-      );
-
-      process.step2_llmAnalysis.result = {
-        categoryIndex: llmResult.categoryIndex,
-        categoryName: llmResult.categoryName,
-        confidence: llmResult.confidence,
-        reasoning: llmResult.reasoning,
-        suggestedArchiveTitle: llmResult.suggestedArchiveTitle,
-      };
-
-      if (
-        llmResult.category &&
-        llmResult.confidence >= LLM_CONFIDENCE_THRESHOLD
-      ) {
-        const finalCategory = llmResult.category;
-
-        process.finalDecision = {
-          method: 'llm',
-          explanation: `AI 分析置信度 ${llmResult.confidence}%，选择「${llmResult.categoryName}」作为归档位置；请确认分类位置和建议名称后归档`
-        };
-
-        result = {
-          fileName,
-          fileSize,
-          category: finalCategory,
-          confidence: llmResult.confidence,
-          reasoning: llmResult.reasoning,
-          contentPreview,
-          process,
-          classificationMode: 'comparison',
-          suggestedArchiveTitle:
-            llmResult.suggestedArchiveTitle || finalCategory?.fileName || '',
-          requiresArchiveConfirmation: Boolean(finalCategory)
-        };
-      } else if (keywordMatches.length > 0) {
-        process.finalDecision = {
-          method: 'fallback',
-          explanation: `AI 分析置信度不足（${llmResult.confidence}% < ${LLM_CONFIDENCE_THRESHOLD}%），暂用关键词最佳结果；归档前必须人工确认分类位置`
-        };
-
-        result = {
-          fileName,
-          fileSize,
-          category: keywordMatches[0].category,
-          confidence: Math.min(keywordMatches[0].score * 10, 95),
-          reasoning: `根据关键词匹配，归类到「${keywordMatches[0].category.fileName}」`,
-          contentPreview,
-          process,
-          classificationMode: 'comparison',
-          suggestedArchiveTitle: keywordMatches[0].category.fileName,
-          requiresArchiveConfirmation: true
-        };
-      } else {
-        process.finalDecision = {
-          method: 'none',
-          explanation: '关键词匹配和 AI 分析均无法确定分类，需要手动分类'
-        };
-
-        result = {
-          fileName,
-          fileSize,
-          category: null,
-          confidence: 0,
-          reasoning: '无法确定文件归档位置，请手动分类。文件内容未匹配任何已知分类关键词。',
-          contentPreview,
-          process,
-          classificationMode: 'comparison',
-        };
-      }
     }
 
+    const result: ClassifyResult = {
+      fileName,
+      fileSize,
+      targetFolder,
+      confidence: !runLegacyDecision
+        ? agentDecision?.confidence ?? 0
+        : legacyStageDecision.confidence,
+      reasoning: !runLegacyDecision
+        ? agentDecision?.reasoning ?? 'Agent 未能确定业务阶段。'
+        : legacyStageDecision.reasoning,
+      contentPreview,
+      process,
+      classificationMode: !runLegacyDecision ? 'agent' : 'comparison',
+      suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
+      requiresArchiveConfirmation: !runLegacyDecision || !targetFolder,
+    };
     if (documentFacts) result.documentFacts = documentFacts;
     result.documentType = documentFacts?.documentType;
     result.businessStage =
@@ -1110,7 +721,7 @@ export async function POST(request: NextRequest) {
     if (
       autoArchive &&
       projectId &&
-      result.category &&
+      result.targetFolder &&
       !result.requiresArchiveConfirmation
     ) {
       if (project) {
@@ -1123,9 +734,8 @@ export async function POST(request: NextRequest) {
               fileSize,
               projectId,
               projectName: project.name,
-              categoryId: result.category.folderId,
-              categoryName: result.category.fileName,
-              folderPath: result.category.folderPath,
+              folderId: result.targetFolder.folderId,
+              folderPath: result.targetFolder.folderPath,
               mimeType,
               confidence: result.confidence,
               reasoning: result.reasoning,
@@ -1136,9 +746,8 @@ export async function POST(request: NextRequest) {
               originalName: fileName,
               projectId,
               projectName: project.name,
-              categoryId: result.category.folderId,
-              categoryName: result.category.fileName,
-              folderPath: result.category.folderPath,
+              folderId: result.targetFolder.folderId,
+              folderPath: result.targetFolder.folderPath,
               mimeType,
               confidence: result.confidence,
               reasoning: result.reasoning,
@@ -1218,46 +827,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 记录当前 legacy 分类器的 shadow 决策，用于后续与上下文分类器对比。
+    // 记录阶段文件夹决策，数据库旧列名仅由存储适配器内部兼容。
     if (persistFacts && project) {
       try {
         const decisionId = await createClassificationDecisionRecord({
           projectId: project.id,
           archivedFileId: result.archived?.id,
           documentFactId: persistedDocumentFactId,
-          selectedCategoryId: result.category?.folderId,
-          selectedCategoryName: result.category?.fileName,
-          selectedFolderPath: result.category?.folderPath,
-          candidateCategories: keywordMatchDetails.map(candidate => ({
-            categoryName: candidate.categoryName,
-            folderPath: candidate.folderPath,
-            score: candidate.score,
-            matchedKeywords: candidate.matchedKeywords,
-          })),
-          evidence: [
-            ...(documentFacts?.evidenceQuotes ?? []),
-            ...keywordMatchDetails[0]?.matchedKeywords.map(
-              keyword => `关键词命中：${keyword}`
-            ) ?? [],
-          ],
+          selectedFolderId: result.targetFolder?.folderId,
+          selectedFolderName: result.targetFolder?.name,
+          selectedFolderPath: result.targetFolder?.folderPath,
+          candidateFolders: result.targetFolder
+            ? [{
+                folderId: result.targetFolder.folderId,
+                folderPath: result.targetFolder.folderPath,
+                score: result.confidence,
+              }]
+            : [],
+          evidence: documentFacts?.evidenceQuotes ?? [],
           contradictions: [],
           decisionScore: result.confidence,
           decisionSource:
             process.finalDecision.method === 'agent'
               ? 'context'
-              : process.finalDecision.method,
+              : process.finalDecision.method === 'stage'
+                ? 'context'
+                : 'none',
           reasoning: result.reasoning,
-          modelVersion:
-            process.finalDecision.method === 'llm' ||
-            process.finalDecision.method === 'fallback'
-              ? 'doubao-seed-2-0-lite-260215'
-              : undefined,
           policyVersion:
             process.finalDecision.method === 'agent'
               ? agentClassificationResult?.graphVersion ?? 'classification-agent'
-              : 'legacy-classification-v1',
+              : 'stage-folder-classification-v5',
           requiresReview:
-            Boolean(result.requiresArchiveConfirmation) || !result.category,
+            Boolean(result.requiresArchiveConfirmation) || !result.targetFolder,
         });
         process.decisionPersistence = {
           status: 'success',

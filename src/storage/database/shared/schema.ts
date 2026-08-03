@@ -48,6 +48,7 @@ export const archivedFiles = pgTable(
     original_name: varchar("original_name", { length: 512 }).notNull(),
     archived_name: varchar("archived_name", { length: 512 }).notNull(),
     storage_key: varchar("storage_key", { length: 1024 }).notNull(),
+    // Coze 托管库兼容列：业务层分别视为 folder_id 与路径末级名称。
     category_id: varchar("category_id", { length: 128 }).notNull(),
     category_name: varchar("category_name", { length: 255 }).notNull(),
     folder_path: jsonb("folder_path").notNull(),
@@ -181,9 +182,11 @@ export const classificationDecisions = pgTable(
       () => documentFacts.id,
       { onDelete: "set null" }
     ),
+    // Coze 托管库兼容列：业务层使用 selectedFolderId/selectedFolderName。
     selected_category_id: varchar("selected_category_id", { length: 128 }),
     selected_category_name: varchar("selected_category_name", { length: 255 }),
     selected_folder_path: jsonb("selected_folder_path"),
+    // 兼容物理列，当前载荷是 candidateFolders。
     candidate_categories: jsonb("candidate_categories").default(sql`'[]'::jsonb`).notNull(),
     evidence: jsonb("evidence").default(sql`'[]'::jsonb`).notNull(),
     contradictions: jsonb("contradictions").default(sql`'[]'::jsonb`).notNull(),

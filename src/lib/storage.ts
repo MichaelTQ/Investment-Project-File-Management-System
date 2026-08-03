@@ -24,8 +24,7 @@ export interface ArchivedFile {
   archivedName: string;
   projectId: string;
   projectName: string;
-  categoryId: string;
-  categoryName: string;
+  folderId: string;
   folderPath: string[];
   fileSize: number;
   mimeType: string;
@@ -516,7 +515,6 @@ function sanitizeOriginalArchivedName(
 async function buildArchivedName(params: {
   originalName: string;
   archiveTitle?: string;
-  categoryName: string;
   projectName: string;
   projectId: string;
   folderPath: string[];
@@ -525,16 +523,17 @@ async function buildArchivedName(params: {
   const ext = dotIndex > 0 ? params.originalName.slice(dotIndex + 1) : "";
   const extensionSuffix = ext ? `.${ext}` : "";
   const hasConfirmedTitle = Boolean(params.archiveTitle?.trim());
+  const folderName = params.folderPath.at(-1) ?? '文件';
 
   const baseName = hasConfirmedTitle
     ? `${sanitizeArchiveTitle(
         params.archiveTitle,
-        params.categoryName,
+        folderName,
         ext
       )}${extensionSuffix}`
     : sanitizeOriginalArchivedName(
         params.originalName,
-        `${params.categoryName}${extensionSuffix}`
+        `${folderName}${extensionSuffix}`
       );
 
   return dedupeArchivedName(
@@ -552,8 +551,7 @@ export async function archiveFile(params: {
   mimeType: string;
   projectId: string;
   projectName: string;
-  categoryId: string;
-  categoryName: string;
+  folderId: string;
   folderPath: string[];
   confidence: number;
   reasoning: string;
@@ -562,7 +560,7 @@ export async function archiveFile(params: {
   const db = getDb();
   const s3 = getS3Storage();
 
-  // 1. 关键词分类保留原名；只有提供了确认标题时才执行 LLM 命名。
+  // 1. 未确认标题时保留原名；确认 archiveTitle 后才执行重命名。
   const archivedName = await buildArchivedName(params);
 
   // 2. 上传到 S3 对象存储
@@ -582,8 +580,9 @@ export async function archiveFile(params: {
       archived_name: archivedName,
       project_id: params.projectId,
       project_name: params.projectName,
-      category_id: params.categoryId,
-      category_name: params.categoryName,
+      // 当前 Coze 托管库仍使用旧列名；它们只承载文件夹信息。
+      category_id: params.folderId,
+      category_name: params.folderPath.at(-1) ?? '',
       folder_path: params.folderPath,
       file_size: params.fileBuffer.length,
       mime_type: params.mimeType,
@@ -609,8 +608,7 @@ export async function archiveFile(params: {
     archivedName: data.archived_name,
     projectId: data.project_id,
     projectName: data.project_name,
-    categoryId: data.category_id,
-    categoryName: data.category_name,
+    folderId: data.category_id,
     folderPath: data.folder_path,
     fileSize: data.file_size,
     mimeType: data.mime_type,
@@ -629,8 +627,7 @@ export async function archiveStoredFile(params: {
   mimeType: string;
   projectId: string;
   projectName: string;
-  categoryId: string;
-  categoryName: string;
+  folderId: string;
   folderPath: string[];
   confidence: number;
   reasoning: string;
@@ -650,8 +647,8 @@ export async function archiveStoredFile(params: {
       archived_name: archivedName,
       project_id: params.projectId,
       project_name: params.projectName,
-      category_id: params.categoryId,
-      category_name: params.categoryName,
+      category_id: params.folderId,
+      category_name: params.folderPath.at(-1) ?? '',
       folder_path: params.folderPath,
       file_size: params.fileSize,
       mime_type: params.mimeType,
@@ -677,7 +674,7 @@ export async function archiveStoredFile(params: {
 
 export async function moveArchivedFile(
   fileId: string,
-  target: { categoryId: string; categoryName: string; folderPath: string[] }
+  target: { folderId: string; folderPath: string[] }
 ): Promise<ArchivedFile | null> {
   const db = getDb();
 
@@ -699,8 +696,8 @@ export async function moveArchivedFile(
     : "";
 
   const updateData: Record<string, unknown> = {
-    category_id: target.categoryId,
-    category_name: target.categoryName,
+    category_id: target.folderId,
+    category_name: target.folderPath.at(-1) ?? '',
     folder_path: target.folderPath,
   };
   if (archivedName !== currentFile?.archived_name) {
@@ -723,8 +720,7 @@ export async function moveArchivedFile(
     archivedName: data.archived_name,
     projectId: data.project_id,
     projectName: data.project_name,
-    categoryId: data.category_id,
-    categoryName: data.category_name,
+    folderId: data.category_id,
     folderPath: data.folder_path,
     fileSize: data.file_size,
     mimeType: data.mime_type,
@@ -1056,8 +1052,7 @@ function mapArchivedFile(data: Record<string, unknown>): ArchivedFile {
     archivedName: data.archived_name as string,
     projectId: data.project_id as string,
     projectName: data.project_name as string,
-    categoryId: data.category_id as string,
-    categoryName: data.category_name as string,
+    folderId: data.category_id as string,
     folderPath: (data.folder_path as string[]) ?? [],
     fileSize: data.file_size as number,
     mimeType: data.mime_type as string,

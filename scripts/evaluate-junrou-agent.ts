@@ -11,9 +11,8 @@ import type { DocumentFacts } from '../src/lib/classification/document-facts';
 interface ShadowCase {
   id: string;
   relativePath: string;
-  goldCategory: {
+  goldFolder: {
     folderId: string;
-    fileName: string;
     folderPath: string[];
   };
   facts: DocumentFacts;
@@ -28,11 +27,11 @@ function readJson<T>(relativePath: string): T {
   ) as T;
 }
 
-function sameCategory(
-  left: { folderId: string; fileName: string } | null,
-  right: { folderId: string; fileName: string }
+function sameFolder(
+  left: { folderId: string } | null,
+  right: { folderId: string }
 ): boolean {
-  return left?.folderId === right.folderId && left.fileName === right.fileName;
+  return left?.folderId === right.folderId;
 }
 
 async function main(): Promise<void> {
@@ -58,21 +57,21 @@ async function main(): Promise<void> {
         related => related.sourcePath !== item.relativePath
       ),
     });
-    const matchesGold = sameCategory(
-      result.decision.selectedCategory,
-      item.goldCategory
+    const matchesGold = sameFolder(
+      result.decision.selectedFolder,
+      item.goldFolder
     );
     evaluated.push({
       id: item.id,
       relativePath: item.relativePath,
-      goldCategory: item.goldCategory,
+      goldFolder: item.goldFolder,
       agentStatus: result.status,
-      suggestedCategory: result.decision.selectedCategory,
+      suggestedFolder: result.decision.selectedFolder,
       decisionStatus: result.decision.status,
       matchesGold,
       safeAbstention:
         result.status === 'needs_review' &&
-        result.decision.selectedCategory === null,
+        result.decision.selectedFolder === null,
       requiresHumanReview: result.decision.requiresHumanReview,
       rounds: result.rounds,
       llmCallCount: result.llmCallCount,
@@ -82,7 +81,7 @@ async function main(): Promise<void> {
     });
   }
 
-  const covered = evaluated.filter(item => item.suggestedCategory);
+  const covered = evaluated.filter(item => item.suggestedFolder);
   const summary = {
     evaluatedCaseCount: evaluated.length,
     suggestedCaseCount: covered.length,
@@ -99,7 +98,7 @@ async function main(): Promise<void> {
   const report = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    graphVersion: 'classification-agent-langgraph-v1',
+    graphVersion: 'classification-agent-langgraph-v2',
     mode: 'non-persistent-shadow',
     summary,
     cases: evaluated,
@@ -113,13 +112,13 @@ async function main(): Promise<void> {
   );
 
   const rows = evaluated.map(item => {
-    const suggestion = item.suggestedCategory?.fileName ?? '无结论';
-    const outcome = item.suggestedCategory
+    const suggestion = item.suggestedFolder?.name ?? '无结论';
+    const outcome = item.suggestedFolder
       ? item.matchesGold
         ? '命中'
         : '错误建议'
       : '安全转人工';
-    return `| ${item.relativePath} | ${item.goldCategory.fileName} | ${suggestion} | ${item.agentStatus} | ${item.rounds} | ${outcome} |`;
+    return `| ${item.relativePath} | ${item.goldFolder.folderPath.at(-1)} | ${suggestion} | ${item.agentStatus} | ${item.rounds} | ${outcome} |`;
   });
   const markdown = `# 君柔分类 Agent Shadow 报告
 
@@ -146,7 +145,7 @@ Agent 并非对每份文件固定执行同一组步骤：公司章程会触发�
 
 ## 4. 边界
 
-该 Agent 目前是非持久化 shadow mode：不替换 legacy 分类，不触发自动归档，不写入 Supabase，不改变 Coze 环境。Agent 调度层当前使用可审计的确定性证据规则，LLM 只保留在前置文档事实抽取工具中。
+该 Agent 目前仍是人工确认型 shadow mode：项目记忆可写入 Coze S3，但 Agent 不会绕过人工确认自动归档，也不写入 Supabase 业务表。Agent 调度层当前使用可审计的确定性证据规则，LLM 只保留在前置文档事实抽取工具中。
 `;
   writeFileSync(
     path.join(outputRoot, 'JUNROU_AGENT_EVALUATION.md'),
