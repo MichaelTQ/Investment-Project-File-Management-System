@@ -1,4 +1,4 @@
-import { Config, LLMClient, type Message } from 'coze-coding-dev-sdk';
+import { Config, type Message } from 'coze-coding-dev-sdk';
 
 import { PROJECT_STAGES, type ProjectStage } from '../project-memory';
 import {
@@ -9,14 +9,38 @@ import {
 import { extractFirstJsonObject, type DocumentFacts } from './document-facts';
 
 export const PROJECT_CONTEXT_SYNTHESIZER_VERSION =
-  'project-context-synthesizer-v2';
+  'project-context-synthesizer-v4';
 export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-lite-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
 const MAX_FACT_CARD_CHARACTERS = 60_000;
+const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 8_192;
 
 interface InvokeClient {
-  invoke: LLMClient['invoke'];
+  invoke: (
+    messages: Message[],
+    config?: { model?: string; temperature?: number }
+  ) => Promise<{
+    content: string;
+    finishReason?: string | null;
+    outputTokens?: number | null;
+  }>;
+}
+
+interface ContextModelResponse {
+  content: string;
+  finishReason: string | null;
+  outputTokens: number | null;
+  maxOutputTokens: number;
+}
+
+interface ChatCompletionsResponse {
+  choices?: Array<{
+    message?: { content?: string | null };
+    finish_reason?: string | null;
+  }>;
+  usage?: { completion_tokens?: number };
+  error?: { message?: string };
 }
 
 export interface ProjectContextSynthesisResult {
@@ -295,7 +319,14 @@ export function buildProjectContextPrompt(params: {
   projectName: string;
   factCards: FactCard[];
   previousContext?: ProjectContextSnapshot | null;
+  compact?: boolean;
 }): Message[] {
+  const timelineLimit = Math.min(Math.max(params.factCards.length * 2, 4), 20);
+  const relationLimit = Math.min(Math.max(params.factCards.length * 2, 4), 20);
+  const compactRule = params.compact
+    ? `
+这是格式修复重试。必须输出紧凑、无 Markdown 的单个 JSON 对象；不要解释，不要复述输入，不要输出缩进。每个说明字段尽量控制在 80 个汉字以内。`
+    : '';
   const systemPrompt = `你是投资项目档案的“项目上下文综合器”。
 
 你要根据多份文件的结构化事实，重建项目事件时间线、阶段假设、文件关系、冲突和待确认问题。你不负责选择归档文件夹，也不能把文件上传顺序当作业务发生顺序。
@@ -310,6 +341,8 @@ export function buildProjectContextPrompt(params: {
 7. stageHypotheses、documentRelations、conflicts、timeline、openQuestions 始终输出数组。
 8. confidence 只能是 low、medium、high。
 9. stage 只能是：${PROJECT_STAGES.join(', ')}。
+10. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 8 项；conflicts 和 openQuestions 各最多 10 项，不得为同一事实生成重复项目。
+11. title 最多 60 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 160 个汉字，只保留支持结论所需的信息。${compactRule}
 
 只输出一个严格 JSON 对象，结构如下：
 {
@@ -341,10 +374,29 @@ ${params.previousContext ? JSON.stringify(params.previousContext) : '[无上一�
   ];
 }
 
+function parseContextResponse(params: {
+  response: ContextModelResponse;
+  documents: RelatedDocumentFacts[];
+  omittedCount: number;
+}): ProjectContextSnapshot {
+  const json = extractFirstJsonObject(params.response.content);
+  if (!json) {
+    throw new Error(
+      `${diagnoseMissingContextJson(params.response.content)}${contextResponseDiagnostic(params.response)}`
+    );
+  }
+  const parsed = ProjectContextSnapshotSchema.parse(JSON.parse(json));
+  return validateEvidenceReferences(
+    parsed,
+    params.documents,
+    params.omittedCount
+  );
+}
+
 export function diagnoseMissingContextJson(content: string): string {
   const trimmed = content.trim();
   if (!trimmed) {
-    return '模型返回了空文本；当前 SDK 的流式接口未提供结束原因，无法进一步判断是上游空响应还是流提前结束';
+    return '模型返回了空文本';
   }
 
   const firstOpeningBrace = trimmed.indexOf('{');
@@ -369,9 +421,83 @@ export function diagnoseMissingContextJson(content: string): string {
   }
 
   if (depth > 0 || inString) {
-    return `模型返回了未闭合的 JSON（共 ${trimmed.length} 个字符），高度疑似输出在完成前被截断；当前 SDK 未保留 finish_reason，不能直接确认截断来源`;
+    return `模型返回了未闭合的 JSON（共 ${trimmed.length} 个字符），输出在完整对象形成前结束`;
   }
   return `模型响应包含 JSON 起始符，但没有形成可提取的完整对象（共 ${trimmed.length} 个字符），属于异常的 JSON 结构`;
+}
+
+async function invokeContextModel(params: {
+  messages: Message[];
+  temperature: number;
+  customHeaders?: Record<string, string>;
+  client?: InvokeClient;
+}): Promise<ContextModelResponse> {
+  if (params.client) {
+    const response = await params.client.invoke(params.messages, {
+      model: PROJECT_CONTEXT_MODEL,
+      temperature: params.temperature,
+    });
+    return {
+      content: response.content,
+      finishReason: response.finishReason ?? null,
+      outputTokens: response.outputTokens ?? null,
+      maxOutputTokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
+    };
+  }
+
+  const config = new Config();
+  if (!config.modelBaseUrl) {
+    throw new Error('缺少 COZE_INTEGRATION_MODEL_BASE_URL，无法调用项目上下文模型');
+  }
+  if (!config.apiKey) {
+    throw new Error('缺少 COZE_WORKLOAD_IDENTITY_API_KEY，无法调用项目上下文模型');
+  }
+
+  const endpoint = `${config.modelBaseUrl.replace(/\/$/, '')}/chat/completions`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json',
+      'X-Client-Sdk': 'investment-project-context/1.0',
+      ...(params.customHeaders ?? {}),
+    },
+    body: JSON.stringify({
+      model: PROJECT_CONTEXT_MODEL,
+      messages: params.messages,
+      temperature: params.temperature,
+      stream: false,
+      max_tokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+    }),
+    signal: AbortSignal.timeout(config.timeout),
+  });
+  const payload = (await response.json().catch(() => ({}))) as ChatCompletionsResponse;
+  if (!response.ok) {
+    throw new Error(
+      `项目上下文模型请求失败（HTTP ${response.status}）：${payload.error?.message ?? '上游未返回错误说明'}`
+    );
+  }
+
+  const choice = payload.choices?.[0];
+  if (!choice) throw new Error('项目上下文模型响应中没有 choices[0]');
+  return {
+    content: choice.message?.content ?? '',
+    finishReason: choice.finish_reason ?? null,
+    outputTokens: payload.usage?.completion_tokens ?? null,
+    maxOutputTokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
+  };
+}
+
+function contextResponseDiagnostic(response: ContextModelResponse): string {
+  const metadata = [
+    response.finishReason ? `finish_reason=${response.finishReason}` : null,
+    response.outputTokens === null
+      ? null
+      : `输出 ${response.outputTokens}/${response.maxOutputTokens} tokens`,
+  ].filter(Boolean);
+  return metadata.length > 0 ? `（${metadata.join('，')}）` : '';
 }
 
 function validateEvidenceReferences(
@@ -452,27 +578,67 @@ export async function synthesizeProjectContext(
     };
   }
 
-  const client =
-    params.client ?? new LLMClient(new Config(), params.customHeaders ?? {});
+  let llmCallCount = 0;
   try {
-    const response = await client.invoke(
-      buildProjectContextPrompt({
+    llmCallCount += 1;
+    const response = await invokeContextModel({
+      messages: buildProjectContextPrompt({
         projectName: params.projectName,
         factCards: cards,
         previousContext: params.previousContext,
       }),
-      { model: PROJECT_CONTEXT_MODEL, temperature: 0.1 }
-    );
-    const json = extractFirstJsonObject(response.content);
-    if (!json) throw new Error(diagnoseMissingContextJson(response.content));
-    const parsed = ProjectContextSnapshotSchema.parse(JSON.parse(json));
-    return {
-      status: 'llm_synthesized',
-      context: validateEvidenceReferences(parsed, documents, omittedCount),
-      llmCallCount: 1,
-      inputDocumentCount: documents.length,
-      includedDocumentCount: cards.length,
-    };
+      temperature: 0.1,
+      customHeaders: params.customHeaders,
+      client: params.client,
+    });
+    try {
+      return {
+        status: 'llm_synthesized',
+        context: parseContextResponse({
+          response,
+          documents,
+          omittedCount,
+        }),
+        llmCallCount: 1,
+        inputDocumentCount: documents.length,
+        includedDocumentCount: cards.length,
+      };
+    } catch (firstFormatError) {
+      const firstMessage =
+        firstFormatError instanceof Error
+          ? firstFormatError.message
+          : '首次响应格式未知错误';
+      llmCallCount += 1;
+      const compactResponse = await invokeContextModel({
+        messages: buildProjectContextPrompt({
+          projectName: params.projectName,
+          factCards: cards,
+          previousContext: null,
+          compact: true,
+        }),
+        temperature: 0,
+        customHeaders: params.customHeaders,
+        client: params.client,
+      });
+      const repaired = parseContextResponse({
+        response: compactResponse,
+        documents,
+        omittedCount,
+      });
+      return {
+        status: 'llm_synthesized',
+        context: ProjectContextSnapshotSchema.parse({
+          ...repaired,
+          synthesisWarnings: [
+            ...(repaired.synthesisWarnings ?? []),
+            `首次结构化响应无效，紧凑模式重试成功：${firstMessage}`,
+          ],
+        }),
+        llmCallCount: 2,
+        inputDocumentCount: documents.length,
+        includedDocumentCount: cards.length,
+      };
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     console.warn('Project context LLM fallback:', error);
@@ -483,7 +649,7 @@ export async function synthesizeProjectContext(
       context: deterministicContext(params.projectName, documents, [
         `项目上下文大模型未能生成结构化结果，本次已使用规则 Context：${message}`,
       ]),
-      llmCallCount: 1,
+      llmCallCount,
       inputDocumentCount: documents.length,
       includedDocumentCount: cards.length,
     };
