@@ -2705,6 +2705,12 @@ export default function Home() {
                       Context v{projectContextState.contextState.version}；依据{' '}
                       {projectContextState.documentCount} 份正式文件
                     </p>
+                    {projectContextState.projectContext?.contextStatus ===
+                      'deterministic_fallback' && (
+                      <p className="rounded border border-orange-200 bg-orange-50 px-2 py-1 text-orange-800">
+                        本版 Context 使用确定性规则生成；具体原因可在下方数据质量提示中查看。
+                      </p>
+                    )}
                     <p className="text-muted-foreground">
                       最晚证据阶段：
                       {PROJECT_STAGE_LABELS[

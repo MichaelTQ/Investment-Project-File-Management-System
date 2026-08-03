@@ -134,6 +134,25 @@ test('没有模型客户端时仍能从不同文档类型生成可删除重建�
   );
 });
 
+test('模型没有返回 JSON 时使用规则 Context 而不是标记更新失败', async () => {
+  const result = await synthesizeProjectContext({
+    projectName: '测试项目',
+    documents,
+    client: {
+      invoke: async () => ({ content: '抱歉，本次无法生成结构化结果。' }),
+    } as never,
+  });
+
+  assert.equal(result.status, 'deterministic_fallback');
+  assert.equal(result.error, undefined);
+  assert.equal(result.context.timeline.length, 2);
+  assert.equal(result.context.latestEvidencedStage, 'investment_decision');
+  assert.match(
+    result.context.synthesisWarnings?.join('\n') ?? '',
+    /没有 JSON 对象|使用规则 Context/
+  );
+});
+
 test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   const prompt = buildProjectContextPrompt({
     projectName: '测试项目',

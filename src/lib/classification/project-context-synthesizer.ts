@@ -9,7 +9,7 @@ import {
 import { extractFirstJsonObject, type DocumentFacts } from './document-facts';
 
 export const PROJECT_CONTEXT_SYNTHESIZER_VERSION =
-  'project-context-synthesizer-v1';
+  'project-context-synthesizer-v2';
 export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-lite-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
@@ -442,16 +442,17 @@ export async function synthesizeProjectContext(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
-    console.error('Project context synthesis error:', error);
+    console.warn('Project context LLM fallback:', error);
+    // 模型格式错误、超时等不应让整个 Context 停在 failed。
+    // 当前有效文件事实足以生成确定性快照，因此将模型错误降级为数据质量提示。
     return {
       status: 'deterministic_fallback',
       context: deterministicContext(params.projectName, documents, [
-        `项目上下文大模型综合失败：${message}`,
+        `项目上下文大模型未能生成结构化结果，本次已使用规则 Context：${message}`,
       ]),
       llmCallCount: 1,
       inputDocumentCount: documents.length,
       includedDocumentCount: cards.length,
-      error: message,
     };
   }
 }
