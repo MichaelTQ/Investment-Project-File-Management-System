@@ -896,8 +896,11 @@ export async function deleteArchivedFile(id: string): Promise<{
     const s3 = getS3Storage();
     try {
       await s3.deleteFile({ fileKey: file.storage_key });
-    } catch {
-      // 忽略
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "未知错误";
+      throw new Error(
+        `删除S3文件失败，数据库记录已保留以便重试: ${message}`
+      );
     }
   }
 

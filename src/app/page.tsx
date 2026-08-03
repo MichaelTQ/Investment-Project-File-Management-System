@@ -89,10 +89,28 @@ interface AgentDecisionResult {
   graphVersion: string;
 }
 
+interface ModelCallDiagnostics {
+  model: string;
+  inputCharacters: number;
+  estimatedInputTokens: number;
+  outputCharacters: number;
+  outputTokens: number | null;
+  finishReason: string | null;
+  maxOutputTokens: number;
+  durationMs: number;
+}
+
+interface ProcessingPerformance {
+  totalDurationMs: number;
+  phases: Array<{ phase: string; durationMs: number }>;
+  modelCalls: ModelCallDiagnostics[];
+}
+
 interface ProjectSessionMemoryResult {
   mode: 's3-durable-shadow' | 'process-local-fallback';
   persistent: boolean;
   persistenceWarning?: string;
+  memoryLoadDurationMs: number;
   projectId: string;
   revision: number;
   documentCount: number;
@@ -137,6 +155,8 @@ interface ProjectSessionMemoryResult {
   contextSynthesis?: {
     status: 'llm_synthesized' | 'deterministic_fallback';
     llmCallCount: number;
+    modelCalls: ModelCallDiagnostics[];
+    totalDurationMs: number;
     inputDocumentCount: number;
     includedDocumentCount: number;
     latestEvidencedStage: string;
@@ -187,6 +207,7 @@ interface ClassifyResult {
   archiveStatus?: 'pending' | 'archiving' | 'archived' | 'cancelled' | 'error';
   archiveError?: string;
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
+  performance?: ProcessingPerformance;
 }
 
 const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
@@ -212,9 +233,11 @@ const PROJECT_STAGE_LABELS: Record<string, string> = {
 function AgentDecisionPanel({
   agent,
   projectMemory,
+  performance,
 }: {
   agent: AgentDecisionResult;
   projectMemory?: ProjectSessionMemoryResult;
+  performance?: ProcessingPerformance;
 }) {
   const suggestion = agent.decision.selectedFolder;
   const needsReview = agent.status === 'needs_review';
@@ -306,6 +329,7 @@ function AgentDecisionPanel({
               : 'S3 暂时不可用，当前运行实例临时保存本项目'}{' '}
             {projectMemory.documentCount} 份文件，
             本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
+            项目记忆加载 {projectMemory.memoryLoadDurationMs}ms。
           </p>
           {projectMemory.decisionContextVersion !== undefined && (
             <p className="mt-1 text-xs font-medium text-violet-800">
@@ -333,7 +357,8 @@ function AgentDecisionPanel({
                 ；事件 {projectMemory.contextSynthesis.eventCount} 个；关系{' '}
                 {projectMemory.contextSynthesis.relationCount} 个；冲突{' '}
                 {projectMemory.contextSynthesis.conflictCount} 个；上下文 LLM{' '}
-                {projectMemory.contextSynthesis.llmCallCount} 次。
+                {projectMemory.contextSynthesis.llmCallCount} 次；综合耗时{' '}
+                {projectMemory.contextSynthesis.totalDurationMs}ms。
               </p>
               {projectMemory.contextSynthesis.error && (
                 <p className="break-words text-amber-700">
@@ -433,6 +458,29 @@ function AgentDecisionPanel({
             </div>
           )}
         </div>
+      )}
+
+      {performance && (
+        <details className="rounded-md border border-violet-200 bg-white p-3">
+          <summary className="cursor-pointer text-xs font-medium text-violet-900">
+            查看性能诊断（总计 {performance.totalDurationMs}ms）
+          </summary>
+          <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
+            <p>
+              {performance.phases
+                .map(item => `${item.phase} ${item.durationMs}ms`)
+                .join('；') || '暂无阶段数据'}
+            </p>
+            {performance.modelCalls.map((call, index) => (
+              <p key={`${call.model}-${index}`} className="break-words">
+                LLM {index + 1}：{call.model}，输入 {call.inputCharacters} 字符，
+                输出 {call.outputCharacters} 字符/
+                {call.outputTokens ?? '未知'} tokens，结束原因{' '}
+                {call.finishReason ?? '未知'}，耗时 {call.durationMs}ms。
+              </p>
+            ))}
+          </div>
+        </details>
       )}
 
       <div>
@@ -856,6 +904,7 @@ function ClassifyResultItem({
                 <AgentDecisionPanel
                   agent={result.agentDecision}
                   projectMemory={result.projectSessionMemory}
+                  performance={result.performance}
                 />
               )}
 
@@ -2264,6 +2313,26 @@ export default function Home() {
               sourceFile: undefined,
               sourceStorageKey: undefined,
               archived: data.archived,
+              performance: data.performance
+                ? {
+                    totalDurationMs:
+                      (result.performance?.totalDurationMs ?? 0) +
+                      data.performance.totalDurationMs,
+                    phases: [
+                      ...(result.performance?.phases ?? []),
+                      ...data.performance.phases.map(
+                        (item: { phase: string; durationMs: number }) => ({
+                          ...item,
+                          phase: `archive.${item.phase}`,
+                        })
+                      ),
+                    ],
+                    modelCalls: [
+                      ...(result.performance?.modelCalls ?? []),
+                      ...data.performance.modelCalls,
+                    ],
+                  }
+                : result.performance,
               projectSessionMemory:
                 data.projectContext
                   ? {
@@ -2354,37 +2423,54 @@ export default function Home() {
           // 大文件：每个 2MB 分片立即存入 S3，最后无状态合并。
           chunkUploadId = crypto.randomUUID();
           const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-          const chunkKeys: string[] = [];
+          const chunkKeys = new Array<string>(totalChunks);
+          const CHUNK_UPLOAD_CONCURRENCY = 3;
 
-          for (let i = 0; i < totalChunks; i++) {
-            const start = i * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunk = file.slice(start, end);
-
-            const chunkRes = await fetch('/api/uploads/chunk', {
-              method: 'PUT',
-              headers: {
-                'Content-Type': 'application/octet-stream',
-                'x-upload-id': chunkUploadId,
-                'x-chunk-index': String(i),
-                'x-chunk-total': String(totalChunks),
-                'x-project-id': selectedProjectId,
-                'x-file-name': encodeURIComponent(file.name),
+          for (
+            let batchStart = 0;
+            batchStart < totalChunks;
+            batchStart += CHUNK_UPLOAD_CONCURRENCY
+          ) {
+            const indexes = Array.from(
+              {
+                length: Math.min(
+                  CHUNK_UPLOAD_CONCURRENCY,
+                  totalChunks - batchStart
+                ),
               },
-              body: chunk,
-            });
-
-            const chunkData = await chunkRes.json().catch(() => null);
-            if (!chunkRes.ok) {
-              throw new Error(
-                chunkData?.error ||
-                `分片 ${i + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
-              );
-            }
-            if (!chunkData?.chunkKey) {
-              throw new Error(`分片 ${i + 1}/${totalChunks} 未返回 S3 地址`);
-            }
-            chunkKeys.push(chunkData.chunkKey);
+              (_, offset) => batchStart + offset
+            );
+            const uploaded = await Promise.all(indexes.map(async index => {
+              const start = index * CHUNK_SIZE;
+              const end = Math.min(start + CHUNK_SIZE, file.size);
+              const chunk = file.slice(start, end);
+              const chunkRes = await fetch('/api/uploads/chunk', {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'x-upload-id': chunkUploadId,
+                  'x-chunk-index': String(index),
+                  'x-chunk-total': String(totalChunks),
+                  'x-project-id': selectedProjectId,
+                  'x-file-name': encodeURIComponent(file.name),
+                },
+                body: chunk,
+              });
+              const chunkData = await chunkRes.json().catch(() => null);
+              if (!chunkRes.ok) {
+                throw new Error(
+                  chunkData?.error ||
+                  `分片 ${index + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
+                );
+              }
+              if (!chunkData?.chunkKey) {
+                throw new Error(
+                  `分片 ${index + 1}/${totalChunks} 未返回 S3 地址`
+                );
+              }
+              return { index, chunkKey: String(chunkData.chunkKey) };
+            }));
+            for (const item of uploaded) chunkKeys[item.index] = item.chunkKey;
           }
 
           const completeResponse = await fetch('/api/uploads/chunk', {

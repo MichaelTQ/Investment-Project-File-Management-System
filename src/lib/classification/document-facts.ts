@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { ModelCallDiagnostics } from './chat-completions';
+
 export const DocumentTypeSchema = z.enum([
   'company_charter',
   'capital_increase_agreement',
@@ -85,6 +87,7 @@ export type DocumentFacts = z.infer<typeof DocumentFactsSchema>;
 export interface DocumentFactsExtractionResult {
   status: 'success' | 'fallback';
   facts: DocumentFacts;
+  modelCall?: ModelCallDiagnostics;
   error?: string;
 }
 
@@ -197,14 +200,14 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   const repairs = new Set<string>();
 
   const dates = (Array.isArray(value.dates) ? value.dates : [])
-    .slice(0, 20)
+    .slice(0, 8)
     .flatMap(item => {
       if (!isRecord(item)) {
         repairs.add('已忽略无法解析的日期项');
         return [];
       }
       const meaning = normalizedString(item.meaning, 100);
-      const evidence = normalizedString(item.evidence, 300);
+      const evidence = normalizedString(item.evidence, 160);
       if (!meaning || !evidence) {
         repairs.add('已忽略缺少含义或证据的日期项');
         return [];
@@ -219,7 +222,7 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   if (!Array.isArray(value.dates)) repairs.add('缺失的 dates 已补为空数组');
 
   const parties = (Array.isArray(value.parties) ? value.parties : [])
-    .slice(0, 50)
+    .slice(0, 15)
     .flatMap(item => {
       if (!isRecord(item)) return [];
       const name = normalizedString(item.name, 200);
@@ -235,26 +238,26 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   const transactionChanges = (
     Array.isArray(value.transactionChanges) ? value.transactionChanges : []
   )
-    .slice(0, 30)
+    .slice(0, 10)
     .flatMap(item => {
       if (!isRecord(item)) return [];
       const field = normalizedString(item.field, 100);
-      const evidence = normalizedString(item.evidence, 300);
+      const evidence = normalizedString(item.evidence, 160);
       if (!field || !evidence) {
         repairs.add('已忽略缺少字段或证据的交易变化项');
         return [];
       }
       if (
-        (typeof item.before === 'string' && item.before.trim().length > 200) ||
-        (typeof item.after === 'string' && item.after.trim().length > 200)
+        (typeof item.before === 'string' && item.before.trim().length > 120) ||
+        (typeof item.after === 'string' && item.after.trim().length > 120)
       ) {
-        repairs.add('过长的交易变化值已截断至 200 字符');
+        repairs.add('过长的交易变化值已截断至 120 字符');
       }
       return [
         {
           field,
-          before: nullableString(item.before, 200),
-          after: nullableString(item.after, 200),
+            before: nullableString(item.before, 120),
+            after: nullableString(item.after, 120),
           evidence,
         },
       ];
@@ -282,15 +285,15 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
     repairs.add('事实完整度已校正到 0-100 的整数范围');
   }
 
-  const explicitStageClues = stringArray(value.explicitStageClues, 30, 300);
+  const explicitStageClues = stringArray(value.explicitStageClues, 8, 160);
   if (!Array.isArray(value.explicitStageClues)) {
     repairs.add('缺失的 explicitStageClues 已补为空数组');
   }
-  const evidenceQuotes = stringArray(value.evidenceQuotes, 30, 500);
+  const evidenceQuotes = stringArray(value.evidenceQuotes, 8, 160);
   if (!Array.isArray(value.evidenceQuotes)) {
     repairs.add('缺失的 evidenceQuotes 已补为空数组');
   }
-  const existingWarnings = stringArray(value.warnings, 20, 300);
+  const existingWarnings = stringArray(value.warnings, 5, 160);
   const repairWarnings = [...repairs].map(message => `结构化输出已校正：${message}`);
 
   return {
@@ -307,7 +310,7 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
     transactionChanges,
     explicitStageClues,
     evidenceQuotes,
-    warnings: [...repairWarnings, ...existingWarnings].slice(0, 20),
+    warnings: [...repairWarnings, ...existingWarnings].slice(0, 8),
     sourceQuality: sourceQuality.success ? sourceQuality.data : 'mixed',
     extractionConfidence: confidence,
   };

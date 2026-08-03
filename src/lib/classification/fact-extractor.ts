@@ -1,6 +1,5 @@
 import {
-  Config,
-  LLMClient,
+  type LLMClient,
   type Message,
 } from 'coze-coding-dev-sdk';
 
@@ -9,10 +8,17 @@ import {
   parseDocumentFactsResponse,
   type DocumentFactsExtractionResult,
 } from './document-facts';
+import {
+  invokeChatCompletion,
+  messageCharacterCount,
+  type ModelCallDiagnostics,
+} from './chat-completions';
 
 const DOCUMENT_FACTS_CONTENT_LIMIT = 8_000;
+export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 2_048;
+const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-lite-260215';
-export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v1';
+export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v2';
 
 interface InvokeClient {
   invoke: LLMClient['invoke'];
@@ -56,7 +62,9 @@ shareholder_register, other, unknown
 6. 如果内容来自扫描 PDF 视觉摘要，应将 sourceQuality 设为 visual_summary 或 mixed，并在 warnings 中说明信息可能不完整。
 7. extractionConfidence 表示事实抽取完整度，不表示归档分类置信度。
 8. dates、parties、transactionChanges、explicitStageClues、evidenceQuotes、warnings 必须始终输出数组；没有内容时输出 []，不得省略字段。
-9. transactionChanges 的 before 和 after 各不超过 200 字，evidence 不超过 300 字；内容过长时只保留能够证明变化的关键数字和短句。
+9. 最多输出 dates 8项、parties 15项、transactionChanges 10项、explicitStageClues 8项、evidenceQuotes 8项、warnings 5项；相同事实必须合并去重。
+10. transactionChanges 的 before 和 after 各不超过 120 字，evidence 不超过 160 字；其他证据和提示单项不超过 160 字。
+11. 不要复述文档，不要输出分析过程或背景说明。输出无 Markdown、无缩进的紧凑 JSON。
 
 只输出一个 JSON 对象，不要输出 Markdown 或其他说明。JSON 必须严格符合：
 {
@@ -109,24 +117,51 @@ ${params.imageDataUrl
 export async function extractDocumentFacts(
   params: ExtractDocumentFactsParams
 ): Promise<DocumentFactsExtractionResult> {
-  const client =
-    params.client ??
-    new LLMClient(new Config(), params.customHeaders);
   const messages = buildDocumentFactsPrompt({
     fileName: params.fileName,
     contentText: params.contentText,
     projectName: params.projectName,
     imageDataUrl: params.imageDataUrl,
   });
+  let modelCall: ModelCallDiagnostics | undefined;
 
   try {
-    const response = await client.invoke(messages, {
-      model: DOCUMENT_FACTS_MODEL,
-      temperature: 0.1,
-    });
+    let content: string;
+    if (params.client) {
+      const startedAt = Date.now();
+      const response = await params.client.invoke(messages, {
+        model: DOCUMENT_FACTS_MODEL,
+        temperature: 0.1,
+      });
+      content = response.content;
+      const inputCharacters = messageCharacterCount(messages);
+      modelCall = {
+        model: DOCUMENT_FACTS_MODEL,
+        inputCharacters,
+        estimatedInputTokens: Math.ceil(inputCharacters / 2),
+        outputCharacters: content.length,
+        outputTokens: null,
+        finishReason: null,
+        maxOutputTokens: DOCUMENT_FACTS_MAX_OUTPUT_TOKENS,
+        durationMs: Date.now() - startedAt,
+      };
+    } else {
+      const response = await invokeChatCompletion({
+        messages,
+        model: DOCUMENT_FACTS_MODEL,
+        temperature: 0.1,
+        maxOutputTokens: DOCUMENT_FACTS_MAX_OUTPUT_TOKENS,
+        customHeaders: params.customHeaders,
+        responseFormat: 'json_object',
+        timeoutMs: DOCUMENT_FACTS_TIMEOUT_MS,
+      });
+      content = response.content;
+      modelCall = response.diagnostics;
+    }
     return {
       status: 'success',
-      facts: parseDocumentFactsResponse(response.content),
+      facts: parseDocumentFactsResponse(content),
+      modelCall,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
@@ -138,6 +173,7 @@ export async function extractDocumentFacts(
         `结构化事实抽取失败：${message}`
       ),
       error: message,
+      modelCall,
     };
   }
 }

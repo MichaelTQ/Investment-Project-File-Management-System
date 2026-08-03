@@ -1,20 +1,28 @@
-import { Config, type Message } from 'coze-coding-dev-sdk';
+import type { Message } from 'coze-coding-dev-sdk';
 
 import { PROJECT_STAGES, type ProjectStage } from '../project-memory';
 import {
+  GENERATED_CONTEXT_LIMITS,
+  GeneratedProjectContextPayloadSchema,
   ProjectContextSnapshotSchema,
   type ProjectContextSnapshot,
   type RelatedDocumentFacts,
 } from './context-decision';
 import { extractFirstJsonObject, type DocumentFacts } from './document-facts';
+import {
+  invokeChatCompletion,
+  messageCharacterCount,
+  type ModelCallDiagnostics,
+} from './chat-completions';
 
 export const PROJECT_CONTEXT_SYNTHESIZER_VERSION =
-  'project-context-synthesizer-v4';
+  'project-context-synthesizer-v5';
 export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-lite-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
-const MAX_FACT_CARD_CHARACTERS = 60_000;
-const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 8_192;
+const MAX_FACT_CARD_CHARACTERS = 32_000;
+export const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 3_072;
+const PROJECT_CONTEXT_TIMEOUT_MS = 120_000;
 
 interface InvokeClient {
   invoke: (
@@ -29,24 +37,15 @@ interface InvokeClient {
 
 interface ContextModelResponse {
   content: string;
-  finishReason: string | null;
-  outputTokens: number | null;
-  maxOutputTokens: number;
-}
-
-interface ChatCompletionsResponse {
-  choices?: Array<{
-    message?: { content?: string | null };
-    finish_reason?: string | null;
-  }>;
-  usage?: { completion_tokens?: number };
-  error?: { message?: string };
+  diagnostics: ModelCallDiagnostics;
 }
 
 export interface ProjectContextSynthesisResult {
   status: 'llm_synthesized' | 'deterministic_fallback';
   context: ProjectContextSnapshot;
   llmCallCount: number;
+  modelCalls: ModelCallDiagnostics[];
+  totalDurationMs: number;
   inputDocumentCount: number;
   includedDocumentCount: number;
   error?: string;
@@ -59,6 +58,8 @@ export interface SynthesizeProjectContextParams {
   customHeaders?: Record<string, string>;
   client?: InvokeClient;
   allowLlm?: boolean;
+  focusSourcePaths?: string[];
+  removedSourcePaths?: string[];
 }
 
 interface FactCard {
@@ -186,27 +187,81 @@ function toFactCard(document: RelatedDocumentFacts): FactCard {
     documentType: document.facts.documentType,
     title: document.facts.title,
     version: document.facts.version,
-    dates: document.facts.dates.slice(0, 8),
-    parties: document.facts.parties.slice(0, 15),
+    dates: document.facts.dates.slice(0, 4).map(item => ({
+      ...item,
+      meaning: item.meaning.slice(0, 80),
+      evidence: item.evidence.slice(0, 160),
+    })),
+    parties: document.facts.parties.slice(0, 8).map(item => ({
+      name: item.name.slice(0, 120),
+      role: item.role.slice(0, 80),
+    })),
     signStatus: document.facts.signStatus,
-    transactionChanges: document.facts.transactionChanges.slice(0, 12),
-    explicitStageClues: document.facts.explicitStageClues.slice(0, 10),
-    evidenceQuotes: document.facts.evidenceQuotes.slice(0, 10),
+    transactionChanges: document.facts.transactionChanges.slice(0, 6).map(item => ({
+      ...item,
+      field: item.field.slice(0, 80),
+      before: item.before?.slice(0, 120) ?? null,
+      after: item.after?.slice(0, 120) ?? null,
+      evidence: item.evidence.slice(0, 160),
+    })),
+    explicitStageClues: document.facts.explicitStageClues
+      .slice(0, 5)
+      .map(item => item.slice(0, 160)),
+    evidenceQuotes: document.facts.evidenceQuotes
+      .slice(0, 5)
+      .map(item => item.slice(0, 160)),
     sourceQuality: document.facts.sourceQuality,
     extractionConfidence: document.facts.extractionConfidence,
-    warnings: document.facts.warnings.slice(0, 5),
+    warnings: document.facts.warnings.slice(0, 3).map(item => item.slice(0, 160)),
   };
 }
 
-function selectFactCards(documents: RelatedDocumentFacts[]): {
+function contextEvidencePaths(context?: ProjectContextSnapshot | null): Set<string> {
+  if (!context) return new Set();
+  return new Set([
+    ...context.timeline.flatMap(item => item.evidenceFiles),
+    ...(context.stageHypotheses ?? []).flatMap(item => item.evidenceFiles),
+    ...(context.documentRelations ?? []).flatMap(item => [
+      item.fromSourcePath,
+      item.toSourcePath,
+    ]),
+    ...(context.conflicts ?? []).flatMap(item => item.evidenceFiles),
+  ].map(normalizeSourcePath));
+}
+
+function selectFactCards(
+  documents: RelatedDocumentFacts[],
+  focusSourcePaths: string[] = [],
+  previousContext?: ProjectContextSnapshot | null
+): {
   cards: FactCard[];
   omittedCount: number;
 } {
   const cards: FactCard[] = [];
   let currentLength = 2;
+  const focusPaths = new Set(focusSourcePaths.map(normalizeSourcePath));
+  const previousPaths = contextEvidencePaths(previousContext);
+  const focusDocuments = documents.filter(document =>
+    focusPaths.has(normalizeSourcePath(document.sourcePath))
+  );
+  const focusTypes = new Set(focusDocuments.map(document => document.facts.documentType));
+  const focusParties = new Set(
+    focusDocuments.flatMap(document =>
+      document.facts.parties.map(party => party.name)
+    )
+  );
   const normalized = documents
     .map(toFactCard)
     .filter(card => card.sourcePath)
+    .sort((left, right) => {
+      const score = (card: FactCard) =>
+        (focusPaths.has(card.sourcePath) ? 100_000 : 0) +
+        (previousPaths.has(card.sourcePath) ? 10_000 : 0) +
+        (focusTypes.has(card.documentType) ? 1_000 : 0) +
+        (card.parties.some(party => focusParties.has(party.name)) ? 500 : 0) +
+        card.extractionConfidence;
+      return score(right) - score(left);
+    })
     .slice(0, MAX_CONTEXT_DOCUMENTS);
 
   for (const card of normalized) {
@@ -320,12 +375,20 @@ export function buildProjectContextPrompt(params: {
   factCards: FactCard[];
   previousContext?: ProjectContextSnapshot | null;
   compact?: boolean;
+  focusSourcePaths?: string[];
+  removedSourcePaths?: string[];
 }): Message[] {
-  const timelineLimit = Math.min(Math.max(params.factCards.length * 2, 4), 20);
-  const relationLimit = Math.min(Math.max(params.factCards.length * 2, 4), 20);
+  const timelineLimit = Math.min(
+    Math.max(params.factCards.length, 4),
+    GENERATED_CONTEXT_LIMITS.timeline
+  );
+  const relationLimit = Math.min(
+    Math.max(params.factCards.length, 4),
+    GENERATED_CONTEXT_LIMITS.documentRelations
+  );
   const compactRule = params.compact
     ? `
-这是格式修复重试。必须输出紧凑、无 Markdown 的单个 JSON 对象；不要解释，不要复述输入，不要输出缩进。每个说明字段尽量控制在 80 个汉字以内。`
+这是格式修复重试。每个说明字段最多 80 个汉字，只保留最关键证据。`
     : '';
   const systemPrompt = `你是投资项目档案的“项目上下文综合器”。
 
@@ -333,7 +396,7 @@ export function buildProjectContextPrompt(params: {
 
 规则：
 1. 只能使用输入事实，不得凭常识补造交易、日期、签署或付款事实。
-2. 每个 timeline 事件必须引用至少一个输入中存在的 sourcePath。
+2. 每个 timeline 事件必须引用至少一个输入中存在的 sourcePath；“已删除文件”列表中的路径禁止继续引用。
 3. 日期无法确认时 date 输出 null，不要猜日期。
 4. latestEvidencedStage 表示现有证据能够支持的最晚阶段，不代表每份文件都属于该阶段。
 5. 同一事件可合并多份文件证据；交易前后版本应建立 documentRelations。
@@ -341,15 +404,14 @@ export function buildProjectContextPrompt(params: {
 7. stageHypotheses、documentRelations、conflicts、timeline、openQuestions 始终输出数组。
 8. confidence 只能是 low、medium、high。
 9. stage 只能是：${PROJECT_STAGES.join(', ')}。
-10. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 8 项；conflicts 和 openQuestions 各最多 10 项，不得为同一事实生成重复项目。
-11. title 最多 60 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 160 个汉字，只保留支持结论所需的信息。${compactRule}
+10. 不得逐份复述事实卡片；只有会改变阶段、事件、关系或冲突判断的信息才能进入输出，相同业务事件必须合并。
+11. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 ${GENERATED_CONTEXT_LIMITS.stageHypotheses} 项；conflicts 和 openQuestions 各最多 ${GENERATED_CONTEXT_LIMITS.conflicts} 项。
+12. title 最多 ${GENERATED_CONTEXT_LIMITS.titleCharacters} 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 ${GENERATED_CONTEXT_LIMITS.explanationCharacters} 个汉字。
+13. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
 
 只输出一个严格 JSON 对象，结构如下：
 {
-  "schemaVersion": 1,
-  "projectName": "项目名称",
   "targetCompany": "目标公司或null",
-  "contextStatus": "llm_synthesized",
   "latestEvidencedStage": "阶段枚举",
   "stageConfidence": "low|medium|high",
   "importantCaveat": "关键限制",
@@ -360,13 +422,43 @@ export function buildProjectContextPrompt(params: {
   "openQuestions": ["仍缺少的证据或需要确认的问题"]
 }`;
 
+  const previousContextSummary = params.previousContext
+    ? {
+        latestEvidencedStage: params.previousContext.latestEvidencedStage,
+        stageConfidence: params.previousContext.stageConfidence,
+        timeline: params.previousContext.timeline.slice(
+          0,
+          GENERATED_CONTEXT_LIMITS.timeline
+        ),
+        stageHypotheses: params.previousContext.stageHypotheses?.slice(
+          0,
+          GENERATED_CONTEXT_LIMITS.stageHypotheses
+        ),
+        documentRelations: params.previousContext.documentRelations?.slice(
+          0,
+          GENERATED_CONTEXT_LIMITS.documentRelations
+        ),
+        conflicts: params.previousContext.conflicts?.slice(
+          0,
+          GENERATED_CONTEXT_LIMITS.conflicts
+        ),
+        openQuestions: params.previousContext.openQuestions.slice(
+          0,
+          GENERATED_CONTEXT_LIMITS.openQuestions
+        ),
+      }
+    : null;
+
   const userPrompt = `项目名称：${params.projectName || '未命名项目'}
 
-当前全部有效文件事实卡片：
+本轮重点变化文件：${JSON.stringify(params.focusSourcePaths ?? [])}
+本轮已删除、禁止继续引用的文件：${JSON.stringify(params.removedSourcePaths ?? [])}
+
+本轮输入预算内的有效文件事实卡片：
 ${JSON.stringify(params.factCards)}
 
 上一版项目快照仅供核对，不得保留已经失去文件证据的结论：
-${params.previousContext ? JSON.stringify(params.previousContext) : '[无上一版快照]'}`;
+${previousContextSummary ? JSON.stringify(previousContextSummary) : '[无上一版快照]'}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -376,6 +468,7 @@ ${params.previousContext ? JSON.stringify(params.previousContext) : '[无上一�
 
 function parseContextResponse(params: {
   response: ContextModelResponse;
+  projectName: string;
   documents: RelatedDocumentFacts[];
   omittedCount: number;
 }): ProjectContextSnapshot {
@@ -385,12 +478,137 @@ function parseContextResponse(params: {
       `${diagnoseMissingContextJson(params.response.content)}${contextResponseDiagnostic(params.response)}`
     );
   }
-  const parsed = ProjectContextSnapshotSchema.parse(JSON.parse(json));
+  const normalized = normalizeGeneratedPayload(JSON.parse(json));
+  const payload = GeneratedProjectContextPayloadSchema.parse(normalized.value);
+  const parsed = ProjectContextSnapshotSchema.parse({
+    schemaVersion: 1,
+    projectName: params.projectName.trim() || '未命名项目',
+    contextStatus: 'llm_synthesized',
+    ...payload,
+    sourceDocumentCount: params.documents.length,
+    generatedAt: new Date().toISOString(),
+    synthesizerVersion: PROJECT_CONTEXT_SYNTHESIZER_VERSION,
+    synthesisWarnings: normalized.compacted
+      ? ['模型输出超过项目 Context 预算，已在本地去重或截断']
+      : [],
+  });
   return validateEvidenceReferences(
     parsed,
     params.documents,
     params.omittedCount
   );
+}
+
+function normalizeGeneratedPayload(value: unknown): {
+  value: unknown;
+  compacted: boolean;
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { value, compacted: false };
+  }
+  const source = value as Record<string, unknown>;
+  let compacted = false;
+  const text = (input: unknown, limit: number) => {
+    if (typeof input !== 'string') return input;
+    const trimmed = input.trim();
+    if (trimmed.length > limit) compacted = true;
+    return trimmed.slice(0, limit);
+  };
+  const list = (input: unknown, limit: number) => {
+    if (!Array.isArray(input)) return input;
+    if (input.length > limit) compacted = true;
+    return input.slice(0, limit);
+  };
+  const objects = (
+    input: unknown,
+    limit: number,
+    normalize: (item: Record<string, unknown>) => Record<string, unknown>
+  ) => {
+    const selected = list(input, limit);
+    if (!Array.isArray(selected)) return selected;
+    return selected.map(item =>
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? normalize(item as Record<string, unknown>)
+        : item
+    );
+  };
+  const evidenceFiles = (input: unknown) => {
+    const selected = list(input, 20);
+    return Array.isArray(selected)
+      ? selected.map(item => text(item, 1024))
+      : selected;
+  };
+
+  const normalizedValue = {
+      ...source,
+      importantCaveat: text(
+        source.importantCaveat,
+        GENERATED_CONTEXT_LIMITS.caveatCharacters
+      ),
+      timeline: objects(
+        source.timeline,
+        GENERATED_CONTEXT_LIMITS.timeline,
+        item => ({
+          ...item,
+          title: text(item.title, GENERATED_CONTEXT_LIMITS.titleCharacters),
+          evidence: text(
+            item.evidence,
+            GENERATED_CONTEXT_LIMITS.explanationCharacters
+          ),
+          evidenceFiles: evidenceFiles(item.evidenceFiles),
+        })
+      ),
+      stageHypotheses: objects(
+        source.stageHypotheses,
+        GENERATED_CONTEXT_LIMITS.stageHypotheses,
+        item => ({
+          ...item,
+          reasoning: text(
+            item.reasoning,
+            GENERATED_CONTEXT_LIMITS.explanationCharacters
+          ),
+          evidenceFiles: evidenceFiles(item.evidenceFiles),
+        })
+      ),
+      documentRelations: objects(
+        source.documentRelations,
+        GENERATED_CONTEXT_LIMITS.documentRelations,
+        item => ({
+          ...item,
+          evidence: text(
+            item.evidence,
+            GENERATED_CONTEXT_LIMITS.explanationCharacters
+          ),
+        })
+      ),
+      conflicts: objects(
+        source.conflicts,
+        GENERATED_CONTEXT_LIMITS.conflicts,
+        item => ({
+          ...item,
+          description: text(
+            item.description,
+            GENERATED_CONTEXT_LIMITS.explanationCharacters
+          ),
+          evidenceFiles: evidenceFiles(item.evidenceFiles),
+        })
+      ),
+      openQuestions: (() => {
+        const selected = list(
+          source.openQuestions,
+          GENERATED_CONTEXT_LIMITS.openQuestions
+        );
+        return Array.isArray(selected)
+          ? selected.map(item =>
+              text(item, GENERATED_CONTEXT_LIMITS.explanationCharacters)
+            )
+          : selected;
+      })(),
+    };
+  return {
+    compacted,
+    value: normalizedValue,
+  };
 }
 
 export function diagnoseMissingContextJson(content: string): string {
@@ -433,69 +651,46 @@ async function invokeContextModel(params: {
   client?: InvokeClient;
 }): Promise<ContextModelResponse> {
   if (params.client) {
+    const startedAt = Date.now();
     const response = await params.client.invoke(params.messages, {
       model: PROJECT_CONTEXT_MODEL,
       temperature: params.temperature,
     });
     return {
       content: response.content,
-      finishReason: response.finishReason ?? null,
-      outputTokens: response.outputTokens ?? null,
-      maxOutputTokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
+      diagnostics: {
+        model: PROJECT_CONTEXT_MODEL,
+        inputCharacters: messageCharacterCount(params.messages),
+        estimatedInputTokens: Math.ceil(
+          messageCharacterCount(params.messages) / 2
+        ),
+        outputCharacters: response.content.length,
+        outputTokens: response.outputTokens ?? null,
+        finishReason: response.finishReason ?? null,
+        maxOutputTokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
+        durationMs: Date.now() - startedAt,
+      },
     };
   }
-
-  const config = new Config();
-  if (!config.modelBaseUrl) {
-    throw new Error('缺少 COZE_INTEGRATION_MODEL_BASE_URL，无法调用项目上下文模型');
-  }
-  if (!config.apiKey) {
-    throw new Error('缺少 COZE_WORKLOAD_IDENTITY_API_KEY，无法调用项目上下文模型');
-  }
-
-  const endpoint = `${config.modelBaseUrl.replace(/\/$/, '')}/chat/completions`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json',
-      'X-Client-Sdk': 'investment-project-context/1.0',
-      ...(params.customHeaders ?? {}),
-    },
-    body: JSON.stringify({
-      model: PROJECT_CONTEXT_MODEL,
-      messages: params.messages,
-      temperature: params.temperature,
-      stream: false,
-      max_tokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
-      response_format: { type: 'json_object' },
-      thinking: { type: 'disabled' },
-    }),
-    signal: AbortSignal.timeout(config.timeout),
-  });
-  const payload = (await response.json().catch(() => ({}))) as ChatCompletionsResponse;
-  if (!response.ok) {
-    throw new Error(
-      `项目上下文模型请求失败（HTTP ${response.status}）：${payload.error?.message ?? '上游未返回错误说明'}`
-    );
-  }
-
-  const choice = payload.choices?.[0];
-  if (!choice) throw new Error('项目上下文模型响应中没有 choices[0]');
-  return {
-    content: choice.message?.content ?? '',
-    finishReason: choice.finish_reason ?? null,
-    outputTokens: payload.usage?.completion_tokens ?? null,
+  return invokeChatCompletion({
+    messages: params.messages,
+    model: PROJECT_CONTEXT_MODEL,
+    temperature: params.temperature,
     maxOutputTokens: PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
-  };
+    customHeaders: params.customHeaders,
+    responseFormat: 'json_object',
+    timeoutMs: PROJECT_CONTEXT_TIMEOUT_MS,
+  });
 }
 
 function contextResponseDiagnostic(response: ContextModelResponse): string {
   const metadata = [
-    response.finishReason ? `finish_reason=${response.finishReason}` : null,
-    response.outputTokens === null
+    response.diagnostics.finishReason
+      ? `finish_reason=${response.diagnostics.finishReason}`
+      : null,
+    response.diagnostics.outputTokens === null
       ? null
-      : `输出 ${response.outputTokens}/${response.maxOutputTokens} tokens`,
+      : `输出 ${response.diagnostics.outputTokens}/${response.diagnostics.maxOutputTokens} tokens`,
   ].filter(Boolean);
   return metadata.length > 0 ? `（${metadata.join('，')}）` : '';
 }
@@ -514,25 +709,46 @@ function validateEvidenceReferences(
   if (omittedCount > 0) {
     warnings.add(`本轮上下文预算未包含 ${omittedCount} 份文件，项目快照可能不完整`);
   }
+  const seenEvents = new Set<string>();
   const timeline = context.timeline.flatMap(event => {
     const evidenceFiles = validEvidenceFiles(event.evidenceFiles);
     if (evidenceFiles.length === 0) {
       warnings.add(`已丢弃缺少有效来源文件的项目事件：${event.title}`);
       return [];
     }
+    const signature = JSON.stringify([
+      event.date,
+      event.eventType,
+      event.stage,
+      evidenceFiles.slice().sort(),
+    ]);
+    if (seenEvents.has(signature)) {
+      warnings.add(`已合并重复项目事件：${event.title}`);
+      return [];
+    }
+    seenEvents.add(signature);
     return [{ ...event, evidenceFiles }];
   });
   const stageHypotheses = (context.stageHypotheses ?? []).flatMap(hypothesis => {
     const evidenceFiles = validEvidenceFiles(hypothesis.evidenceFiles);
     return evidenceFiles.length > 0 ? [{ ...hypothesis, evidenceFiles }] : [];
   });
-  const documentRelations = (context.documentRelations ?? []).filter(
-    relation =>
-      validPaths.has(normalizeSourcePath(relation.fromSourcePath)) &&
-      validPaths.has(normalizeSourcePath(relation.toSourcePath)) &&
-      normalizeSourcePath(relation.fromSourcePath) !==
-        normalizeSourcePath(relation.toSourcePath)
-  );
+  const seenRelations = new Set<string>();
+  const documentRelations = (context.documentRelations ?? []).filter(relation => {
+    const from = normalizeSourcePath(relation.fromSourcePath);
+    const to = normalizeSourcePath(relation.toSourcePath);
+    const signature = JSON.stringify([from, to, relation.relationType]);
+    if (
+      !validPaths.has(from) ||
+      !validPaths.has(to) ||
+      from === to ||
+      seenRelations.has(signature)
+    ) {
+      return false;
+    }
+    seenRelations.add(signature);
+    return true;
+  });
   const conflicts = (context.conflicts ?? []).flatMap(conflict => {
     const evidenceFiles = validEvidenceFiles(conflict.evidenceFiles);
     return evidenceFiles.length > 0 ? [{ ...conflict, evidenceFiles }] : [];
@@ -545,6 +761,10 @@ function validateEvidenceReferences(
     stageHypotheses,
     documentRelations,
     conflicts,
+    openQuestions: [...new Set(context.openQuestions)].slice(
+      0,
+      GENERATED_CONTEXT_LIMITS.openQuestions
+    ),
     sourceDocumentCount: documents.length,
     generatedAt: new Date().toISOString(),
     synthesizerVersion: PROJECT_CONTEXT_SYNTHESIZER_VERSION,
@@ -555,13 +775,18 @@ function validateEvidenceReferences(
 export async function synthesizeProjectContext(
   params: SynthesizeProjectContextParams
 ): Promise<ProjectContextSynthesisResult> {
+  const synthesisStartedAt = Date.now();
   const documents = params.documents
     .map(document => ({
       ...document,
       sourcePath: normalizeSourcePath(document.sourcePath),
     }))
     .filter(document => document.sourcePath);
-  const { cards, omittedCount } = selectFactCards(documents);
+  const { cards, omittedCount } = selectFactCards(
+    documents,
+    params.focusSourcePaths,
+    params.previousContext
+  );
   const allowLlm = params.allowLlm ?? Boolean(params.client || params.customHeaders);
 
   if (!allowLlm || cards.length === 0) {
@@ -573,12 +798,15 @@ export async function synthesizeProjectContext(
       status: 'deterministic_fallback',
       context: deterministicContext(params.projectName, documents, [warning]),
       llmCallCount: 0,
+      modelCalls: [],
+      totalDurationMs: Date.now() - synthesisStartedAt,
       inputDocumentCount: documents.length,
       includedDocumentCount: cards.length,
     };
   }
 
   let llmCallCount = 0;
+  const modelCalls: ModelCallDiagnostics[] = [];
   try {
     llmCallCount += 1;
     const response = await invokeContextModel({
@@ -586,20 +814,26 @@ export async function synthesizeProjectContext(
         projectName: params.projectName,
         factCards: cards,
         previousContext: params.previousContext,
+        focusSourcePaths: params.focusSourcePaths,
+        removedSourcePaths: params.removedSourcePaths,
       }),
       temperature: 0.1,
       customHeaders: params.customHeaders,
       client: params.client,
     });
+    modelCalls.push(response.diagnostics);
     try {
       return {
         status: 'llm_synthesized',
         context: parseContextResponse({
           response,
+          projectName: params.projectName,
           documents,
           omittedCount,
         }),
         llmCallCount: 1,
+        modelCalls,
+        totalDurationMs: Date.now() - synthesisStartedAt,
         inputDocumentCount: documents.length,
         includedDocumentCount: cards.length,
       };
@@ -615,13 +849,17 @@ export async function synthesizeProjectContext(
           factCards: cards,
           previousContext: null,
           compact: true,
+          focusSourcePaths: params.focusSourcePaths,
+          removedSourcePaths: params.removedSourcePaths,
         }),
         temperature: 0,
         customHeaders: params.customHeaders,
         client: params.client,
       });
+      modelCalls.push(compactResponse.diagnostics);
       const repaired = parseContextResponse({
         response: compactResponse,
+        projectName: params.projectName,
         documents,
         omittedCount,
       });
@@ -635,6 +873,8 @@ export async function synthesizeProjectContext(
           ],
         }),
         llmCallCount: 2,
+        modelCalls,
+        totalDurationMs: Date.now() - synthesisStartedAt,
         inputDocumentCount: documents.length,
         includedDocumentCount: cards.length,
       };
@@ -650,6 +890,8 @@ export async function synthesizeProjectContext(
         `项目上下文大模型未能生成结构化结果，本次已使用规则 Context：${message}`,
       ]),
       llmCallCount,
+      modelCalls,
+      totalDurationMs: Date.now() - synthesisStartedAt,
       inputDocumentCount: documents.length,
       includedDocumentCount: cards.length,
     };

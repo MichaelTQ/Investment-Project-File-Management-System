@@ -26,6 +26,16 @@ export const runtime = "nodejs";
 
 // POST /api/archive - 用户确认 AI 建议名称后归档文件
 export async function POST(request: NextRequest) {
+  const requestStartedAt = Date.now();
+  const phaseTimings: Array<{ phase: string; durationMs: number }> = [];
+  const measurePhase = async <T>(phase: string, action: () => Promise<T>) => {
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      phaseTimings.push({ phase, durationMs: Date.now() - startedAt });
+    }
+  };
   try {
     const isJsonRequest = request.headers
       .get("content-type")
@@ -103,7 +113,7 @@ export async function POST(request: NextRequest) {
     }
     folderPath = targetFolder.folderPath;
 
-    const project = await getProject(projectId);
+    const project = await measurePhase("load_project", () => getProject(projectId));
     if (!project) {
       return NextResponse.json({ error: "项目不存在" }, { status: 404 });
     }
@@ -111,8 +121,9 @@ export async function POST(request: NextRequest) {
     const confidence = Number.isFinite(parsedConfidence)
       ? Math.max(0, Math.min(100, Math.round(parsedConfidence)))
       : 0;
-    const archived = storageKey
-      ? await archiveStoredFile({
+    const archived = await measurePhase("archive_file", async () =>
+      storageKey
+      ? archiveStoredFile({
           storageKey,
           originalName,
           fileSize,
@@ -125,7 +136,7 @@ export async function POST(request: NextRequest) {
           reasoning,
           archiveTitle,
         })
-      : await archiveFile({
+      : archiveFile({
           fileBuffer: Buffer.from(await file!.arrayBuffer()),
           originalName,
           projectId,
@@ -136,19 +147,24 @@ export async function POST(request: NextRequest) {
           confidence,
           reasoning,
           archiveTitle,
-        });
+        })
+    );
 
     let projectContext;
     try {
       if (documentFacts) {
-        const committed = await commitArchivedProjectDocument({
-          projectId,
-          projectName: project.name,
-          sourcePath: sourcePath || originalName,
-          facts: documentFacts,
-          archivedFileId: archived.id,
-          customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
-        });
+        const factsToCommit = documentFacts;
+        const committed = await measurePhase(
+          "commit_and_rebuild_context",
+          () => commitArchivedProjectDocument({
+            projectId,
+            projectName: project.name,
+            sourcePath: sourcePath || originalName,
+            facts: factsToCommit,
+            archivedFileId: archived.id,
+            customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+          })
+        );
         const { currentDecision: _currentDecision, ...view } = committed;
         void _currentDecision;
         projectContext = view;
@@ -171,6 +187,11 @@ export async function POST(request: NextRequest) {
         folderPath: archived.folderPath,
       },
       projectContext,
+      performance: {
+        totalDurationMs: Date.now() - requestStartedAt,
+        phases: phaseTimings,
+        modelCalls: projectContext?.contextSynthesis?.modelCalls ?? [],
+      },
     });
   } catch (error) {
     return NextResponse.json(

@@ -111,7 +111,7 @@ test('局部字段缺失或超长时保留其余事实而不是整份降级', ()
 
   assert.equal(facts.documentType, 'company_charter');
   assert.equal(facts.dates[1]?.date, null);
-  assert.equal(facts.transactionChanges[0]?.after?.length, 200);
+  assert.equal(facts.transactionChanges[0]?.after?.length, 120);
   assert.deepEqual(facts.explicitStageClues, []);
   assert.match(facts.warnings.join('\n'), /过长的交易变化值已截断/);
   assert.match(facts.warnings.join('\n'), /explicitStageClues/);

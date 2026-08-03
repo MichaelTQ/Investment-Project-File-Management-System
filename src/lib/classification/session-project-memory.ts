@@ -7,11 +7,11 @@ import type {
   RelatedDocumentFacts,
 } from './context-decision';
 import {
-  appendDurableContextVersion,
-  appendDurableDocumentTombstone,
-  appendDurableDocumentVersion,
   clearDurableProjectMemory,
+  compactLegacyProjectMemory,
   loadDurableProjectMemory,
+  loadDurableProjectRevision,
+  saveDurableProjectMemorySnapshot,
   type ProjectContextLifecycleState,
 } from './durable-project-memory';
 import type { DocumentFacts, DocumentType } from './document-facts';
@@ -79,6 +79,7 @@ export interface ProjectSessionMemoryView {
   mode: typeof DURABLE_MEMORY_MODE | typeof FALLBACK_MEMORY_MODE;
   persistent: boolean;
   persistenceWarning?: string;
+  memoryLoadDurationMs: number;
   projectId: string;
   revision: number;
   documentCount: number;
@@ -90,6 +91,8 @@ export interface ProjectSessionMemoryView {
   contextSynthesis?: {
     status: ProjectContextSynthesisResult['status'];
     llmCallCount: number;
+    modelCalls: ProjectContextSynthesisResult['modelCalls'];
+    totalDurationMs: number;
     inputDocumentCount: number;
     includedDocumentCount: number;
     latestEvidencedStage: ProjectContextSnapshot['latestEvidencedStage'];
@@ -308,6 +311,35 @@ function initialContextState(): ProjectContextLifecycleState {
   };
 }
 
+function recordPendingChange(
+  project: SessionProjectRecord,
+  kind: 'added' | 'deleted' | 'moved',
+  sourcePath: string
+): void {
+  const existing = project.contextState.pendingChanges ?? {
+    fromRevision: project.contextState.basedOnRevision + 1,
+    toRevision: project.revision,
+    added: [],
+    deleted: [],
+    moved: [],
+  };
+  const next = {
+    ...existing,
+    toRevision: project.revision,
+    added: [...existing.added],
+    deleted: [...existing.deleted],
+    moved: [...existing.moved],
+  };
+  if (kind === 'added') {
+    next.deleted = next.deleted.filter(path => path !== sourcePath);
+  } else if (kind === 'deleted') {
+    next.added = next.added.filter(path => path !== sourcePath);
+    next.moved = next.moved.filter(path => path !== sourcePath);
+  }
+  if (!next[kind].includes(sourcePath)) next[kind].push(sourcePath);
+  project.contextState.pendingChanges = next;
+}
+
 function combinedRelatedDocuments(
   project: SessionProjectRecord,
   supplied: RelatedDocumentFacts[]
@@ -347,13 +379,28 @@ interface LoadedProject {
   project: SessionProjectRecord;
   mode: ProjectSessionMemoryView['mode'];
   persistenceWarning?: string;
+  loadDurationMs: number;
+  needsLegacyCompaction: boolean;
 }
 
 async function loadProjectRecord(projectId: string): Promise<LoadedProject> {
+  const loadStartedAt = Date.now();
   const store = memoryStore();
   const now = Date.now();
   pruneFallbackProjects(store, now);
   try {
+    const local = store.projects.get(projectId);
+    if (local) {
+      const durableRevision = await loadDurableProjectRevision(projectId);
+      if (durableRevision !== null && durableRevision === local.revision) {
+        return {
+          project: local,
+          mode: DURABLE_MEMORY_MODE,
+          loadDurationMs: Date.now() - loadStartedAt,
+          needsLegacyCompaction: false,
+        };
+      }
+    }
     const durable = await loadDurableProjectMemory(projectId);
     const project = mergeProjects(
       {
@@ -367,13 +414,18 @@ async function loadProjectRecord(projectId: string): Promise<LoadedProject> {
           ...[...durable.documents.values()].map(document => document.updatedAt)
         ),
       },
-      store.projects.get(projectId)
+      local && local.revision >= durable.revision ? local : undefined
     );
     for (const document of project.documents.values()) {
       document.facts = recoverDocumentType(document.sourcePath, document.facts);
     }
     store.projects.set(projectId, project);
-    return { project, mode: DURABLE_MEMORY_MODE };
+    return {
+      project,
+      mode: DURABLE_MEMORY_MODE,
+      loadDurationMs: Date.now() - loadStartedAt,
+      needsLegacyCompaction: durable.loadedFrom === 'legacy',
+    };
   } catch (error) {
     console.error('Durable project memory load failed:', error);
     return {
@@ -381,7 +433,32 @@ async function loadProjectRecord(projectId: string): Promise<LoadedProject> {
       mode: FALLBACK_MEMORY_MODE,
       persistenceWarning:
         error instanceof Error ? error.message : 'S3 项目记忆暂时不可用',
+      loadDurationMs: Date.now() - loadStartedAt,
+      needsLegacyCompaction: false,
     };
+  }
+}
+
+async function persistProjectSnapshot(loaded: LoadedProject): Promise<void> {
+  if (loaded.mode !== DURABLE_MEMORY_MODE) return;
+  const { project } = loaded;
+  try {
+    await saveDurableProjectMemorySnapshot({
+      projectId: project.projectId,
+      revision: project.revision,
+      context: project.context,
+      contextState: project.contextState,
+      documents: project.documents,
+      updatedAt: project.updatedAt,
+    });
+    if (loaded.needsLegacyCompaction) {
+      await compactLegacyProjectMemory(project.projectId);
+      loaded.needsLegacyCompaction = false;
+    }
+  } catch (error) {
+    loaded.mode = FALLBACK_MEMORY_MODE;
+    loaded.persistenceWarning =
+      error instanceof Error ? error.message : 'S3 项目记忆快照写入失败';
   }
 }
 
@@ -389,6 +466,8 @@ function synthesisView(result: ProjectContextSynthesisResult) {
   return {
     status: result.status,
     llmCallCount: result.llmCallCount,
+    modelCalls: result.modelCalls,
+    totalDurationMs: result.totalDurationMs,
     inputDocumentCount: result.inputDocumentCount,
     includedDocumentCount: result.includedDocumentCount,
     latestEvidencedStage: result.context.latestEvidencedStage,
@@ -412,6 +491,7 @@ function memoryView(params: {
     mode,
     persistent: mode === DURABLE_MEMORY_MODE,
     persistenceWarning,
+    memoryLoadDurationMs: params.loaded.loadDurationMs,
     projectId: project.projectId,
     revision: project.revision,
     documentCount: project.documents.size,
@@ -441,6 +521,7 @@ async function rebuildLoadedProject(
   reEvaluatedDocuments: ReEvaluatedDocument[];
 }> {
   const { project } = loaded;
+  const pendingChanges = project.contextState.pendingChanges;
   const now = Math.max(
     Date.now(),
     (project.contextState.updatedAt ?? project.contextState.lastAttemptAt ?? 0) + 1
@@ -462,6 +543,10 @@ async function rebuildLoadedProject(
     customHeaders: options.customHeaders,
     client: options.contextSynthesizerClient,
     allowLlm: Boolean(options.contextSynthesizerClient || options.customHeaders),
+    focusSourcePaths: pendingChanges
+      ? [...pendingChanges.added, ...pendingChanges.moved]
+      : undefined,
+    removedSourcePaths: pendingChanges?.deleted,
   });
   const synthesisSucceeded = !synthesis.error;
   if (synthesisSucceeded || !project.context) {
@@ -475,6 +560,7 @@ async function rebuildLoadedProject(
         dirtyReasons: [],
         updatedAt: now,
         lastAttemptAt: now,
+        pendingChanges: undefined,
       }
     : {
         ...project.contextState,
@@ -489,7 +575,6 @@ async function rebuildLoadedProject(
   project.updatedAt = now;
 
   const reEvaluatedDocuments: ReEvaluatedDocument[] = [];
-  const changedRecords: SessionDocumentRecord[] = [];
   const availableDocuments = combinedRelatedDocuments(project, []);
   for (const record of project.documents.values()) {
     const previousDecision = record.agentDecision;
@@ -504,7 +589,6 @@ async function rebuildLoadedProject(
     record.agentDecision = decision;
     if (decisionSignature(previousDecision) !== decisionSignature(decision)) {
       record.updatedAt = Math.max(now, record.updatedAt + 1);
-      changedRecords.push(record);
       if (previousDecision) {
         reEvaluatedDocuments.push({
           sourcePath: record.sourcePath,
@@ -518,27 +602,8 @@ async function rebuildLoadedProject(
     }
   }
   memoryStore().projects.set(project.projectId, project);
-  if (loaded.mode === DURABLE_MEMORY_MODE && project.context) {
-    try {
-      await Promise.all([
-        appendDurableContextVersion({
-          projectId: project.projectId,
-          context: project.context,
-          contextState: project.contextState,
-          updatedAt: now,
-        }),
-        ...changedRecords
-          .filter(record => record.sourcePath !== skipPersistSourcePath)
-          .map(record =>
-          appendDurableDocumentVersion({ projectId: project.projectId, record })
-          ),
-      ]);
-    } catch (error) {
-      loaded.mode = FALLBACK_MEMORY_MODE;
-      loaded.persistenceWarning =
-        error instanceof Error ? error.message : 'S3 项目记忆写入失败';
-    }
-  }
+  void skipPersistSourcePath;
+  await persistProjectSnapshot(loaded);
   return { synthesis, reEvaluatedDocuments };
 }
 
@@ -609,22 +674,25 @@ export async function commitArchivedProjectDocument(
     };
     project.documents.set(sourcePath, currentRecord);
     project.revision += 1;
+    recordPendingChange(project, 'added', sourcePath);
     project.updatedAt = now;
     if (loaded.mode === FALLBACK_MEMORY_MODE) {
       trimFallbackDocuments(project, sourcePath);
     }
     memoryStore().projects.set(projectId, project);
 
-    // 先提交正式文件事实，再生成依赖该事实的下一版Context。
-    if (loaded.mode === DURABLE_MEMORY_MODE) {
-      try {
-        await appendDurableDocumentVersion({ projectId, record: currentRecord });
-      } catch (error) {
-        loaded.mode = FALLBACK_MEMORY_MODE;
-        loaded.persistenceWarning =
-          error instanceof Error ? error.message : '归档事实写入S3失败';
-      }
-    }
+    // 先把正式文件事实写入最新快照，再生成依赖该事实的下一版 Context。
+    project.contextState = {
+      ...project.contextState,
+      status: 'dirty',
+      dirtyReasons: [
+        ...new Set([
+          ...project.contextState.dirtyReasons,
+          `已归档文件“${sourcePath}”，Context 待更新`,
+        ]),
+      ],
+    };
+    await persistProjectSnapshot(loaded);
 
     const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(
       loaded,
@@ -643,16 +711,7 @@ export async function commitArchivedProjectDocument(
         availableRelatedDocuments: availableDocuments,
       }));
     currentRecord.agentDecision = currentDecision;
-    // Context重建后补写最新Agent建议；正式事实已经在Context之前提交。
-    if (loaded.mode === DURABLE_MEMORY_MODE) {
-      try {
-        await appendDurableDocumentVersion({ projectId, record: currentRecord });
-      } catch (error) {
-        loaded.mode = FALLBACK_MEMORY_MODE;
-        loaded.persistenceWarning =
-          error instanceof Error ? error.message : '归档事实写入S3失败';
-      }
-    }
+    // rebuildLoadedProject 已将 Context 和最新 Agent 建议写入同一个快照。
     return {
       ...memoryView({
         loaded,
@@ -708,14 +767,7 @@ async function persistDirtyState(
   };
   project.updatedAt = now;
   memoryStore().projects.set(project.projectId, project);
-  if (loaded.mode === DURABLE_MEMORY_MODE) {
-    await appendDurableContextVersion({
-      projectId: project.projectId,
-      context: project.context,
-      contextState: project.contextState,
-      updatedAt: now,
-    });
-  }
+  await persistProjectSnapshot(loaded);
 }
 
 export async function markProjectContextDirty(
@@ -745,10 +797,7 @@ export async function forgetProjectDocument(
     const { project } = loaded;
     const existed = project.documents.delete(normalizedSourcePath);
     project.revision += 1;
-    await appendDurableDocumentTombstone({
-      projectId: normalizedProjectId,
-      sourcePath: normalizedSourcePath,
-    });
+    recordPendingChange(project, 'deleted', normalizedSourcePath);
     await persistDirtyState(
       loaded,
       `已删除文件“${normalizedSourcePath}”，正式Context尚未重建`
@@ -781,10 +830,7 @@ export async function forgetProjectDocumentByArchivedFileId(
     }
     project.documents.delete(record.sourcePath);
     project.revision += 1;
-    await appendDurableDocumentTombstone({
-      projectId: normalizedProjectId,
-      sourcePath: record.sourcePath,
-    });
+    recordPendingChange(project, 'deleted', record.sourcePath);
     await persistDirtyState(
       loaded,
       `已删除文件“${record.sourcePath}”，正式Context尚未重建`
@@ -819,18 +865,13 @@ export async function forgetProjectDocumentsByFileName(
       );
       return 0;
     }
-    await Promise.all(
-      matchingPaths.map(sourcePath =>
-        appendDurableDocumentTombstone({
-          projectId: normalizedProjectId,
-          sourcePath,
-        })
-      )
-    );
     for (const sourcePath of matchingPaths) {
       project.documents.delete(sourcePath);
     }
     project.revision += matchingPaths.length;
+    for (const sourcePath of matchingPaths) {
+      recordPendingChange(project, 'deleted', sourcePath);
+    }
     await persistDirtyState(
       loaded,
       matchingPaths.length > 0
