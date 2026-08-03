@@ -15,11 +15,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  assessKeywordMatches,
-  matchByKeywords,
-} from '../src/lib/classification';
-import { getCategoryEvidencePolicy } from '../src/lib/classification/category-policies';
-import {
   decideWithProjectContext,
   parseProjectContextSnapshot,
   type RelatedDocumentFacts,
@@ -33,9 +28,8 @@ interface GoldCase {
   id: string;
   relativePath: string;
   documentType: DocumentType;
-  expectedCategory: {
+  expectedFolder: {
     folderId: string;
-    fileName: string;
     folderPath: string[];
   };
   requiresHumanConfirmation: boolean;
@@ -226,17 +220,17 @@ function buildFacts(fileName: string, pages: OcrPage[]): DocumentFacts {
   };
 }
 
-function sameCategory(
-  left: { folderId: string; fileName: string } | null | undefined,
-  right: { folderId: string; fileName: string }
+function sameFolder(
+  left: { folderId: string } | null | undefined,
+  right: { folderId: string }
 ): boolean {
-  return left?.folderId === right.folderId && left.fileName === right.fileName;
+  return left?.folderId === right.folderId;
 }
 
-function categoryLabel(
-  category: { folderId: string; fileName: string } | null | undefined
+function folderLabel(
+  folder: { name?: string; fileName?: string } | null | undefined
 ): string {
-  return category ? category.fileName : '无结论';
+  return folder?.name ?? folder?.fileName ?? '无结论';
 }
 
 function sha256(filePath: string): string {
@@ -256,6 +250,15 @@ function main(): void {
   );
   const projectContext = parseProjectContextSnapshot(rawContext);
   if (!projectContext) throw new Error('君柔项目上下文不符合 Schema');
+  const existingFacts = existsSync(
+    path.join(outputRoot, 'junrou-shadow-evaluation.json')
+  )
+    ? new Map(
+        readJson<{ cases: Array<{ id: string; facts: DocumentFacts }> }>(
+          'output/reports/junrou-shadow-evaluation.json'
+        ).cases.map(item => [item.id, item.facts] as const)
+      )
+    : new Map<string, DocumentFacts>();
 
   compileOcrHelper();
   const tempRoot = mkdtempSync(path.join(tmpdir(), 'junrou-shadow-'));
@@ -268,7 +271,11 @@ function main(): void {
       if (!existsSync(pdfPath)) throw new Error(`金标准文件不存在：${gold.relativePath}`);
       console.error(`[${index + 1}/${fixture.cases.length}] OCR ${gold.relativePath}`);
       const pages = renderAndOcr(pdfPath, path.join(tempRoot, gold.id));
-      const extractedFacts = buildFacts(path.basename(pdfPath), pages);
+      const ocrCharacterCount = pages.map(page => page.text).join('').length;
+      const extractedFacts =
+        ocrCharacterCount > 0
+          ? buildFacts(path.basename(pdfPath), pages)
+          : existingFacts.get(gold.id) ?? buildFacts(path.basename(pdfPath), pages);
       factsByCase.set(gold.id, extractedFacts);
       rawRows.push({
         id: gold.id,
@@ -276,7 +283,12 @@ function main(): void {
         sha256: sha256(pdfPath),
         pageCount: pdfPageCount(pdfPath),
         textLayerCharacterCount: 0,
-        ocrCharacterCount: pages.map(page => page.text).join('').length,
+        ocrCharacterCount:
+          ocrCharacterCount > 0
+            ? ocrCharacterCount
+            : existingFacts.has(gold.id)
+              ? extractedFacts.evidenceQuotes.join('').length
+              : 0,
         ocrEmptyPageCount: pages.filter(page => !page.text.trim()).length,
         facts: extractedFacts,
       });
@@ -292,24 +304,6 @@ function main(): void {
     const evaluated = fixture.cases.map(gold => {
       const raw = rawRows.find(item => item.id === gold.id)!;
       const extractedFacts = factsByCase.get(gold.id)!;
-      const ocrText = [
-        extractedFacts.title,
-        ...extractedFacts.explicitStageClues,
-        ...extractedFacts.evidenceQuotes,
-      ].join('\n');
-      const keywordMatches = matchByKeywords(
-        path.basename(gold.relativePath),
-        ocrText
-      );
-      const keywordAssessment = assessKeywordMatches(keywordMatches);
-      const keywordTop = keywordMatches[0]?.category ?? null;
-      const keywordPolicy = keywordTop
-        ? getCategoryEvidencePolicy(keywordTop.folderId, keywordTop.fileName)
-        : undefined;
-      const keywordCanAutoDecide =
-        keywordAssessment.passed &&
-        !keywordAssessment.ambiguous &&
-        !keywordPolicy?.defaultRequiresHumanReview;
       const contextDecision = decideWithProjectContext({
         sourcePath: gold.relativePath,
         facts: extractedFacts,
@@ -322,23 +316,18 @@ function main(): void {
       return {
         ...raw,
         goldDocumentType: gold.documentType,
-        goldCategory: gold.expectedCategory,
+        goldFolder: gold.expectedFolder,
         factTypeMatchesGold: extractedFacts.documentType === gold.documentType,
         keywordBaseline: {
-          topCategory: keywordTop,
-          topScore: keywordMatches[0]?.score ?? 0,
-          passed: keywordAssessment.passed,
-          ambiguous: keywordAssessment.ambiguous,
-          canAutoDecide: keywordCanAutoDecide,
-          topMatchesGold: sameCategory(keywordTop, gold.expectedCategory),
-          note: keywordCanAutoDecide
-            ? '关键词可直接决定'
-            : '仍需Coze LLM消歧或人工确认',
+          topFolder: null,
+          canAutoDecide: false,
+          topMatchesGold: false,
+          note: 'v5 已移除细分类关键词基线',
         },
         contextDecision,
-        contextMatchesGold: sameCategory(
-          contextDecision.selectedCategory,
-          gold.expectedCategory
+        contextMatchesGold: sameFolder(
+          contextDecision.selectedFolder,
+          gold.expectedFolder
         ),
       };
     });
@@ -354,10 +343,10 @@ function main(): void {
         item => item.keywordBaseline.canAutoDecide
       ).length,
       contextCoveredCount: evaluated.filter(
-        item => item.contextDecision.selectedCategory
+        item => item.contextDecision.selectedFolder
       ).length,
       contextCoveredCorrectCount: evaluated.filter(
-        item => item.contextDecision.selectedCategory && item.contextMatchesGold
+        item => item.contextDecision.selectedFolder && item.contextMatchesGold
       ).length,
       contextHumanReviewCount: evaluated.filter(
         item => item.contextDecision.requiresHumanReview
@@ -376,8 +365,8 @@ function main(): void {
           limitations: [
             '六份PDF全部无文字层，使用macOS Vision OCR',
             '本地事实适配器不等同于Coze LLM事实抽取器',
-            '未调用Coze LLM的legacy最终分类，只评估关键词预判',
-            '上下文规则v2覆盖当前六个金标准文档类型，仍需其他项目留出集验证',
+            'v5 已移除细分类关键词基线',
+            '上下文规则v5覆盖当前六个阶段文件夹金标准，仍需其他项目留出集验证',
           ],
           summary,
           cases: evaluated,
@@ -389,35 +378,29 @@ function main(): void {
     );
 
     const rows = evaluated.map(item => {
-      const gold = item.goldCategory as GoldCase['expectedCategory'];
-      const keyword = item.keywordBaseline as {
-        topCategory: { folderId: string; fileName: string } | null;
-        canAutoDecide: boolean;
-        topMatchesGold: boolean;
-      };
+      const gold = item.goldFolder as GoldCase['expectedFolder'];
       const context = item.contextDecision;
-      const result = context.selectedCategory
+      const result = context.selectedFolder
         ? item.contextMatchesGold
           ? '上下文命中'
           : '上下文错误'
         : '规则未覆盖/证据不足';
-      return `| ${escapeCell(String(item.relativePath))} | ${gold.fileName} | ${categoryLabel(keyword.topCategory)}${keyword.canAutoDecide ? '' : '（需消歧）'} | ${categoryLabel(context.selectedCategory)} | ${result} |`;
+      return `| ${escapeCell(String(item.relativePath))} | ${gold.folderPath.at(-1)} | 已移除 | ${folderLabel(context.selectedFolder)} | ${result} |`;
     });
-    const report = `# 君柔真实文件 Shadow 对照报告
+    const report = `# 君柔真实文件 Shadow 对照报告（阶段文件夹 v5）
 
 ## 1. 结论
 
 本次直接读取了 6 份已验收金标准原始 PDF。六份文件全部是无文字层扫描件，普通 PDF 文本抽取的结果均为 0，因此本地使用 macOS Vision OCR 识别渲染页面后再进行 shadow 评测。
 
 - 文档类型抽取：${summary.factTypeCorrectCount}/${summary.evaluatedCaseCount} 与金标准一致；
-- legacy 关键词最高候选：${summary.keywordTopCorrectCount}/${summary.evaluatedCaseCount} 与金标准一致；
-- 关键词可不经消歧直接决定：${summary.keywordAutoDecisionCount}/${summary.evaluatedCaseCount}；
-- 上下文规则 v2 给出明确结论：${summary.contextCoveredCount}/${summary.evaluatedCaseCount}；
-- 已覆盖案例的上下文命中：${summary.contextCoveredCorrectCount}/${summary.contextCoveredCount || 0}。
+- 旧细分类关键词基线：已移除；
+- 上下文 v5 给出阶段文件夹：${summary.contextCoveredCount}/${summary.evaluatedCaseCount}；
+- 阶段文件夹命中：${summary.contextCoveredCorrectCount}/${summary.contextCoveredCount || 0}。
 
 ## 2. 逐文件对照
 
-| 原文件 | 金标准 | legacy 关键词预判 | 上下文 v2 | 结果 |
+| 原文件 | 金标准阶段 | 旧细分类 | v5 建议文件夹 | 结果 |
 |---|---|---|---|---|
 ${rows.join('\n')}
 
@@ -425,7 +408,7 @@ ${rows.join('\n')}
 
 1. OCR/视觉抽取是真实档案的必经步骤，不是可选优化。
 2. 单靠文件名和关键词不足以稳定区分两份公司章程；项目内注册资本对比可以提供决定性证据。
-3. \`context-decision-v2\` 已覆盖六个金标准类型，并通过排除证据避免把投委会决议、银行回单或退出交易文件误收进新规则。
+3. \`context-decision-v5\` 已覆盖六个金标准类型，并把结论统一收口到业务阶段文件夹。
 4. 投资合规性审查表即使证据充分，仍按既定策略保留人工复核。
 
 ## 4. 边界

@@ -1,218 +1,9 @@
 /**
- * 投资项目档案管理文件夹结构定义
- * 基于《国创致远-投资项目档案管理》文档
- * 支持按项目维度组织
+ * 投资项目归档文件夹结构。
+ *
+ * 系统只定义业务阶段文件夹，不再把文档类型建模为目录叶节点。
+ * 用户可以在阶段文件夹下自行创建子文件夹；自动分类默认只选择阶段根目录。
  */
-
-export interface FolderNode {
-  id: string;
-  name: string;
-  description?: string;
-  children?: FolderNode[];
-  files?: FileTemplate[];
-}
-
-export interface FileTemplate {
-  name: string;
-  keywords: string[];
-  description?: string;
-}
-
-// 完整的文件夹结构定义（文件类型模板，不含项目维度）
-export const FOLDER_STRUCTURE: FolderNode = {
-  id: 'root',
-  name: '投资项目档案',
-  description: '投资项目档案管理根目录',
-  children: [
-    {
-      id: 'investment',
-      name: '基金投资及投资执行',
-      description: '基金投资及投资执行阶段相关档案',
-      children: [
-        {
-          id: 'pre-project',
-          name: '立项前',
-          description: '立项前阶段文件',
-          files: [
-            { name: '保密协议', keywords: ['保密', '协议', 'NDA', 'confidential'], description: '项目立项前签署的保密协议' }
-          ]
-        },
-        {
-          id: 'project-initiation',
-          name: '项目立项',
-          description: '项目立项阶段文件',
-          files: [
-            { name: '立项申请书', keywords: ['立项', '申请', '立项申请'], description: '项目立项申请文件' },
-            { name: '立项报告', keywords: ['立项报告', '立项评审'], description: '项目立项评审报告' },
-            { name: '商业计划书', keywords: ['商业计划', 'BP', 'business plan', '商业计划书'], description: '拟投项目商业计划书' },
-            { name: '立项评审纪要', keywords: ['评审', '纪要', '立项评审纪要'], description: '立项评审会议纪要' }
-          ]
-        },
-        {
-          id: 'due-diligence',
-          name: '尽职调查',
-          description: '尽职调查阶段文件',
-          files: [
-            { name: '业务尽调报告', keywords: ['业务尽调', '业务尽职', '行业尽调', '业务尽调报告'], description: '业务/行业尽职调查报告' },
-            { name: '财务尽调报告', keywords: ['财务尽调', '财务尽职', '财务尽调报告'], description: '财务尽职调查报告' },
-            { name: '法律尽调报告', keywords: ['法律尽调', '法务尽调', '法律尽职', '法律尽调报告'], description: '法律尽职调查报告' }
-          ]
-        },
-        {
-          id: 'investment-decision',
-          name: '投资决策',
-          description: '投资决策阶段文件',
-          children: [
-            {
-              id: 'decision-meeting',
-              name: '上会材料',
-              description: '投资决策上会材料',
-              files: [
-                { name: '上会申请表', keywords: ['上会', '申请表', '上会申请'], description: '投资决策上会申请表' },
-                { name: '营业执照', keywords: ['营业执照', '三证合一', 'business license'], description: '三证合一后的营业执照' },
-                { name: '经营许可证', keywords: ['经营许可', '审批', '批文', '特许经营'], description: '特殊行业经营许可审批文件' },
-                { name: '贷款资料', keywords: ['贷款', '负债', '担保', '银行'], description: '银行负债相关资料' },
-                { name: '公司章程', keywords: ['章程', '工商登记', '公司章程'], description: '项目公司工商登记章程' },
-                { name: '纳税报表', keywords: ['纳税', '税务', '纳税报表'], description: '项目公司纳税报表' },
-                { name: '土地房产证', keywords: ['土地证', '房产证', '土地房产', '不动产权证'], description: '土地房产相关证明' },
-                { name: '汇算清缴报告', keywords: ['汇算清缴', '清缴报告', '近三年'], description: '近三年汇算清缴报告' },
-                { name: '审计报告', keywords: ['审计', '审计报告', '近三年'], description: '近三年审计报告' },
-                { name: '财务预测', keywords: ['财务预测', '预测报告'], description: '项目公司财务预测' },
-                { name: '投资建议书', keywords: ['投资建议', '建议书', '投资建议书'], description: '投资建议书' },
-                {
-                  name: '投资合规性审查表',
-                  keywords: ['投资项目合规性审查表', '投资合规性审查', '合规性审查表', '子基金管理人意见'],
-                  description: '投资决策阶段形成的项目合规性审查表及子基金管理人合规意见'
-                }
-              ]
-            },
-            {
-              id: 'decision-documents',
-              name: '决策文件',
-              description: '投资决策委员会决策文件',
-              files: [
-                { name: '表决票', keywords: ['表决', '投票', '表决票', '委员'], description: '所有参会委员签署的表决票' },
-                { name: '投委会决议', keywords: ['决议', '投委会', '投资决策', '投委会决议'], description: '投资决策委员会决议' }
-              ]
-            }
-          ]
-        },
-        {
-          id: 'investment-implementation',
-          name: '投资实施',
-          description: '投资实施阶段文件',
-          files: [
-            { name: '增资协议', keywords: ['增资协议', '增资', '股权转让', '协议原件'], description: '增资协议/股权转让协议（原件）' },
-            { name: '股东协议', keywords: ['股东协议', '投资者权利', '股东协议'], description: '股东协议/投资者权利协议（原件）' },
-            { name: '项目公司章程', keywords: ['项目公司章程', '新章程'], description: '项目公司章程' },
-            { name: '股东会决议', keywords: ['股东会', '决议', '股东会决议'], description: '项目公司股东会决议' },
-            { name: '董事会决议', keywords: ['董事会', '决议', '董事会决议'], description: '项目公司董事会决议' },
-            { name: '付款通知函', keywords: ['付款', '通知函', '确认函', '付款通知'], description: '拟投资标的确认函(即付款通知函)' },
-            { name: '转账凭证', keywords: ['转账', '凭证', '投资款'], description: '投资款转账凭证' },
-            { name: '确权文件', keywords: ['确权', '股东名册', '交割', '出资证明'], description: '股东名册、交割确认函、股东出资证明书' },
-            { name: '工商变更档案', keywords: ['工商变更', '变更档案', '工商'], description: '项目公司工商变更档案' }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'post-investment',
-      name: '投后管理',
-      description: '投后管理阶段相关档案',
-      children: [
-        {
-          id: 'post-investment-report',
-          name: '投后管理报告',
-          description: '投后管理报告文件',
-          files: [
-            { name: '半年度投后报告', keywords: ['半年度', '投后报告', '半年度投后', '9月'], description: '半年度投后管理报告（9月15日前出具）' },
-            { name: '年度投后报告', keywords: ['年度', '投后报告', '年度投后', '审计后'], description: '年度投后管理报告（被投企业出具审计报告后1个月内出具）' },
-            { name: '异常项目月度报告', keywords: ['月度', '异常', '风险', '月度报告'], description: '异常类项目月度报告（出现重大风险投资项目的）' }
-          ]
-        },
-        {
-          id: 'field-research',
-          name: '实地调研',
-          description: '实地调研相关文件',
-          files: [
-            { name: '访谈记录', keywords: ['访谈', '调研', '访谈记录', '访谈纪要'], description: '实地调研访谈记录' },
-            { name: '调研照片', keywords: ['照片', '调研', '实地', '图片'], description: '实地调研照片' }
-          ]
-        },
-        {
-          id: 'enterprise-materials',
-          name: '更新被投企业材料',
-          description: '被投企业信息更新材料',
-          files: [
-            { name: '企业信息更新', keywords: ['企业信息', '台账', '信息更新', '季度'], description: '被投企业信息、台账信息更新' },
-            { name: '系统更新记录', keywords: ['系统', '投资管理系统', '更新记录'], description: '投资管理系统更新记录' }
-          ]
-        },
-        {
-          id: 'risk-management',
-          name: '投后风险管理',
-          description: '投后风险管理相关文件',
-          files: [
-            { name: '风险事件报告', keywords: ['风险', '事件', '上报', 'T+0'], description: '重大风险事件上报（T+0）' },
-            { name: '风险处置方案', keywords: ['风险处置', '处置方案', '风险方案'], description: '风险处置方案' }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'exit',
-      name: '项目退出',
-      description: '项目退出阶段相关档案',
-      children: [
-        {
-          id: 'exit-decision',
-          name: '退出决策',
-          description: '退出决策阶段文件',
-          children: [
-            {
-              id: 'exit-meeting',
-              name: '上会材料',
-              description: '退出决策上会材料',
-              files: [
-                { name: '退出方案', keywords: ['退出', '方案', '退出方案'], description: '项目退出方案' }
-              ]
-            },
-            {
-              id: 'exit-decision-docs',
-              name: '决策文件',
-              description: '退出决策文件',
-              files: [
-                { name: '退出表决票', keywords: ['表决', '退出', '表决票'], description: '退出决策表决票' },
-                { name: '退出投委会决议', keywords: ['决议', '退出', '投委会'], description: '退出投委会决议' }
-              ]
-            }
-          ]
-        },
-        {
-          id: 'exit-implementation',
-          name: '退出执行',
-          description: '退出执行阶段文件',
-          files: [
-            { name: '交易协议', keywords: ['交易', '协议', '交易协议'], description: '退出交易协议' },
-            { name: '转账凭证', keywords: ['转账', '凭证', '退出'], description: '退出转账凭证' },
-            { name: '档案移交表', keywords: ['档案', '移交', '移交表'], description: '项目全部档案移交表' }
-          ]
-        }
-      ]
-    }
-  ]
-};
-
-// 扁平化的文件分类列表，用于快速匹配
-export interface FlatFileCategory {
-  folderPath: string[];
-  folderId: string;
-  fileName: string;
-  keywords: string[];
-  description?: string;
-  businessStage?: ArchiveBusinessStage;
-  isStageFallback?: boolean;
-}
 
 export type ArchiveBusinessStage =
   | 'pre_initiation'
@@ -224,159 +15,130 @@ export type ArchiveBusinessStage =
   | 'exit_decision'
   | 'exit_execution';
 
-const FOLDER_STAGE_MAP: Record<string, ArchiveBusinessStage> = {
-  'pre-project': 'pre_initiation',
-  'project-initiation': 'initiation',
-  'due-diligence': 'due_diligence',
-  'decision-meeting': 'investment_decision',
-  'decision-documents': 'investment_decision',
-  'investment-implementation': 'investment_execution',
-  'post-investment-report': 'post_investment',
-  'field-research': 'post_investment',
-  'enterprise-materials': 'post_investment',
-  'risk-management': 'post_investment',
-  'exit-meeting': 'exit_decision',
-  'exit-decision-docs': 'exit_decision',
-  'exit-implementation': 'exit_execution',
+export interface FolderNode {
+  id: string;
+  name: string;
+  description?: string;
+  businessStage?: ArchiveBusinessStage;
+  children?: FolderNode[];
+}
+
+export interface ArchiveFolder {
+  folderId: string;
+  name: string;
+  folderPath: string[];
+  businessStage: ArchiveBusinessStage;
+  description?: string;
+  isSystemFolder: true;
+}
+
+export const FOLDER_STRUCTURE: FolderNode = {
+  id: 'root',
+  name: '投资项目档案',
+  description: '投资项目档案管理根目录',
+  children: [
+    {
+      id: 'investment',
+      name: '基金投资及投资执行',
+      children: [
+        {
+          id: 'pre-project',
+          name: '立项前',
+          businessStage: 'pre_initiation',
+        },
+        {
+          id: 'project-initiation',
+          name: '项目立项',
+          businessStage: 'initiation',
+        },
+        {
+          id: 'due-diligence',
+          name: '尽职调查',
+          businessStage: 'due_diligence',
+        },
+        {
+          id: 'investment-decision',
+          name: '投资决策',
+          businessStage: 'investment_decision',
+        },
+        {
+          id: 'investment-implementation',
+          name: '投资实施',
+          businessStage: 'investment_execution',
+        },
+      ],
+    },
+    {
+      id: 'post-investment',
+      name: '投后管理',
+      businessStage: 'post_investment',
+    },
+    {
+      id: 'exit',
+      name: '项目退出',
+      children: [
+        {
+          id: 'exit-decision',
+          name: '退出决策',
+          businessStage: 'exit_decision',
+        },
+        {
+          id: 'exit-implementation',
+          name: '退出执行',
+          businessStage: 'exit_execution',
+        },
+      ],
+    },
+  ],
 };
+
+export function flattenArchiveFolders(
+  node: FolderNode,
+  path: string[] = []
+): ArchiveFolder[] {
+  const currentPath = [...path, node.name];
+  const folders: ArchiveFolder[] = node.businessStage
+    ? [
+        {
+          folderId: node.id,
+          name: node.name,
+          folderPath: currentPath,
+          businessStage: node.businessStage,
+          description: node.description,
+          isSystemFolder: true,
+        },
+      ]
+    : [];
+
+  for (const child of node.children ?? []) {
+    folders.push(...flattenArchiveFolders(child, currentPath));
+  }
+  return folders;
+}
+
+export const SYSTEM_ARCHIVE_FOLDERS = flattenArchiveFolders(FOLDER_STRUCTURE);
+
+export function getArchiveFolder(folderId: string): ArchiveFolder | null {
+  return (
+    SYSTEM_ARCHIVE_FOLDERS.find(folder => folder.folderId === folderId) ?? null
+  );
+}
+
+export function getFolderForBusinessStage(
+  stage: ArchiveBusinessStage
+): ArchiveFolder {
+  const folder = SYSTEM_ARCHIVE_FOLDERS.find(
+    candidate => candidate.businessStage === stage
+  );
+  if (!folder) throw new Error(`业务阶段 ${stage} 缺少系统归档文件夹`);
+  return folder;
+}
 
 export function getFolderBusinessStage(
   folderId: string
 ): ArchiveBusinessStage | null {
-  return FOLDER_STAGE_MAP[folderId] ?? null;
+  return getArchiveFolder(folderId)?.businessStage ?? null;
 }
-
-// 将树形结构扁平化为便于搜索的列表
-export function flattenFolderStructure(node: FolderNode, path: string[] = []): FlatFileCategory[] {
-  const result: FlatFileCategory[] = [];
-  const currentPath = [...path, node.name];
-  
-  if (node.files) {
-    for (const file of node.files) {
-      result.push({
-        folderPath: currentPath,
-        folderId: node.id,
-        fileName: file.name,
-        keywords: file.keywords,
-        description: file.description,
-        businessStage: getFolderBusinessStage(node.id) ?? undefined,
-      });
-    }
-  }
-  
-  if (node.children) {
-    for (const child of node.children) {
-      result.push(...flattenFolderStructure(child, currentPath));
-    }
-  }
-  
-  return result;
-}
-
-// 获取扁平化的文件分类列表
-export const FLAT_FILE_CATEGORIES = flattenFolderStructure(FOLDER_STRUCTURE);
-
-// 当业务阶段明确、但该阶段没有合适的细分文件类型时，直接归入阶段目录。
-// 这些是分类目标而不是新的物理子文件夹，避免因细分类缺失而跨阶段误归。
-export const STAGE_FALLBACK_CATEGORIES: FlatFileCategory[] = [
-  {
-    folderPath: ['投资项目档案', '基金投资及投资执行', '立项前'],
-    folderId: 'pre-project',
-    fileName: '其他立项前材料',
-    keywords: [],
-    description: '立项前阶段已确认、但没有更具体目录的材料',
-    businessStage: 'pre_initiation',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '基金投资及投资执行', '项目立项'],
-    folderId: 'project-initiation',
-    fileName: '其他立项材料',
-    keywords: [],
-    description: '项目立项阶段已确认、但没有更具体目录的材料',
-    businessStage: 'initiation',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '基金投资及投资执行', '尽职调查'],
-    folderId: 'due-diligence',
-    fileName: '其他尽调材料',
-    keywords: [],
-    description: '尽职调查阶段已确认、但没有更具体目录的材料',
-    businessStage: 'due_diligence',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '基金投资及投资执行', '投资决策'],
-    folderId: 'investment-decision',
-    fileName: '其他投资决策材料',
-    keywords: [],
-    description: '投资决策阶段已确认、但没有更具体目录的材料',
-    businessStage: 'investment_decision',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '基金投资及投资执行', '投资实施'],
-    folderId: 'investment-implementation',
-    fileName: '其他投资实施材料',
-    keywords: [],
-    description: '投资实施阶段已确认、但没有更具体目录的材料',
-    businessStage: 'investment_execution',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '投后管理'],
-    folderId: 'post-investment',
-    fileName: '其他投后材料',
-    keywords: [],
-    description: '投后管理阶段已确认、但没有更具体目录的材料',
-    businessStage: 'post_investment',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '项目退出', '退出决策'],
-    folderId: 'exit-decision',
-    fileName: '其他退出决策材料',
-    keywords: [],
-    description: '退出决策阶段已确认、但没有更具体目录的材料',
-    businessStage: 'exit_decision',
-    isStageFallback: true,
-  },
-  {
-    folderPath: ['投资项目档案', '项目退出', '退出执行'],
-    folderId: 'exit-implementation',
-    fileName: '其他退出执行材料',
-    keywords: [],
-    description: '退出执行阶段已确认、但没有更具体目录的材料',
-    businessStage: 'exit_execution',
-    isStageFallback: true,
-  },
-];
-
-export const ARCHIVE_CLASSIFICATION_TARGETS: FlatFileCategory[] = [
-  ...FLAT_FILE_CATEGORIES,
-  ...STAGE_FALLBACK_CATEGORIES,
-];
-
-export function getCategoriesForBusinessStage(
-  stage: ArchiveBusinessStage
-): FlatFileCategory[] {
-  return ARCHIVE_CLASSIFICATION_TARGETS.filter(
-    category => category.businessStage === stage
-  );
-}
-
-export function getStageFallbackCategory(
-  stage: ArchiveBusinessStage
-): FlatFileCategory {
-  const category = STAGE_FALLBACK_CATEGORIES.find(
-    item => item.businessStage === stage
-  );
-  if (!category) throw new Error(`业务阶段 ${stage} 缺少安全兜底目录`);
-  return category;
-}
-
-// ============ 项目相关接口 ============
 
 export interface Project {
   id: string;
@@ -387,15 +149,13 @@ export interface Project {
   fileCount: number;
 }
 
-// 归档文件记录
 export interface ArchivedFile {
   id: string;
   originalName: string;
   archivedName: string;
   projectId: string;
   projectName: string;
-  categoryId: string;
-  categoryName: string;
+  folderId: string;
   folderPath: string[];
   fileSize: number;
   mimeType: string;

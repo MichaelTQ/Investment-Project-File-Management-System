@@ -94,8 +94,8 @@ test('按业务顺序上传时，新章程会触发旧章程重新判断', async
   });
   assert.equal(second.currentDecision.status, 'decided');
   assert.equal(
-    second.currentDecision.decision.selectedCategory?.fileName,
-    '项目公司章程'
+    second.currentDecision.decision.selectedFolder?.name,
+    '投资实施'
   );
   assert.equal(second.reEvaluatedDocuments.length, 1);
   assert.deepEqual(
@@ -103,28 +103,28 @@ test('按业务顺序上传时，新章程会触发旧章程重新判断', async
       sourcePath: second.reEvaluatedDocuments[0]?.sourcePath,
       previousStatus: second.reEvaluatedDocuments[0]?.previousStatus,
       status: second.reEvaluatedDocuments[0]?.status,
-      previousCategory: second.reEvaluatedDocuments[0]?.previousCategory,
-      selectedCategory: second.reEvaluatedDocuments[0]?.selectedCategory,
+      previousFolder: second.reEvaluatedDocuments[0]?.previousFolder,
+      selectedFolder: second.reEvaluatedDocuments[0]?.selectedFolder,
     },
     {
       sourcePath: '投资决策/公司章程.pdf',
       previousStatus: 'needs_review',
       status: 'decided',
-      previousCategory: null,
-      selectedCategory: '公司章程',
+      previousFolder: null,
+      selectedFolder: '投资决策',
     }
   );
   assert.equal(
-    second.reEvaluatedDocuments[0]?.agentDecision.decision.selectedCategory
-      ?.fileName,
-    '公司章程'
+    second.reEvaluatedDocuments[0]?.agentDecision.decision.selectedFolder
+      ?.name,
+    '投资决策'
   );
 
   const snapshot = getSessionProjectMemorySnapshot('ordered-project');
   assert.equal(snapshot?.documentCount, 2);
   assert.deepEqual(
-    snapshot?.documents.map(document => document.selectedCategory).sort(),
-    ['公司章程', '项目公司章程']
+    snapshot?.documents.map(document => document.selectedFolder).sort(),
+    ['投资决策', '投资实施']
   );
 });
 
@@ -231,13 +231,13 @@ test('乱序上传时，收齐两个版本后仍能恢复正确阶段', async ()
   });
   assert.equal(second.currentDecision.status, 'decided');
   assert.equal(
-    second.currentDecision.decision.selectedCategory?.fileName,
-    '公司章程'
+    second.currentDecision.decision.selectedFolder?.name,
+    '投资决策'
   );
   assert.equal(second.reEvaluatedDocuments.length, 1);
   assert.equal(
-    second.reEvaluatedDocuments[0]?.selectedCategory,
-    '项目公司章程'
+    second.reEvaluatedDocuments[0]?.selectedFolder,
+    '投资实施'
   );
 });
 
@@ -298,8 +298,8 @@ test('清空进程缓存模拟重启后，仍从 S3 恢复项目事实', async (
   assert.equal(restored.documentCount, 2);
   assert.equal(restored.reEvaluatedDocuments.length, 1);
   assert.equal(
-    restored.reEvaluatedDocuments[0]?.selectedCategory,
-    '公司章程'
+    restored.reEvaluatedDocuments[0]?.selectedFolder,
+    '投资决策'
   );
 });
 
@@ -426,7 +426,7 @@ test('非章程文件也会随项目上下文变化被重新判断', async () =>
     contextSynthesizerClient: contextSynthesizerClient as never,
   });
   assert.equal(
-    first.currentDecision.decision.selectedCategory?.folderId,
+    first.currentDecision.decision.selectedFolder?.folderId,
     'investment-implementation'
   );
   assert.equal(first.contextSynthesis?.llmCallCount, 1);
@@ -441,7 +441,7 @@ test('非章程文件也会随项目上下文变化被重新判断', async () =>
   const reEvaluated = second.reEvaluatedDocuments.find(
     document => document.sourcePath === '银行电子回单.pdf'
   );
-  assert.equal(reEvaluated?.agentDecision.decision.selectedCategory?.folderId, 'exit-implementation');
+  assert.equal(reEvaluated?.agentDecision.decision.selectedFolder?.folderId, 'exit-implementation');
 });
 
 test('S3 不可用时降级为有明确告警的进程内记忆', async () => {

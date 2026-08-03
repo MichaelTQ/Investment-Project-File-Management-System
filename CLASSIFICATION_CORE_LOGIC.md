@@ -1,410 +1,243 @@
-# 文件分类核心逻辑
+# 文件归档核心逻辑（v5：阶段文件夹模型）
 
-本文档记录系统当前实际使用的文件分类逻辑。核心实现位于：
+> 本文件覆盖旧版“50+ 细分类别、关键词选叶子类别、安全兜底类别”的记录，描述当前实际代码。最后更新：2026-08-03。
 
-- `src/lib/classification.ts`：关键词评分、歧义判断、LLM 类别索引和置信度校验
-- `src/app/api/classify/route.ts`：文件解析、两阶段分类、降级及自动归档流程
-- `src/lib/folder-structure.ts`：档案目录、文件类别及关键词定义
+## 先看一句话
 
-## 一、整体流程
+系统现在只回答一个归档问题：
 
-分类 API 保留传统分类链路，但主页面默认采用“结构化事实抽取 → 项目 Context → Agent 建议 → 人工确认归档”的流程。用户可打开“显示传统分类”开关，让后续上传同时运行传统分类并与 Agent 结果并列对照。
+**这份文件属于哪个业务阶段文件夹？**
 
-当前分类采用“阶段优先、目录锁定、类型开放”的字段分工：
+“表决票、公司章程、增资协议、付款通知”等仍可作为 `documentType` 帮助理解文件和寻找证据，但它们不再是目录，也不再决定一个额外的子分类。
 
-| 字段 | 唯一职责 |
-|---|---|
-| `businessStage` | 文件属于哪个业务阶段 |
-| `folderId` | 文件最终放入哪个物理目录 |
-| `documentType` | 文件客观上是什么，不直接决定目录 |
-| `archiveTitle` | 文件归档后叫什么，不参与目录判断 |
-
-`categoryId` 是历史兼容字段，当前实际值仍等于 `folderId`；`categoryName` 是历史展示标签。新决策不能再用 `categoryName` 在全局目录中反查位置。
-
-### 阶段安全原则
-
-1. 先根据当前文件事实、明确措辞、项目事件和关联文件判断 `businessStage`。
-2. 阶段明确后，只能在该阶段对应的目录范围内选择 `folderId`。
-3. 阶段内存在准确细分目录时，选择该目录。
-4. 阶段明确但没有准确细分类型时，直接使用该阶段的安全兜底分类目标；兜底目标不会创建额外物理子目录。
-5. 阶段无法确定或多个阶段冲突时转人工，不得因为其他阶段存在同名文件类型而跨阶段归档。
-6. 阶段兜底结果可以作为人工确认的默认建议，但默认要求人工复核。
-
-例如 `documentType=voting_result`：
-
-- 正文明确“通过立项”时，锁定 `businessStage=initiation`；若没有“立项表决结果”细分类型，则归入 `folderId=project-initiation`，展示标签为“其他立项材料”。
-- 正文明确“投资决策委员会表决”时，锁定 `investment_decision`，可归入 `decision-documents / 表决票`。
-- 正文明确“退出表决”时，锁定 `exit_decision`，可归入 `exit-decision-docs / 退出表决票`。
-
-传统分类链路为：
-
-1. 先运行 `business-stage.ts` 判断业务阶段。
-2. 阶段明确时，将关键词和 LLM 候选限制在该阶段；阶段不明时仅保留全量关键词诊断，不形成传统分类或 Agent 自主建议。
-3. 从文件名和文件内容中提取分类关键词并在允许范围内评分。
-4. 判断最高分是否达到阈值，以及与次高分是否有足够差距。
-5. 关键词结果明确时使用该结果。
-6. 关键词不足、候选接近或文件为图片时调用 LLM；LLM 提示会明确阶段锁定，并要求无准确细分类型时选择同阶段“其他材料”。
-7. LLM 结果达到置信度阈值时采用其建议，但归档前要求人工确认。
-8. 阶段或分类仍不可靠时转人工，不跨阶段寻找同名文件类型。
-
-主页面的默认 Agent 模式：
-
-1. 请求 `/api/classify` 时传入 `agentDecision=true`、`legacyDecision=false` 和 `autoArchive=false`；
-2. 服务端跳过传统关键词/LLM 分类决策，使用最新正式 Context 运行 Agent；
-3. Agent 建议直接显示在外层结果卡片，并作为人工归档确认的默认分类；
-4. Agent 证据不足时不猜测，用户需要手动选择最终归档位置；
-5. 只有人工确认并归档成功后，文件事实才进入正式项目 Context；
-6. 打开传统分类对照开关后，后续上传改为 `legacyDecision=true`，外层并列展示两套结果和差异提示。
-
-## 二、文件内容提取
-
-不同文件类型使用不同的内容提取方式：
-
-- TXT、Markdown、CSV、JSON、XML：直接按 UTF-8 解码。
-- PDF、Word、Excel、PowerPoint：通过 `FetchClient` 提取文字。
-- 图片：将原始图片交给多模态 LLM 分析。
-- 扫描 PDF：当提取文字少于 30 个字符时，最多选取 12 页页面图片，分批进行视觉文字提取。
-- 文件解析失败：退化为仅使用原始文件名进行分类。
-
-### Shadow mode：结构化文档事实抽取
-
-系统已经加入独立的文档事实层：
-
-- `src/lib/classification/document-facts.ts`：定义严格的 `DocumentFactsSchema`、局部字段校正、JSON 安全解析和零置信度降级结果；非标准日期、缺失数组或超长字段会保留其余事实并记录校正警告；
-- `src/lib/classification/fact-extractor.ts`：调用 LLM 提取文件类型、标题、日期、主体、签署状态、交易变化和证据；
-- `src/app/api/classify/route.ts`：通过 shadow mode 可选调用事实抽取器。
-
-启用方式：
+例如“佰特微立项表决结果.pdf”：
 
 ```text
-单次请求：extractFacts=true
-全局启用：ENABLE_DOCUMENT_FACTS_SHADOW=true
+documentType = voting_result      说明它是一份表决结果
+businessStage = initiation        说明它发生在项目立项
+folderId = project-initiation     最终直接归档到“项目立项”
+archiveTitle = 佰特微立项表决结果 归档文件名
 ```
 
-当前事实结果会作为 `documentFacts` 返回，并在 `process.step0_factExtraction` 中记录 `success` 或 `fallback`。事实抽取失败时返回 `documentType=unknown`、`extractionConfidence=0`，不会阻断原分类流程。
+不会再先问“它是否命中投资决策 / 决策文件 / 表决票”，因此不会因为缺少“立项表决票”这个细分类而误入投资决策。
 
-重要边界：结构化事实会参与 Agent 的阶段判断和上下文建议，但不参与 legacy 关键词得分，也不会扩大 legacy 自动归档权限。传统链路的阶段判断只读取原始文件名和正文；Agent-first 仍强制人工确认后才能正式归档。
+## 一、系统文件夹
 
-### Shadow mode：项目记忆持久化
+系统固定提供八个可归档的业务阶段文件夹：
 
-执行 `src/storage/database/migrations/0001_agent_context.sql` 后，可以启用：
+| 业务阶段 | `businessStage` | `folderId` | 显示路径 |
+|---|---|---|---|
+| 立项前 | `pre_initiation` | `pre-project` | 基金投资及投资执行 / 立项前 |
+| 项目立项 | `initiation` | `project-initiation` | 基金投资及投资执行 / 项目立项 |
+| 尽职调查 | `due_diligence` | `due-diligence` | 基金投资及投资执行 / 尽职调查 |
+| 投资决策 | `investment_decision` | `investment-decision` | 基金投资及投资执行 / 投资决策 |
+| 投资实施 | `investment_execution` | `investment-implementation` | 基金投资及投资执行 / 投资实施 |
+| 投后管理 | `post_investment` | `post-investment` | 投后管理 |
+| 退出决策 | `exit_decision` | `exit-decision` | 项目退出 / 退出决策 |
+| 退出执行 | `exit_execution` | `exit-implementation` | 项目退出 / 退出执行 |
+
+文件默认直接放在上述阶段文件夹中。系统不再预设“上会材料、决策文件、表决票、其他材料”等子目录。
+
+用户主动创建的子文件夹属于人工组织方式：
+
+- 自动分类仍只建议所属阶段根文件夹；
+- 人工移动可以把文件放入自建子文件夹；
+- `folderPath` 会保存实际路径；
+- 自建子文件夹不会反过来扩充 LLM 的分类选项。
+
+## 二、现在真正使用的字段
+
+### 1. `businessStage`：业务判断
+
+人能读懂的问题是：“这份文件发生在哪个阶段？”
+
+它来自当前文件中的明确措辞、结构化事实、项目事件和关联文件。它不等于“项目当前进展”。补传历史文件时，文件自身证据优先，不能因为项目已经实施就把旧立项文件归入投资实施。
+
+### 2. `folderId`：机器使用的目标文件夹 ID
+
+这是最终归档位置的稳定标识，例如：
 
 ```text
-单次请求：persistFacts=true
-全局启用：PERSIST_PROJECT_MEMORY_SHADOW=true
+businessStage = initiation
+folderId = project-initiation
 ```
 
-当前 Coze 开发环境未执行项目记忆表迁移，因此禁止使用 `persistFacts=true`，也禁止设置 `PERSIST_PROJECT_MEMORY_SHADOW=true`。持久化只在最终自有 Supabase 完成建表后启用。
+系统通过阶段到文件夹的一一映射产生它。前端确认和 API 提交只需要 `folderId`；服务端再从受控文件夹表解析正确的 `folderPath`，不相信客户端随意拼出的系统路径。
 
-### Shadow mode：上下文决策
+### 3. `folderPath`：实际存储路径
 
-`src/lib/classification/context-decision.ts` 实现了第四版内存型上下文决策器，`src/lib/classification/business-stage.ts` 负责独立的阶段证据评分。调用 `/api/classify` 时传入 `contextDecision=true` 会自动启用文档事实抽取，并可同时传入：
+这是供展示、S3 路径和 ZIP 下载使用的路径数组，例如：
 
-- `sourcePath`：文件在项目档案中的原始相对路径；
-- `projectContext`：符合 `ProjectContextSnapshotSchema` 的项目阶段与时间线快照；
-- `relatedDocumentFacts`：同项目关联文件的 `sourcePath + DocumentFacts` 列表。
+```json
+["投资项目档案", "基金投资及投资执行", "项目立项"]
+```
 
-返回的 `contextDecision` 包含候选得分、决定性证据、冲突、策略版本和人工复核标记。当前它与 legacy 分类结果并列返回，不修改 `category`、`confidence` 或自动归档结果。
+系统阶段文件夹的路径由服务端根据 `folderId` 生成。人工自建子文件夹或移动文件时，路径可继续向后延伸。
 
-原有试点规则继续覆盖：
+### 4. `documentType`：文件是什么
 
-- 根据注册资本、股东变化、有效日期、项目事件和关联章程对比，区分交易前公司章程和投资实施阶段项目公司章程；
-- 根据正式标题、管理人意见、投资限制审查和项目事件，识别投资合规性审查表；
-- 根据目标公司股东会身份、增资批准事项和项目事件，识别投资实施阶段股东会决议，并排除基金投委会决议；
-- 根据交割确认标题、交割条件和增资协议引用，识别确权文件，并排除付款通知、银行回单和退出交割；
-- 根据缴款通知标题、付款指令和交易协议引用，识别付款通知函，并排除银行回单和退出付款；
-- 项目“当前阶段”只是弱先验，不能单独把后补上传的历史文件归入当前阶段。
-
-第四版在上述规则之外执行以下通用约束：
-
-- 文档类型、业务阶段和归档目录分别建模；
-- 当前文件中的明确阶段措辞权重大于项目最新阶段，避免历史文件补传时被当前阶段覆盖；
-- 阶段明确后，通用候选只从该阶段目录中生成；
-- 文档类型在该阶段没有对应细分类时，由 `STAGE_FALLBACK_CATEGORIES` 生成同阶段安全兜底目标；
-- `routingMethod=safe_stage_fallback` 时保留默认建议并要求人工复核；
-- `businessStage` 无法确定时返回 `needs_stage_review`，不使用全局同名类别猜测目录；
-- Agent 检索到的关联文件会作为阶段证据参与后续轮次，不再只出现在执行轨迹中。
-
-当前通用映射继续覆盖增资协议、股东协议、董事会/投委会决议、银行回单、立项申请/报告、商业计划书、尽调报告、表决结果、营业执照、财务材料、保密协议、出资证明和股东名册等类型，但映射只能在已锁定阶段内选择目录。
-
-### Shadow mode：项目上下文综合
-
-`src/lib/classification/project-context-synthesizer.ts` 实现 `project-context-synthesizer-v1`：
-
-1. 只读取已经正式归档且未删除的结构化事实卡片；待归档候选不进入 Context；
-2. 正式归档成功后调用一次 Coze LLM，重建项目事件时间线、阶段假设、文件关系、冲突和待确认问题，并产生新的 Context 版本；
-3. 不使用上传顺序推断业务发生顺序，项目最晚证据阶段也不能直接决定单份历史文件的阶段；
-4. 每个事件必须引用当前项目中真实存在的 `sourcePath`，无有效来源的事件会被丢弃；
-5. 模型失败时保留上一版 Context 并标记为 `failed`，不让不完整的新快照覆盖已提交版本；
-6. 新快照写入 Coze S3 项目记忆，并触发项目内全部文件重新执行 Agent Shadow 建议；
-7. 移动或删除归档文件时只写入变更并把 Context 标记为 `dirty`，不会立即调用 LLM；
-8. 用户可在“项目 Context”面板手动刷新；若没有手动刷新，下一份新文件判断前会自动刷新；
-9. 上下文综合 LLM 调用次数单独展示，不计入 LangGraph 调度层的 `llmCallCount`。
-
-### Shadow mode：LangGraph 分类 Agent
-
-`src/lib/classification/classification-agent.ts` 已使用 `@langchain/langgraph` 实现第一版可执行状态图。它不是再写一个更长的 Prompt，而是用共享状态、节点和条件边组织以下流程：
+例如：
 
 ```text
-证据规划
-→ 按文档类型决定是否检索关联文件
-→ 上下文决策
-→ 证据不足时继续检索或转人工
-→ 有充分证据时完成建议
+voting_result
+company_charter
+shareholder_resolution
+payment_notice
 ```
 
-当前节点包括 `plan_evidence`、`retrieve_related_document`、`context_decision`、`complete` 和 `human_review`。关联文件不再仅按公司章程特例选择，而是按项目事件共现、文件关系、配套文档类型、共同主体和交易字段进行相关度排序；合规审查表即使得出分类建议，也会遵守类别策略转人工；尚无规则的文件不会让模型猜测。
+它用于：
 
-启用方式：
+- 选择需要抽取哪些事实；
+- 决定是否检索章程、决议、协议等关联文件；
+- 应用证据与排除规则；
+- 在界面解释文件性质。
+
+它不用于创建目录，也不能单独决定 `folderId`。同一种文件类型可以出现在不同阶段。
+
+### 5. `archiveTitle`：文件归档后叫什么
+
+它只负责文件名，不参与位置判断。
+
+当前自动重命名规则：
+
+1. 用户确认了 `archiveTitle`：清理非法字符，保留原扩展名；
+2. 用户没有确认标题：保留原始文件名；
+3. 同一文件夹重名：自动追加序号；
+4. 标题不会再默认取“表决票、公司章程”等细分类名。
+
+因此“分类位置”和“文件名称”是两件独立的事。
+
+## 三、决策和调用流程
 
 ```text
-单次请求：agentDecision=true
-全局启用：ENABLE_CLASSIFICATION_AGENT_SHADOW=true
+读取文件
+  ↓
+抽取 documentType 和事实
+  ↓
+根据文件自身证据、项目 Context、关联文件判断 businessStage
+  ↓
+businessStage 明确？
+  ├─ 是 → 一一映射为 folderId → 给出阶段文件夹建议
+  └─ 否 → 不猜目录 → 人工选择八个阶段之一
+  ↓
+用户确认 folderId 和 archiveTitle
+  ↓
+服务端解析 folderPath
+  ↓
+写入 S3 和归档索引
 ```
 
-请求可同时提供 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`。返回值包含 `agentDecision` 及 `process.step0_agentOrchestration`，可查看最终状态、检索轮数、节点轨迹和调度层模型调用数。
+关键安全规则：
 
-当前 Agent 调度层的 `llmCallCount` 固定为 0：LangGraph 负责工作流和工具调度，前置事实抽取器才可能调用一次 Coze LLM。Agent 不触发自动归档；项目事实写入 Coze S3，但不写入 Supabase 业务表。在双轨对照模式中，Agent 与传统分类结果仍分别保存和展示，不会互相覆盖。
+1. 文档类型只提供证据，不是目录。
+2. 阶段一旦明确，归档位置就是该阶段文件夹。
+3. 不存在“阶段内缺少细分类”的情况，因为阶段文件夹本身就是完整目标。
+4. 阶段冲突、事实抽取质量低或证据存在反例时转人工。
+5. “投资合规性审查表”等风险样本可以继续要求复核，但复核者只确认阶段文件夹，不选择细分类。
+6. Agent 主模式仍由人工确认后归档，不会自行写入档案。
 
-主页面已进入 Agent-first 展示模式：传统分类开关默认关闭，此时 API 跳过传统分类决策，并把 Agent 建议作为顶层展示结果；打开开关后，下一次上传才同时运行并列对照。这里的 Shadow 边界指 Agent 仍不能自行写入档案或绕过人工确认，并不再表示 Agent 结果只能藏在详情弹窗中。
+## 四、API 现在传什么
 
-### Shadow mode：会话项目记忆
-
-`src/lib/classification/session-project-memory.ts` 为线上开发阶段提供不依赖 Supabase 的持久化项目记忆。启用 `agentDecision=true` 且请求包含有效 `projectId` 时，分类 API 会：
-
-1. 按 `projectId` 隔离加载最新已提交 Context 和已归档文件事实；
-2. 若 Context 是 `dirty` 或 `failed`，在判断新候选前先自动刷新；
-3. 使用该版本 Context 和关联事实判断当前候选，但不把候选提前写入项目记忆；
-4. 记录本次判断实际使用的 `decisionContextVersion`，前端可见；
-5. 只有归档成功后，才按规范化 `sourcePath` 幂等提交事实、关联 `archivedFileId` 并生成新 Context 版本；
-6. 新版本产生后重新评估项目内全部已提交文件，并把变化返回前端；
-7. 以追加版本记录写入 Coze S3，服务重启、重新部署和多实例切换后可恢复；
-8. 删除单个归档文件时写入精确到 `archivedFileId` 的 tombstone，移动或删除后只标记 Context `dirty`；删除项目时同步清除该项目的 S3 记忆与进程缓存。
-
-因此顺序上传和乱序上传都受支持：按业务顺序上传可以逐步积累 Context；项目结束后乱序导入时，系统会在新证据正式归档后回看旧文件，而不是把上传顺序当作业务阶段。
-
-项目记忆的边界：
-
-- 正常情况下持久保存于 Coze S3，不再受 12 小时、50 个项目或每项目 200 份文件的内存限制；
-- S3 暂时不可用时自动降级为当前进程缓存，该降级缓存仍有 12 小时、50 个项目和每项目 200 份文件限制，界面会明确告警；
-- 使用不可变追加记录避免多实例写入相互覆盖；同时到达的请求可能要到下一次读取时才汇合全部上下文；
-- 不写入 Supabase 业务表；最终上线后的自有 Supabase 仍用于结构化检索、审核状态、权限与统计；
-- 仍只更新 Agent Shadow 建议，不覆盖 legacy 正式分类和归档结果。
-
-持久化行为包括：
-
-1. 优先使用文件内容 SHA-256；无法直接读取 Buffer 时使用存储身份生成源指纹；
-2. 按 `(project_id, source_fingerprint)` 幂等 upsert `document_facts`；
-3. 正式归档成功后，将事实记录关联到 `archived_files.id`；
-4. 将当前 legacy 分类器的候选和结论写入 `classification_decisions`，策略版本为 `legacy-classification-v1`；
-5. 持久化失败只记录在 `process` 中，不改变原分类或归档结果。
-
-`persistFacts=true` 会自动启用事实抽取，并且必须提供有效 `projectId`。数据库迁移应用前不得打开全局持久化开关。
-
-## 三、关键词评分
-
-### 1. 基础权重
-
-| 命中位置 | 每个有效关键词得分 |
-|---|---:|
-| 文件名 | 3 分 |
-| 文件内容 | 1 分 |
-
-关键词匹配不区分英文大小写，并使用 Unicode NFKC 规范化处理。
-
-### 2. 去重与嵌套词处理
-
-同一类别内：
-
-- 完全重复的关键词只计算一次。
-- 多个命中词存在包含关系时，只保留更具体、长度更长的关键词。
-
-例如关键词为“立项”“申请”“立项申请”时，文件名“立项申请.pdf”只按“立项申请”计 3 分，不会累计为 9 分。
-
-### 3. 关键词通过条件
-
-当前常量为：
-
-```text
-关键词最低得分：5 分
-最高分与次高分最小差距：2 分
-```
-
-只有同时满足以下条件，关键词分类才算明确：
-
-1. 最高分大于或等于 5 分。
-2. 不存在次高分，或者最高分至少领先次高分 2 分。
-
-若最高分达到阈值，但领先不足 2 分，则标记为歧义并进入 AI 消歧，不能依靠目录定义顺序决定结果。
-
-### 4. 关键词置信度
-
-关键词结果的置信度按以下方式计算：
-
-```text
-置信度 = min(关键词得分 × 10, 95)
-```
-
-关键词置信度最高为 95%。
-
-## 四、LLM 分类
-
-LLM 接收以下信息：
-
-- 当前项目名称
-- 原始文件名
-- 提取内容的前 2000 字
-- 所有可选类别的完整目录路径、类别名称和关键词
-- 图片文件的原始视觉内容
-
-LLM 必须从给定类别中选择，不允许创建新类别，并返回：
+分类响应的核心字段：
 
 ```json
 {
-  "categoryIndex": 1,
-  "confidence": 80,
-  "reasoning": "分类依据",
-  "suggestedArchiveTitle": "建议档案标题"
+  "targetFolder": {
+    "folderId": "project-initiation",
+    "name": "项目立项",
+    "folderPath": ["投资项目档案", "基金投资及投资执行", "项目立项"],
+    "businessStage": "initiation",
+    "isSystemFolder": true
+  },
+  "businessStage": "initiation",
+  "documentType": "voting_result",
+  "confidence": 95,
+  "reasoning": "文件明确为项目立项表决结果"
 }
 ```
 
-### 1. 类别映射
+人工确认归档请求：
 
-系统直接使用 `categoryIndex` 映射到完整的 `FlatFileCategory` 对象，不再通过类别名称反向搜索。
-
-这样可以正确区分不同目录下的同名类别，例如：
-
-- 基金投资及投资执行 / 投资实施 / 转账凭证
-- 项目退出 / 退出执行 / 转账凭证
-
-非法、非整数或超出范围的类别索引会被视为无效结果。
-
-### 2. LLM 置信度
-
-LLM 置信度会：
-
-1. 转换为数字。
-2. 四舍五入为整数。
-3. 限制在 0 到 100 之间。
-4. 无法转换时按 0 处理。
-
-当前 LLM 接受阈值为 60%。只有类别索引有效且置信度大于或等于 60%，才采用 LLM 类别。
-
-## 五、最终决策
-
-### 1. 关键词直接分类
-
-当关键词结果达到得分和领先差距要求时：
-
-- 使用关键词最高分对应的类别。
-- 不要求人工确认。
-- 请求启用自动归档且项目有效时，直接归档。
-
-### 2. LLM 分类
-
-当关键词存在歧义、得分不足或文件是图片，并且 LLM 置信度达到 60% 时：
-
-- 使用 LLM 的精确类别索引。
-- 使用 LLM 提供的建议档案标题。
-- 要求用户确认分类位置和档案标题后归档。
-
-### 3. 降级分类
-
-当 LLM 失败、类别索引无效或置信度低于 60%，但仍有关键词候选时：
-
-- 暂用关键词最高分结果。
-- 标记为降级分类。
-- 必须由用户确认或修改分类位置和档案标题。
-- 不会自动归档。
-
-### 4. 无法分类
-
-当关键词没有任何候选，且 LLM 也没有可靠结果时：
-
-- 返回 `category: null`。
-- 置信度为 0。
-- 文件不会归档。
-
-## 六、人工确认
-
-需要确认的结果会在界面中提供：
-
-- 完整归档类别选择器
-- 建议档案标题输入框
-- 确认归档和取消归档操作
-
-用户选择的新类别会以 `folderId + fileName + folderPath` 在归档接口中重新校验，避免提交不存在或被篡改的分类。
-
-## 七、典型消歧示例
-
-### 退出投委会决议
-
-文件名“退出投委会决议.pdf”中：
-
-- 普通“投委会决议”只保留最具体的“投委会决议”命中。
-- “退出投委会决议”类别可同时识别“退出”“投委会”“决议”。
-
-因此退出类别得分更高，不再因目录顺序误入普通投资决策目录。
-
-### 未注明阶段的转账凭证
-
-文件名“转账凭证.pdf”会同时匹配投资实施和退出执行中的“转账凭证”，且得分相同。
-
-系统会将其标记为歧义并调用 LLM，而不是默认选择目录中靠前的类别。
-
-### 项目公司章程
-
-文件名“项目公司章程.pdf”不会把“章程”“公司章程”“项目公司章程”重复累计。若候选类别得分接近，则进入 AI 消歧和人工确认。
-
-### 投资合规性审查表
-
-该类别归入“基金投资及投资执行 / 投资决策 / 上会材料”。文件需至少有正式合规审查表标题，或有子基金管理人针对具体投资项目出具的合规审查意见。
-
-仅出现一般性“合规”字样不足以归类。法律尽调报告、投后合规检查和没有独立合规审查结构的投资建议书属于排除项。在累积更多项目样本前，该类别默认需人工复核。可执行规则见 `src/lib/classification/category-policies.ts`。
-
-## 八、自动归档条件
-
-只有同时满足以下条件才会自动归档：
-
-1. 请求中的 `autoArchive` 为 `true`。
-2. 提供了有效项目 ID，且项目存在。
-3. 最终分类不为空。
-4. 分类结果不要求人工确认。
-
-当前明确通过关键词判定的结果原则上可以直接自动归档，但若该类别的证据策略设置了 `defaultRequiresHumanReview`，仍必须人工确认。LLM 分类和降级分类也均需人工确认。
-
-## 九、回归测试
-
-分类回归测试位于 `tests/classification.test.ts`，运行命令：
-
-```bash
-pnpm test:classification
-pnpm test:agent
-pnpm test:agent-report
-pnpm test:context
-pnpm test:shadow-report
+```json
+{
+  "projectId": "项目ID",
+  "folderId": "project-initiation",
+  "archiveTitle": "佰特微立项表决结果"
+}
 ```
 
-重新生成君柔真实文件 shadow 报告（仅 macOS 本地评测，使用 Vision OCR）：
+系统文件夹确认不再传 `categoryId`、`categoryName`，也不需要客户端提交 `folderPath`。
 
-```bash
-pnpm evaluate:junrou-shadow
-pnpm evaluate:junrou-agent
+## 五、旧字段与本次变化
+
+### 已从业务模型、API 和界面移除
+
+| 旧字段或概念 | 以前做什么 | 为什么删除 |
+|---|---|---|
+| `FlatFileCategory` | 把“文件类型 + 文件夹”绑成一个类别 | 文件类型和位置不应绑定 |
+| `FLAT_FILE_CATEGORIES` / `ARCHIVE_CLASSIFICATION_TARGETS` | 向关键词和 LLM 提供 50+ 叶子选项 | 选项过多且容易跨阶段误判 |
+| `categoryId` | 兼作细分类 ID/文件夹 ID | 含义混乱，统一为 `folderId` |
+| `categoryName` | 显示“表决票、公司章程、其他材料”等叶子名 | 实际归档不需要这层 |
+| `selectedCategory` | Agent 的叶子类别结论 | 改为 `selectedFolder` |
+| `candidateCategories` | 细分类候选列表 | 改为 `candidateFolders` |
+| `isStageFallback` | 标记“其他阶段材料”安全兜底 | 阶段根目录就是正常目标，不存在兜底 |
+| `safe_stage_fallback` | 表示没有叶子类型时降级 | 缺口已从模型上消失 |
+| 关键词叶子分类分数 | 在 50+ 类型中竞争 | 不再决定目录 |
+| LLM 类别索引 | 让模型从叶子列表选编号 | 不再需要 |
+| `category-policies.ts` | 把证据规则绑定到叶子类别 | 证据判断现由文档事实与阶段决策器承担 |
+
+### 保留并继续使用
+
+| 字段 | 是否必需 | 用途 |
+|---|---:|---|
+| `folderId` | 是 | 最终目标文件夹稳定 ID |
+| `folderPath` | 是 | 实际路径、展示、S3、ZIP |
+| `businessStage` | 是 | 阶段判断与解释 |
+| `documentType` | 是 | 事实抽取、关联检索、证据规则 |
+| `archiveTitle` | 可选 | 人工确认后的归档名称 |
+| `confidence` | 是 | 展示判断强度 |
+| `reasoning` | 是 | 解释阶段依据 |
+| `requiresHumanReview` | 是 | 冲突、低质量或特殊风险时转人工 |
+| `selectedFolder` | 可空 | Agent 最终建议；阶段不明时为空 |
+| `candidateFolders` | 可空 | 决策审计中的文件夹候选 |
+
+### 当前数据库中暂时仍能看到的旧列名
+
+当前 Coze 托管 Supabase 结构按项目约束不能在开发阶段迁移，因此物理表仍有：
+
+```text
+archived_files.category_id
+archived_files.category_name
+classification_decisions.selected_category_id
+classification_decisions.selected_category_name
+classification_decisions.candidate_categories
+classification_decisions.corrected_category_id
+classification_decisions.corrected_category_name
 ```
 
-测试覆盖：
+这些列名现在只存在于存储适配器内部：
 
-- 重复及嵌套关键词去重
-- 退出投委会决议消歧
-- 两类转账凭证并列处理
-- 项目公司章程嵌套关键词处理
-- 最高分并列时进入 AI
-- LLM 同名类别索引映射
-- LLM 置信度校验
-- 投资合规性审查表识别与人工复核策略
-- 交易前/增资后章程的关联事实消歧
-- 项目当前阶段不能单独决定历史文件位置
-- 上下文输入 Schema 校验和证据不足降级
-- Agent 根据文档类型动态选择关联文件和执行路径
-- Agent 多轮检索、明确终止、规则未覆盖时安全转人工
-- 君柔 Agent 报告中明确建议 6/6 命中且错误自主建议为 0
+- `category_id` 临时承载 `folderId`；
+- `category_name` 临时承载路径最后一级名称；
+- `selected_category_*` 临时承载 `selectedFolder*`；
+- `candidate_categories` 临时承载 `candidateFolders`。
+- `corrected_category_*` 是尚未启用的旧人工纠错预留列；未来迁移时应改为 `corrected_folder_*`，或在确认不需要决策审计后删除。
+
+它们不再出现在页面、分类响应、归档请求和 TypeScript 业务接口中，也不参与分类。迁移到自有 Supabase 时可以直接重建测试数据并把物理列正式改为 folder 命名。
+
+## 六、核心代码位置
+
+- `src/lib/folder-structure.ts`：八个系统阶段文件夹及阶段到文件夹的一一映射。
+- `src/lib/classification/business-stage.ts`：阶段证据判断。
+- `src/lib/classification/context-decision.ts`：项目 Context、关联证据、冲突和复核策略。
+- `src/lib/classification/classification-agent.ts`：LangGraph 证据检索流程。
+- `src/app/api/classify/route.ts`：文件读取、事实抽取、阶段决策和响应。
+- `src/app/api/archive/route.ts`：根据 `folderId` 服务端解析系统路径并归档。
+- `src/lib/storage.ts`：S3、Supabase 和旧物理列兼容边界。
+
+## 七、边界
+
+- 当前 Agent 项目记忆继续使用 Coze S3 shadow mode。
+- 开发阶段不启用 `PERSIST_PROJECT_MEMORY_SHADOW`，不修改托管 Supabase 结构。
+- Agent 主模式仍要求人工确认；本次改动减少的是归档选项和字段，不是取消风险控制。
+- 用户自建空文件夹目前没有独立文件夹表；自建路径随其中的归档文件存在。若未来需要保存空文件夹，再单独增加 `archive_folders` 表，不要恢复文档类型细分类。
