@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  LLMClient,
   FetchClient,
   Config,
   HeaderUtils,
@@ -15,6 +14,10 @@ import {
   DOCUMENT_FACTS_MODEL,
   extractDocumentFacts,
 } from '@/lib/classification/fact-extractor';
+import {
+  invokeChatCompletion,
+  type ModelCallDiagnostics,
+} from '@/lib/classification/chat-completions';
 import type { DocumentFacts } from '@/lib/classification/document-facts';
 import {
   inferBusinessStage,
@@ -56,6 +59,17 @@ export const runtime = 'nodejs';
 /** 大文件阈值：超过此大小的 multipart 文件先上传 S3 临时目录，避免 Base64 膨胀导致 502 */
 const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 
+interface PhaseTiming {
+  phase: string;
+  durationMs: number;
+}
+
+interface ProcessingPerformance {
+  totalDurationMs: number;
+  phases: PhaseTiming[];
+  modelCalls: ModelCallDiagnostics[];
+}
+
 // 分类过程详情
 interface ClassifyProcess {
   step0_businessStage?: BusinessStageDecision;
@@ -63,6 +77,7 @@ interface ClassifyProcess {
     enabled: boolean;
     status: 'success' | 'fallback';
     error?: string;
+    modelCall?: ModelCallDiagnostics;
     persistence?: {
       requested: boolean;
       status: 'success' | 'skipped' | 'failed';
@@ -145,6 +160,7 @@ interface ClassifyResult {
     projectName: string;
     folderPath: string[];
   };
+  performance?: ProcessingPerformance;
 }
 
 function parseOptionalJson(value: unknown): unknown {
@@ -166,17 +182,15 @@ async function extractScannedPdfText(
   pageImageUrls: string[],
   fileName: string,
   customHeaders: Record<string, string>
-): Promise<string> {
+): Promise<{ text: string; modelCalls: ModelCallDiagnostics[] }> {
   const selectedUrls = pageImageUrls.slice(0, PDF_VISUAL_MAX_PAGES);
-  if (selectedUrls.length === 0) return '';
+  if (selectedUrls.length === 0) return { text: '', modelCalls: [] };
 
   const batches: string[][] = [];
   for (let index = 0; index < selectedUrls.length; index += PDF_VISUAL_BATCH_SIZE) {
     batches.push(selectedUrls.slice(index, index + PDF_VISUAL_BATCH_SIZE));
   }
 
-  const config = new Config();
-  const client = new LLMClient(config, customHeaders);
   const batchResults = await Promise.all(
     batches.map(async (batch, batchIndex) => {
       const firstPage = batchIndex * PDF_VISUAL_BATCH_SIZE + 1;
@@ -191,7 +205,7 @@ async function extractScannedPdfText(
 4. 注册资本总额、股东名称、认缴金额、持股比例，以及“由/增加至/变更为”等交易前后变化
 5. 能帮助识别文件客观类型和交易事实的章节标题与核心事项
 
-不要猜测模糊文字，不要进行档案分类。请用简洁中文逐页概括。`,
+不要猜测模糊文字，不要进行档案分类，不要复述无关正文。每页最多120个汉字，使用紧凑纯文本。`,
         },
       ];
 
@@ -209,35 +223,56 @@ async function extractScannedPdfText(
       });
 
       try {
-        const response = await client.invoke(
-          [
+        const response = await invokeChatCompletion({
+          messages: [
             {
               role: 'system',
               content: '你是严谨的中文档案OCR助手，只记录图片中真实可见的信息。',
             },
             { role: 'user', content },
           ],
-          {
-            model: 'doubao-seed-2-0-lite-260215',
-            temperature: 0.1,
-          }
-        );
-        return response.content.trim();
+          model: 'doubao-seed-2-0-lite-260215',
+          temperature: 0.1,
+          maxOutputTokens: 1_200,
+          customHeaders,
+          timeoutMs: 120_000,
+        });
+        return {
+          text: response.content.trim(),
+          modelCall: response.diagnostics,
+        };
       } catch (error) {
         console.error(`Scanned PDF batch ${batchIndex + 1} error:`, error);
-        return '';
+        return { text: '', modelCall: null };
       }
     })
   );
 
-  const extracted = batchResults.filter(Boolean);
-  if (extracted.length === 0) return '';
+  const extracted = batchResults.map(result => result.text).filter(Boolean);
+  const modelCalls = batchResults.flatMap(result =>
+    result.modelCall ? [result.modelCall] : []
+  );
+  if (extracted.length === 0) return { text: '', modelCalls };
 
-  return `[扫描PDF视觉分析：共分析${selectedUrls.length}页]\n${extracted.join('\n\n')}`;
+  return {
+    text: `[扫描PDF视觉分析：共分析${selectedUrls.length}页]\n${extracted.join('\n\n')}`,
+    modelCalls,
+  };
 }
 
 // 使用 LLM 进行智能分类
 export async function POST(request: NextRequest) {
+  const requestStartedAt = Date.now();
+  const phaseTimings: PhaseTiming[] = [];
+  const modelCalls: ModelCallDiagnostics[] = [];
+  const measurePhase = async <T>(phase: string, action: () => Promise<T>) => {
+    const startedAt = Date.now();
+    try {
+      return await action();
+    } finally {
+      phaseTimings.push({ phase, durationMs: Date.now() - startedAt });
+    }
+  };
   try {
     const isJsonRequest = request.headers
       .get('content-type')
@@ -373,7 +408,9 @@ export async function POST(request: NextRequest) {
       contextInputWarnings.push('关联文件事实不符合 Schema，本次已忽略');
     }
 
-    const project = projectId ? await getProject(projectId) : null;
+    const project = projectId
+      ? await measurePhase('load_project', () => getProject(projectId))
+      : null;
 
     // 提取请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
@@ -383,7 +420,8 @@ export async function POST(request: NextRequest) {
     let imageDataUrl: string | undefined;
     let fileBuffer: Buffer | undefined;
 
-    try {
+    await measurePhase('read_and_parse_file', async () => {
+      try {
       const extension = fileName.split('.').pop()?.toLowerCase() || '';
       const mimeType = suppliedMimeType || getMimeType(extension);
 
@@ -424,7 +462,7 @@ export async function POST(request: NextRequest) {
           ? await getStoredFileUrl(storageKey)
           : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
 
-        const fetchConfig = new Config();
+        const fetchConfig = new Config({ timeout: 120_000, retryTimes: 1 });
         const fetchClient = new FetchClient(fetchConfig, customHeaders);
 
         try {
@@ -444,12 +482,13 @@ export async function POST(request: NextRequest) {
               )
               .filter((url): url is string => Boolean(url));
 
-            const scannedText = await extractScannedPdfText(
+            const scanned = await extractScannedPdfText(
               pageImageUrls,
               fileName,
               customHeaders
             );
-            contentText = scannedText || fileName;
+            modelCalls.push(...scanned.modelCalls);
+            contentText = scanned.text || fileName;
           }
         } catch (fetchError) {
           console.error('FetchClient error:', fetchError);
@@ -459,10 +498,11 @@ export async function POST(request: NextRequest) {
 
       contentPreview = contentText.slice(0, 500) + (contentText.length > 500 ? '...' : '');
 
-    } catch (readError) {
-      console.error('File read error:', readError);
-      contentText = fileName;
-    }
+      } catch (readError) {
+        console.error('File read error:', readError);
+        contentText = fileName;
+      }
+    });
 
     // Shadow mode：先抽取结构化事实，但暂不改变当前分类和自动归档结论。
     let documentFacts: DocumentFacts | undefined;
@@ -480,18 +520,22 @@ export async function POST(request: NextRequest) {
       | ClassifyProcess['step0_projectSessionMemory']
       | undefined;
     if (extractFacts) {
-      const extraction = await extractDocumentFacts({
-        fileName,
-        contentText,
-        projectName: project?.name || '',
-        customHeaders,
-        imageDataUrl,
-      });
+      const extraction = await measurePhase('extract_document_facts', () =>
+        extractDocumentFacts({
+          fileName,
+          contentText,
+          projectName: project?.name || '',
+          customHeaders,
+          imageDataUrl,
+        })
+      );
+      if (extraction.modelCall) modelCalls.push(extraction.modelCall);
       documentFacts = extraction.facts;
       factExtractionStep = {
         enabled: true,
         status: extraction.status,
         error: extraction.error,
+        modelCall: extraction.modelCall,
       };
 
       if (persistFacts) {
@@ -548,22 +592,28 @@ export async function POST(request: NextRequest) {
     }
 
     if (runAgentDecision && documentFacts) {
+      const factsForAgent = documentFacts;
       try {
         if (project) {
           try {
-            const memoryEvaluation =
-              await evaluateProjectDocumentCandidate({
+            const memoryEvaluation = await measurePhase(
+              'evaluate_project_memory',
+              () => evaluateProjectDocumentCandidate({
                 projectId: project.id,
                 projectName: project.name,
                 sourcePath: sourcePath || fileName,
-                facts: documentFacts,
+                facts: factsForAgent,
                 projectContext,
                 suppliedRelatedDocuments: relatedDocumentFacts,
                 customHeaders,
-              });
+              })
+            );
             const { currentDecision, ...memoryView } = memoryEvaluation;
             agentClassificationResult = currentDecision;
             projectSessionMemory = memoryView;
+            modelCalls.push(
+              ...(memoryView.contextSynthesis?.modelCalls ?? [])
+            );
             projectSessionMemoryStep = {
               enabled: true,
               status: 'success',
@@ -725,33 +775,36 @@ export async function POST(request: NextRequest) {
       !result.requiresArchiveConfirmation
     ) {
       if (project) {
+        const targetFolderForArchive = result.targetFolder;
         const extension = fileName.split('.').pop()?.toLowerCase() || '';
         const mimeType = suppliedMimeType || getMimeType(extension);
-        const archived = storageKey
-          ? await archiveStoredFile({
+        const archived = await measurePhase('archive_file', async () =>
+          storageKey
+          ? archiveStoredFile({
               storageKey,
               originalName: fileName,
               fileSize,
               projectId,
               projectName: project.name,
-              folderId: result.targetFolder.folderId,
-              folderPath: result.targetFolder.folderPath,
+              folderId: targetFolderForArchive.folderId,
+              folderPath: targetFolderForArchive.folderPath,
               mimeType,
               confidence: result.confidence,
               reasoning: result.reasoning,
             })
-          : await archiveFile({
+          : archiveFile({
               fileBuffer:
                 fileBuffer || Buffer.from(await file!.arrayBuffer()),
               originalName: fileName,
               projectId,
               projectName: project.name,
-              folderId: result.targetFolder.folderId,
-              folderPath: result.targetFolder.folderPath,
+              folderId: targetFolderForArchive.folderId,
+              folderPath: targetFolderForArchive.folderPath,
               mimeType,
               confidence: result.confidence,
               reasoning: result.reasoning,
-            });
+            })
+        );
 
         result.archived = {
           id: archived.id,
@@ -774,15 +827,19 @@ export async function POST(request: NextRequest) {
         }
 
         if (documentFacts) {
+          const factsToCommit = documentFacts;
           try {
-            const committed = await commitArchivedProjectDocument({
-              projectId: project.id,
-              projectName: project.name,
-              sourcePath: sourcePath || fileName,
-              facts: documentFacts,
-              archivedFileId: archived.id,
-              customHeaders,
-            });
+            const committed = await measurePhase(
+              'commit_and_rebuild_context',
+              () => commitArchivedProjectDocument({
+                projectId: project.id,
+                projectName: project.name,
+                sourcePath: sourcePath || fileName,
+                facts: factsToCommit,
+                archivedFileId: archived.id,
+                customHeaders,
+              })
+            );
             const { currentDecision: _committedDecision, ...committedView } =
               committed;
             void _committedDecision;
@@ -790,6 +847,9 @@ export async function POST(request: NextRequest) {
               projectSessionMemory?.decisionContextVersion;
             projectSessionMemory = committedView;
             result.projectSessionMemory = committedView;
+            modelCalls.push(
+              ...(committedView.contextSynthesis?.modelCalls ?? [])
+            );
             projectSessionMemoryStep = {
               enabled: true,
               status: 'success',
@@ -875,6 +935,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    result.performance = {
+      totalDurationMs: Date.now() - requestStartedAt,
+      phases: phaseTimings,
+      modelCalls,
+    };
     return NextResponse.json(result);
 
   } catch (error) {

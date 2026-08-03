@@ -138,11 +138,15 @@ businessStage 明确？
 
 Context 综合具有可恢复降级：如果大模型超时、返回空文本、没有完整 JSON 或返回内容不符合 Schema，系统会用当前有效文件事实生成确定性规则 Context，将具体原因写入 `synthesisWarnings`，但不会把更新标记为失败。文件日期不明确时使用 `date=null`。只有规则 Context 本身也无法生成时，才属于真正的 Context 更新失败。
 
-“没有完整 JSON”会进一步区分为三类：空文本、非 JSON 说明文字、JSON 未闭合。Context 输入最多允许 100 份文件、约 60,000 字符事实卡片，输入较大且输出结构复杂时，截断风险会增加。
+“没有完整 JSON”会进一步区分为三类：空文本、非 JSON 说明文字、JSON 未闭合。Context 输入使用约 32,000 字符的事实卡片预算；项目达到几十到上百份文件时，优先纳入本轮新增/移动文件、上一版 Context 的证据文件以及文档类型或主体相关的事实，不按上传顺序推断阶段。
 
 `project-context-synthesizer-v3` 对输出增加了明确体积上限：限制事件、关系、冲突和问题的数量及单项文字长度。首次响应无法通过 JSON/Schema 校验时，系统会自动移除上一版 Context、使用更低温度和无缩进紧凑 JSON 再调用一次；重试成功即使用 LLM Context，并在数据质量提示中保留首次失败原因。两次都失败时才切换为规则 Context。
 
-`project-context-synthesizer-v4` 不再通过会丢弃响应元数据的 `coze-coding-dev-sdk.invoke()` 生成 Context，而是直接调用兼容的 Chat Completions 接口：显式设置 `max_tokens=8192`、`response_format=json_object`、关闭思考模式，并读取 `finish_reason` 与实际输出 token 数。若达到输出上限，数据质量提示会直接记录 `finish_reason=length` 和 token 用量；v3 的紧凑重试继续作为第二道保护。
+`project-context-synthesizer-v5` 直接调用兼容的 Chat Completions 接口，显式设置 `max_tokens=3072`、120 秒超时、`response_format=json_object` 并关闭思考模式，同时记录输入/输出字符数、token 数、`finish_reason` 和模型耗时。Prompt 要求合并重复事件、禁止逐份复述文件、只输出无缩进紧凑 JSON；生成专用 Schema 与 Prompt 统一限制 timeline 12 项、阶段假设 8 项、关系 12 项、冲突/问题各 5 项及单字段长度。模型虽然返回合法 JSON 但字段超限时只在本地去重/截断，不会因此二次调用；只有 JSON 或 Schema 无法解析时最多紧凑重试一次。
+
+文档事实抽取也使用紧凑结构化输出：`max_tokens=2048`、120 秒超时，并限制日期、主体、交易变化、线索和引文数量；扫描 PDF 的单批 OCR 输出上限为 1200 tokens。接口会把文件读取、事实抽取、项目记忆加载、归档和 Context 更新的分阶段耗时，以及每次 LLM 输入/输出体量展示在诊断面板中。
+
+项目记忆使用每项目稳定的 `snapshot.json` 保存当前有效事实和 Context，并用很小的 `revision.json` 校验进程缓存。版本未变化时无需重新下载完整快照；旧的追加式历史对象只有在新快照写入并回读验证成功后才会清理。删除归档文件时先删除对应 S3 业务对象，失败则保留数据库记录并报错，避免留下无法追踪的垃圾对象；删除成功后再从项目快照移除事实，且不会误删同项目其他有效证据。
 
 ## 四、API 现在传什么
 

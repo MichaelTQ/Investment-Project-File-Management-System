@@ -17,6 +17,17 @@ import {
 
 const ConfidenceLabelSchema = z.enum(['low', 'medium', 'high']);
 
+export const GENERATED_CONTEXT_LIMITS = {
+  timeline: 12,
+  stageHypotheses: 8,
+  documentRelations: 12,
+  conflicts: 5,
+  openQuestions: 5,
+  titleCharacters: 60,
+  explanationCharacters: 160,
+  caveatCharacters: 200,
+} as const;
+
 export const ProjectTimelineEventSchema = z.object({
   date: z
     .string()
@@ -81,6 +92,85 @@ export const ProjectContextSnapshotSchema = z.object({
     .array(z.string().trim().min(1).max(1000))
     .max(100)
     .optional(),
+});
+
+// 仅用于校验模型本轮生成的精简载荷。持久化快照继续使用上面的兼容
+// Schema，以便读取早期版本；模型输出则必须遵守与 Prompt 相同的严格预算。
+const GeneratedTimelineEventSchema = ProjectTimelineEventSchema.extend({
+  title: z.string().trim().min(1).max(GENERATED_CONTEXT_LIMITS.titleCharacters),
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(20),
+  evidence: z
+    .string()
+    .trim()
+    .min(1)
+    .max(GENERATED_CONTEXT_LIMITS.explanationCharacters),
+});
+
+const GeneratedStageHypothesisSchema = ProjectStageHypothesisSchema.extend({
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(20),
+  reasoning: z
+    .string()
+    .trim()
+    .min(1)
+    .max(GENERATED_CONTEXT_LIMITS.explanationCharacters),
+});
+
+const GeneratedDocumentRelationSchema = ProjectDocumentRelationSchema.extend({
+  evidence: z
+    .string()
+    .trim()
+    .min(1)
+    .max(GENERATED_CONTEXT_LIMITS.explanationCharacters),
+});
+
+const GeneratedContextConflictSchema = ProjectContextConflictSchema.extend({
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .max(GENERATED_CONTEXT_LIMITS.explanationCharacters),
+  evidenceFiles: z
+    .array(z.string().trim().min(1).max(1024))
+    .min(1)
+    .max(20),
+});
+
+export const GeneratedProjectContextPayloadSchema = z.object({
+  targetCompany: z.string().trim().min(1).max(300).nullable().optional(),
+  latestEvidencedStage: z.enum(PROJECT_STAGES),
+  stageConfidence: ConfidenceLabelSchema,
+  importantCaveat: z
+    .string()
+    .trim()
+    .max(GENERATED_CONTEXT_LIMITS.caveatCharacters)
+    .optional(),
+  timeline: z
+    .array(GeneratedTimelineEventSchema)
+    .max(GENERATED_CONTEXT_LIMITS.timeline),
+  stageHypotheses: z
+    .array(GeneratedStageHypothesisSchema)
+    .max(GENERATED_CONTEXT_LIMITS.stageHypotheses),
+  documentRelations: z
+    .array(GeneratedDocumentRelationSchema)
+    .max(GENERATED_CONTEXT_LIMITS.documentRelations),
+  conflicts: z
+    .array(GeneratedContextConflictSchema)
+    .max(GENERATED_CONTEXT_LIMITS.conflicts),
+  openQuestions: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(GENERATED_CONTEXT_LIMITS.explanationCharacters)
+    )
+    .max(GENERATED_CONTEXT_LIMITS.openQuestions),
 });
 
 export const RelatedDocumentFactsSchema = z.object({

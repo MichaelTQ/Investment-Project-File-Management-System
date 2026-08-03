@@ -5,6 +5,7 @@ import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
   buildProjectContextPrompt,
   diagnoseMissingContextJson,
+  PROJECT_CONTEXT_MAX_OUTPUT_TOKENS,
   synthesizeProjectContext,
 } from '../src/lib/classification/project-context-synthesizer';
 
@@ -224,4 +225,88 @@ test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   });
   assert.match(String(prompt[0]?.content), /不能把文件上传顺序当作业务发生顺序/);
   assert.match(String(prompt[0]?.content), /timeline 最多 4 项/);
+  assert.match(String(prompt[0]?.content), /不得逐份复述事实卡片/);
+  assert.match(String(prompt[0]?.content), /无缩进的紧凑 JSON/);
+  assert.doesNotMatch(String(prompt[0]?.content), /"schemaVersion": 1/);
+  assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 3072);
+});
+
+test('成功调用会保留输出体量与耗时诊断', async () => {
+  const result = await synthesizeProjectContext({
+    projectName: '诊断项目',
+    documents,
+    client: {
+      invoke: async () => ({
+        content: JSON.stringify({
+          targetCompany: null,
+          latestEvidencedStage: 'unknown',
+          stageConfidence: 'low',
+          timeline: [],
+          stageHypotheses: [],
+          documentRelations: [],
+          conflicts: [],
+          openQuestions: [],
+        }),
+        finishReason: 'stop',
+        outputTokens: 120,
+      }),
+    } as never,
+  });
+  assert.equal(result.modelCalls.length, 1);
+  assert.equal(result.modelCalls[0]?.outputTokens, 120);
+  assert.equal(result.modelCalls[0]?.finishReason, 'stop');
+  assert.equal(result.modelCalls[0]?.maxOutputTokens, 3072);
+  assert.ok((result.modelCalls[0]?.outputCharacters ?? 0) > 0);
+});
+
+test('模型返回过长字段时本地压缩且不产生第二次调用', async () => {
+  let invocationCount = 0;
+  const result = await synthesizeProjectContext({
+    projectName: '超长输出项目',
+    documents,
+    client: {
+      invoke: async () => {
+        invocationCount += 1;
+        return {
+          content: JSON.stringify({
+            targetCompany: '深圳测试科技有限公司',
+            latestEvidencedStage: 'investment_decision',
+            stageConfidence: 'high',
+            importantCaveat: '长'.repeat(400),
+            timeline: [
+              {
+                date: '2026-02-03',
+                eventType: 'investment_committee_approved',
+                stage: 'investment_decision',
+                title: '投委会决议'.repeat(30),
+                evidenceFiles: ['投资决策/投委会决议.pdf'],
+                evidence: '证据'.repeat(200),
+                confidence: 'high',
+              },
+            ],
+            stageHypotheses: [],
+            documentRelations: [],
+            conflicts: [],
+            openQuestions: Array.from({ length: 8 }, (_, index) =>
+              `问题${index}${'长'.repeat(200)}`
+            ),
+          }),
+        };
+      },
+    } as never,
+  });
+
+  assert.equal(invocationCount, 1);
+  assert.equal(result.llmCallCount, 1);
+  assert.equal(result.context.importantCaveat?.length, 200);
+  assert.equal(result.context.timeline[0]?.title.length, 60);
+  assert.equal(result.context.timeline[0]?.evidence.length, 160);
+  assert.equal(result.context.openQuestions?.length, 5);
+  assert.ok(
+    result.context.openQuestions?.every(question => question.length <= 160)
+  );
+  assert.match(
+    result.context.synthesisWarnings?.join('\n') ?? '',
+    /超过项目 Context 预算，已在本地去重或截断/
+  );
 });

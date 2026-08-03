@@ -34,6 +34,7 @@ export interface DurableProjectSnapshot {
   contextState: ProjectContextLifecycleState;
   documents: Map<string, DurableDocumentRecord>;
   revision: number;
+  loadedFrom?: 'snapshot' | 'legacy';
 }
 
 export type ProjectContextLifecycleStatus =
@@ -50,6 +51,13 @@ export interface ProjectContextLifecycleState {
   updatedAt: number | null;
   lastAttemptAt: number | null;
   lastError?: string;
+  pendingChanges?: {
+    fromRevision: number;
+    toRevision: number;
+    added: string[];
+    deleted: string[];
+    moved: string[];
+  };
 }
 
 interface PersistedDocumentVersion extends DurableDocumentRecord {
@@ -82,6 +90,25 @@ interface PersistedContextVersion {
   updatedAt: number;
 }
 
+interface PersistedProjectSnapshot {
+  schemaVersion: typeof MEMORY_SCHEMA_VERSION;
+  kind: 'project-snapshot';
+  projectId: string;
+  revision: number;
+  context: ProjectContextSnapshot | null;
+  contextState: ProjectContextLifecycleState;
+  documents: DurableDocumentRecord[];
+  updatedAt: number;
+}
+
+interface PersistedProjectRevision {
+  schemaVersion: typeof MEMORY_SCHEMA_VERSION;
+  kind: 'project-revision';
+  projectId: string;
+  revision: number;
+  updatedAt: number;
+}
+
 export interface DurableProjectMemoryBackend {
   write(storageKey: string, value: Buffer): Promise<string>;
   read(storageKey: string): Promise<Buffer>;
@@ -110,6 +137,14 @@ function projectPrefix(projectId: string): string {
 
 function versionKey(projectId: string, kind: 'documents' | 'contexts'): string {
   return `${projectPrefix(projectId)}/${kind}/${Date.now()}-${randomUUID()}.json`;
+}
+
+function snapshotKey(projectId: string): string {
+  return `${projectPrefix(projectId)}/snapshot.json`;
+}
+
+function revisionKey(projectId: string): string {
+  return `${projectPrefix(projectId)}/revision.json`;
 }
 
 function encode(value: unknown): Buffer {
@@ -212,6 +247,65 @@ function parseContextVersion(value: Buffer): PersistedContextVersion | null {
   }
 }
 
+function parseProjectSnapshot(value: Buffer): DurableProjectSnapshot | null {
+  try {
+    const parsed = JSON.parse(value.toString('utf8')) as Partial<PersistedProjectSnapshot>;
+    const context =
+      parsed.context === null
+        ? { success: true as const, data: null }
+        : ProjectContextSnapshotSchema.safeParse(parsed.context);
+    const contextState = parseContextState(parsed.contextState);
+    if (
+      parsed.schemaVersion !== MEMORY_SCHEMA_VERSION ||
+      parsed.kind !== 'project-snapshot' ||
+      typeof parsed.projectId !== 'string' ||
+      typeof parsed.revision !== 'number' ||
+      !context.success ||
+      !contextState ||
+      !Array.isArray(parsed.documents)
+    ) {
+      return null;
+    }
+    const documents = new Map<string, DurableDocumentRecord>();
+    for (const candidate of parsed.documents) {
+      if (!candidate || typeof candidate !== 'object') return null;
+      const record = candidate as Partial<DurableDocumentRecord>;
+      const facts = DocumentFactsSchema.safeParse(record.facts);
+      if (
+        typeof record.sourcePath !== 'string' ||
+        (record.archivedFileId !== undefined &&
+          typeof record.archivedFileId !== 'string') ||
+        typeof record.firstSeenAt !== 'number' ||
+        typeof record.updatedAt !== 'number' ||
+        !facts.success ||
+        (record.agentDecision !== null &&
+          record.agentDecision !== undefined &&
+          !isAgentDecision(record.agentDecision))
+      ) {
+        return null;
+      }
+      documents.set(record.sourcePath, {
+        sourcePath: record.sourcePath,
+        archivedFileId: record.archivedFileId,
+        facts: facts.data,
+        agentDecision: record.agentDecision ?? null,
+        firstSeenAt: record.firstSeenAt,
+        updatedAt: record.updatedAt,
+      });
+    }
+    return {
+      projectId: parsed.projectId,
+      revision: Math.max(0, Math.round(parsed.revision)),
+      context: context.data,
+      contextState,
+      documents,
+      loadedFrom: 'snapshot',
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parseContextState(value: unknown): ProjectContextLifecycleState | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const candidate = value as Partial<ProjectContextLifecycleState>;
@@ -238,6 +332,40 @@ function parseContextState(value: unknown): ProjectContextLifecycleState | undef
     lastAttemptAt: candidate.lastAttemptAt,
     lastError:
       typeof candidate.lastError === 'string' ? candidate.lastError : undefined,
+    pendingChanges: parsePendingChanges(candidate.pendingChanges),
+  };
+}
+
+function parsePendingChanges(
+  value: unknown
+): ProjectContextLifecycleState['pendingChanges'] {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  const paths = (key: 'added' | 'deleted' | 'moved') => {
+    const items = candidate[key];
+    return Array.isArray(items) &&
+      items.every((item: unknown) => typeof item === 'string')
+      ? (items as string[]).slice(0, 500)
+      : null;
+  };
+  const added = paths('added');
+  const deleted = paths('deleted');
+  const moved = paths('moved');
+  if (
+    typeof candidate.fromRevision !== 'number' ||
+    typeof candidate.toRevision !== 'number' ||
+    !added ||
+    !deleted ||
+    !moved
+  ) {
+    return undefined;
+  }
+  return {
+    fromRevision: Math.max(0, Math.round(candidate.fromRevision)),
+    toRevision: Math.max(0, Math.round(candidate.toRevision)),
+    added,
+    deleted,
+    moved,
   };
 }
 
@@ -314,6 +442,13 @@ export async function appendDurableContextVersion(params: {
 export async function loadDurableProjectMemory(
   projectId: string
 ): Promise<DurableProjectSnapshot> {
+  try {
+    const snapshot = parseProjectSnapshot(await backend.read(snapshotKey(projectId)));
+    if (snapshot?.projectId === projectId) return snapshot;
+  } catch {
+    // 尚无快照时兼容读取旧的追加式版本记录，并在下一次写入时完成压缩。
+  }
+
   const prefix = projectPrefix(projectId);
   const [documentKeys, contextKeys] = await Promise.all([
     backend.list(`${prefix}/documents/`),
@@ -381,7 +516,78 @@ export async function loadDurableProjectMemory(
     documents,
     revision: documentEntries.filter(entry => entry.projectId === projectId)
       .length,
+    loadedFrom: 'legacy',
   };
+}
+
+export async function saveDurableProjectMemorySnapshot(params: {
+  projectId: string;
+  revision: number;
+  context: ProjectContextSnapshot | null;
+  contextState: ProjectContextLifecycleState;
+  documents: Map<string, DurableDocumentRecord>;
+  updatedAt: number;
+}): Promise<void> {
+  const value: PersistedProjectSnapshot = {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    kind: 'project-snapshot',
+    projectId: params.projectId,
+    revision: params.revision,
+    context: params.context,
+    contextState: params.contextState,
+    documents: [...params.documents.values()],
+    updatedAt: params.updatedAt,
+  };
+  const key = snapshotKey(params.projectId);
+  await backend.write(key, encode(value));
+  const verified = parseProjectSnapshot(await backend.read(key));
+  if (
+    !verified ||
+    verified.projectId !== params.projectId ||
+    verified.revision !== params.revision ||
+    verified.documents.size !== params.documents.size
+  ) {
+    throw new Error('S3 项目记忆快照写入后校验失败');
+  }
+  const revision: PersistedProjectRevision = {
+    schemaVersion: MEMORY_SCHEMA_VERSION,
+    kind: 'project-revision',
+    projectId: params.projectId,
+    revision: params.revision,
+    updatedAt: params.updatedAt,
+  };
+  await backend.write(revisionKey(params.projectId), encode(revision));
+}
+
+export async function loadDurableProjectRevision(
+  projectId: string
+): Promise<number | null> {
+  try {
+    const parsed = JSON.parse(
+      (await backend.read(revisionKey(projectId))).toString('utf8')
+    ) as Partial<PersistedProjectRevision>;
+    return parsed.schemaVersion === MEMORY_SCHEMA_VERSION &&
+      parsed.kind === 'project-revision' &&
+      parsed.projectId === projectId &&
+      typeof parsed.revision === 'number'
+      ? Math.max(0, Math.round(parsed.revision))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 新快照已验证后，清理旧追加式日志；不会触碰 snapshot.json 或业务文件。 */
+export async function compactLegacyProjectMemory(projectId: string): Promise<void> {
+  const verified = parseProjectSnapshot(await backend.read(snapshotKey(projectId)));
+  if (!verified || verified.projectId !== projectId) {
+    throw new Error('项目记忆快照尚未验证，禁止清理历史版本');
+  }
+  const prefix = projectPrefix(projectId);
+  await Promise.all([
+    backend.deletePrefix(`${prefix}/documents/`),
+    backend.deletePrefix(`${prefix}/contexts/`),
+  ]);
 }
 
 export async function clearDurableProjectMemory(projectId: string): Promise<void> {

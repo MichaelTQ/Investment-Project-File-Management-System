@@ -38,7 +38,7 @@ src/
 │   │   ├── context-decision.ts       # 项目上下文证据决策器
 │   │   ├── classification-agent.ts   # LangGraph 分类 Agent（shadow mode）
 │   │   ├── session-project-memory.ts # 项目记忆编排、诊断与降级缓存
-│   │   └── durable-project-memory.ts # Coze S3 持久化版本记录与 tombstone
+│   │   └── durable-project-memory.ts # Coze S3 项目快照、版本校验与旧历史压缩
 │   ├── project-memory.ts             # 项目上下文、事件、文档事实和分类决策存储层
 │   └── storage.ts                    # 统一存储层（Supabase + S3）
 ├── storage/
@@ -75,6 +75,8 @@ src/
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
 - Agent shadow 请求具有有效 `projectId` 时自动使用 Coze S3 持久化项目记忆；关联章程、股东会决议和增资协议可触发历史章程重新判断，结果不写入 Supabase
+- 项目记忆使用稳定 `snapshot.json` 与轻量 `revision.json`；版本未变化时复用进程缓存，旧追加式历史只在快照验证成功后清理
+- 分类与归档响应包含分阶段耗时和 LLM 输入/输出诊断，Context/事实/OCR 输出上限分别为 3072/2048/1200 tokens
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录
@@ -207,7 +209,7 @@ src/
 - 开发阶段不得开启 `PERSIST_PROJECT_MEMORY_SHADOW`；
 - Agent 项目记忆以 Coze S3 持久化 shadow mode 和本地 fixtures 验证；
 - Agent 当前只生成结构化建议和执行轨迹，不接管 legacy 分类、自动归档或数据库写入；
-- Coze S3 保存项目事实并支持重启、重新部署和多实例恢复；S3 故障时才降级为最长空闲 12 小时的进程缓存；
+- Coze S3 通过项目快照保存当前有效事实并支持重启、重新部署和多实例恢复；轻量版本号未变化时复用进程缓存，S3 故障时才降级为最长空闲 12 小时的进程缓存；
 - 最终上线时再创建自有 Supabase，并执行完整数据库初始化与迁移。
 
 ## 依赖说明

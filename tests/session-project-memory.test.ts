@@ -45,6 +45,8 @@ const postTransactionCharter = charterFacts('13.04027');
 
 class MemoryBackend implements DurableProjectMemoryBackend {
   readonly objects = new Map<string, Buffer>();
+  readKeys: string[] = [];
+  listPrefixes: string[] = [];
 
   async write(storageKey: string, value: Buffer): Promise<string> {
     this.objects.set(storageKey, Buffer.from(value));
@@ -52,12 +54,14 @@ class MemoryBackend implements DurableProjectMemoryBackend {
   }
 
   async read(storageKey: string): Promise<Buffer> {
+    this.readKeys.push(storageKey);
     const value = this.objects.get(storageKey);
     if (!value) throw new Error(`missing object: ${storageKey}`);
     return Buffer.from(value);
   }
 
   async list(prefix: string): Promise<string[]> {
+    this.listPrefixes.push(prefix);
     return [...this.objects.keys()].filter(key => key.startsWith(prefix));
   }
 
@@ -65,6 +69,11 @@ class MemoryBackend implements DurableProjectMemoryBackend {
     for (const key of this.objects.keys()) {
       if (key.startsWith(prefix)) this.objects.delete(key);
     }
+  }
+
+  resetMetrics(): void {
+    this.readKeys = [];
+    this.listPrefixes = [];
   }
 }
 
@@ -152,6 +161,35 @@ test('候选文件先使用已提交Context判断，归档提交后才进入正�
   assert.equal(committed.documentCount, 1);
   assert.equal(committed.contextState.status, 'clean');
   assert.equal(committed.contextState.version, 1);
+  assert.equal(
+    [...durableBackend.objects.keys()].filter(key => key.endsWith('/snapshot.json'))
+      .length,
+    1
+  );
+  assert.equal(
+    [...durableBackend.objects.keys()].filter(
+      key => key.includes('/documents/') || key.includes('/contexts/')
+    ).length,
+    0
+  );
+});
+
+test('进程内缓存版本未变化时只读取轻量 revision，不重复下载项目快照', async () => {
+  await commitArchivedProjectDocument({
+    projectId: 'warm-cache-project',
+    projectName: '缓存项目',
+    sourcePath: '公司章程.pdf',
+    facts: preTransactionCharter,
+    archivedFileId: 'warm-cache-file-1',
+  });
+  durableBackend.resetMetrics();
+
+  const view = await getProjectContextMemoryView('warm-cache-project');
+
+  assert.equal(view.documentCount, 1);
+  assert.deepEqual(durableBackend.listPrefixes, []);
+  assert.equal(durableBackend.readKeys.length, 1);
+  assert.match(durableBackend.readKeys[0] ?? '', /\/revision\.json$/);
 });
 
 test('删除只标记Context过期，下次候选判断前自动重建', async () => {
@@ -324,7 +362,7 @@ test('明确章程文件名可保守恢复 unknown 类型并展示诊断明细',
   );
 });
 
-test('单文件 tombstone 在重启后仍阻止已删除事实恢复', async () => {
+test('单文件从快照删除后在重启后不会恢复', async () => {
   await rememberAndEvaluateProjectDocument({
     projectId: 'forget-project',
     sourcePath: '投资决策/公司章程.pdf',
