@@ -186,7 +186,7 @@ test('目标公司股东会批准增资和章程修改时归入投资实施', ()
   assert.match(decision.policyVersion, /shareholder-resolution-v1/);
 });
 
-test('投委会决议不能被股东会决议规则误收', () => {
+test('投委会决议不能被股东会规则误收，并在投决阶段安全兜底', () => {
   const decision = decideWithProjectContext({
     sourcePath: '投资决策/基金投委会决议.pdf',
     facts: facts({
@@ -197,8 +197,12 @@ test('投委会决议不能被股东会决议规则误收', () => {
     }),
   });
 
-  assert.equal(decision.status, 'insufficient');
-  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.businessStage, 'investment_decision');
+  assert.equal(decision.selectedCategory?.folderId, 'investment-decision');
+  assert.equal(decision.selectedCategory?.fileName, '其他投资决策材料');
+  assert.equal(decision.routingMethod, 'safe_stage_fallback');
+  assert.equal(decision.requiresHumanReview, true);
   assert.ok(decision.contradictions.some(item => item.includes('投委会')));
 });
 
@@ -256,6 +260,81 @@ test('银行回单不能被付款通知规则误收', () => {
   assert.equal(decision.status, 'insufficient');
   assert.equal(decision.selectedCategory, null);
   assert.ok(decision.contradictions.some(item => item.includes('银行回单')));
+});
+
+test('立项表决结果在缺少细分类时安全归入项目立项阶段', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '佰特微立项表决结果.pdf',
+    facts: facts({
+      documentType: 'voting_result',
+      rawDocumentType: '立项表决结果',
+      title: '佰特微医疗B轮融资项目立项表决结果',
+      explicitStageClues: ['立项会委员对项目立项进行表决'],
+      evidenceQuotes: [
+        '表决结果：3票同意，0票不同意',
+        '本项目通过立项',
+      ],
+    }),
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.businessStage, 'initiation');
+  assert.equal(decision.selectedCategory?.folderId, 'project-initiation');
+  assert.equal(decision.selectedCategory?.fileName, '其他立项材料');
+  assert.equal(decision.routingMethod, 'safe_stage_fallback');
+  assert.equal(decision.requiresHumanReview, true);
+});
+
+test('真正的投委会表决票仍归入投资决策', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '投资决策/基金投委会表决票.pdf',
+    facts: facts({
+      documentType: 'voting_result',
+      rawDocumentType: '投委会表决票',
+      title: '基金投资决策委员会项目表决票',
+      evidenceQuotes: ['投资决策委员会委员同意本项目投资方案'],
+    }),
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.businessStage, 'investment_decision');
+  assert.equal(decision.selectedCategory?.folderId, 'decision-documents');
+  assert.equal(decision.selectedCategory?.fileName, '表决票');
+  assert.notEqual(decision.routingMethod, 'safe_stage_fallback');
+});
+
+test('退出表决票仍归入退出决策', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '项目退出/退出表决票.pdf',
+    facts: facts({
+      documentType: 'voting_result',
+      rawDocumentType: '退出表决票',
+      title: '项目退出表决票',
+      evidenceQuotes: ['委员同意退出方案'],
+    }),
+  });
+
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.businessStage, 'exit_decision');
+  assert.equal(decision.selectedCategory?.folderId, 'exit-decision-docs');
+  assert.equal(decision.selectedCategory?.fileName, '退出表决票');
+});
+
+test('无法判断阶段的表决结果不会猜测其他阶段目录', () => {
+  const decision = decideWithProjectContext({
+    sourcePath: '项目表决结果.pdf',
+    facts: facts({
+      documentType: 'voting_result',
+      rawDocumentType: '表决结果',
+      title: '项目表决结果',
+      evidenceQuotes: ['三票同意，零票反对'],
+    }),
+  });
+
+  assert.equal(decision.status, 'insufficient');
+  assert.equal(decision.businessStage, null);
+  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.routingMethod, 'needs_stage_review');
 });
 
 test('上下文输入只接受符合 Schema 的项目快照和关联事实', () => {

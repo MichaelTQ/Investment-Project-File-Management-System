@@ -1,5 +1,5 @@
 import {
-  FLAT_FILE_CATEGORIES,
+  ARCHIVE_CLASSIFICATION_TARGETS,
   type FlatFileCategory,
 } from './folder-structure';
 
@@ -55,7 +55,7 @@ function findSpecificKeywordMatches(
 export function matchByKeywords(
   fileName: string,
   contentText: string,
-  categories: FlatFileCategory[] = FLAT_FILE_CATEGORIES
+  categories: FlatFileCategory[] = ARCHIVE_CLASSIFICATION_TARGETS
 ): KeywordMatch[] {
   const results: KeywordMatch[] = [];
 
@@ -111,7 +111,7 @@ export function assessKeywordMatches(matches: KeywordMatch[]): {
 
 export function getCategoryByLlmIndex(
   value: unknown,
-  categories: FlatFileCategory[] = FLAT_FILE_CATEGORIES
+  categories: FlatFileCategory[] = ARCHIVE_CLASSIFICATION_TARGETS
 ): { categoryIndex: number | null; category: FlatFileCategory | null } {
   const categoryIndex = Number(value);
   if (

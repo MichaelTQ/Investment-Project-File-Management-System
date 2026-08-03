@@ -14,7 +14,7 @@ import {
   getProject,
   type ArchivedFile,
 } from "@/lib/storage";
-import { FLAT_FILE_CATEGORIES } from "@/lib/folder-structure";
+import { ARCHIVE_CLASSIFICATION_TARGETS } from "@/lib/folder-structure";
 import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/document-facts";
 import {
   commitArchivedProjectDocument,
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "无效的 S3 临时文件地址" }, { status: 400 });
     }
 
-    const category = FLAT_FILE_CATEGORIES.find(
+    const category = ARCHIVE_CLASSIFICATION_TARGETS.find(
       (item) =>
         item.folderId === categoryId &&
         item.fileName === categoryName &&

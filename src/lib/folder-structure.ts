@@ -210,6 +210,40 @@ export interface FlatFileCategory {
   fileName: string;
   keywords: string[];
   description?: string;
+  businessStage?: ArchiveBusinessStage;
+  isStageFallback?: boolean;
+}
+
+export type ArchiveBusinessStage =
+  | 'pre_initiation'
+  | 'initiation'
+  | 'due_diligence'
+  | 'investment_decision'
+  | 'investment_execution'
+  | 'post_investment'
+  | 'exit_decision'
+  | 'exit_execution';
+
+const FOLDER_STAGE_MAP: Record<string, ArchiveBusinessStage> = {
+  'pre-project': 'pre_initiation',
+  'project-initiation': 'initiation',
+  'due-diligence': 'due_diligence',
+  'decision-meeting': 'investment_decision',
+  'decision-documents': 'investment_decision',
+  'investment-implementation': 'investment_execution',
+  'post-investment-report': 'post_investment',
+  'field-research': 'post_investment',
+  'enterprise-materials': 'post_investment',
+  'risk-management': 'post_investment',
+  'exit-meeting': 'exit_decision',
+  'exit-decision-docs': 'exit_decision',
+  'exit-implementation': 'exit_execution',
+};
+
+export function getFolderBusinessStage(
+  folderId: string
+): ArchiveBusinessStage | null {
+  return FOLDER_STAGE_MAP[folderId] ?? null;
 }
 
 // 将树形结构扁平化为便于搜索的列表
@@ -224,7 +258,8 @@ export function flattenFolderStructure(node: FolderNode, path: string[] = []): F
         folderId: node.id,
         fileName: file.name,
         keywords: file.keywords,
-        description: file.description
+        description: file.description,
+        businessStage: getFolderBusinessStage(node.id) ?? undefined,
       });
     }
   }
@@ -240,6 +275,106 @@ export function flattenFolderStructure(node: FolderNode, path: string[] = []): F
 
 // 获取扁平化的文件分类列表
 export const FLAT_FILE_CATEGORIES = flattenFolderStructure(FOLDER_STRUCTURE);
+
+// 当业务阶段明确、但该阶段没有合适的细分文件类型时，直接归入阶段目录。
+// 这些是分类目标而不是新的物理子文件夹，避免因细分类缺失而跨阶段误归。
+export const STAGE_FALLBACK_CATEGORIES: FlatFileCategory[] = [
+  {
+    folderPath: ['投资项目档案', '基金投资及投资执行', '立项前'],
+    folderId: 'pre-project',
+    fileName: '其他立项前材料',
+    keywords: [],
+    description: '立项前阶段已确认、但没有更具体目录的材料',
+    businessStage: 'pre_initiation',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '基金投资及投资执行', '项目立项'],
+    folderId: 'project-initiation',
+    fileName: '其他立项材料',
+    keywords: [],
+    description: '项目立项阶段已确认、但没有更具体目录的材料',
+    businessStage: 'initiation',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '基金投资及投资执行', '尽职调查'],
+    folderId: 'due-diligence',
+    fileName: '其他尽调材料',
+    keywords: [],
+    description: '尽职调查阶段已确认、但没有更具体目录的材料',
+    businessStage: 'due_diligence',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '基金投资及投资执行', '投资决策'],
+    folderId: 'investment-decision',
+    fileName: '其他投资决策材料',
+    keywords: [],
+    description: '投资决策阶段已确认、但没有更具体目录的材料',
+    businessStage: 'investment_decision',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '基金投资及投资执行', '投资实施'],
+    folderId: 'investment-implementation',
+    fileName: '其他投资实施材料',
+    keywords: [],
+    description: '投资实施阶段已确认、但没有更具体目录的材料',
+    businessStage: 'investment_execution',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '投后管理'],
+    folderId: 'post-investment',
+    fileName: '其他投后材料',
+    keywords: [],
+    description: '投后管理阶段已确认、但没有更具体目录的材料',
+    businessStage: 'post_investment',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '项目退出', '退出决策'],
+    folderId: 'exit-decision',
+    fileName: '其他退出决策材料',
+    keywords: [],
+    description: '退出决策阶段已确认、但没有更具体目录的材料',
+    businessStage: 'exit_decision',
+    isStageFallback: true,
+  },
+  {
+    folderPath: ['投资项目档案', '项目退出', '退出执行'],
+    folderId: 'exit-implementation',
+    fileName: '其他退出执行材料',
+    keywords: [],
+    description: '退出执行阶段已确认、但没有更具体目录的材料',
+    businessStage: 'exit_execution',
+    isStageFallback: true,
+  },
+];
+
+export const ARCHIVE_CLASSIFICATION_TARGETS: FlatFileCategory[] = [
+  ...FLAT_FILE_CATEGORIES,
+  ...STAGE_FALLBACK_CATEGORIES,
+];
+
+export function getCategoriesForBusinessStage(
+  stage: ArchiveBusinessStage
+): FlatFileCategory[] {
+  return ARCHIVE_CLASSIFICATION_TARGETS.filter(
+    category => category.businessStage === stage
+  );
+}
+
+export function getStageFallbackCategory(
+  stage: ArchiveBusinessStage
+): FlatFileCategory {
+  const category = STAGE_FALLBACK_CATEGORIES.find(
+    item => item.businessStage === stage
+  );
+  if (!category) throw new Error(`业务阶段 ${stage} 缺少安全兜底目录`);
+  return category;
+}
 
 // ============ 项目相关接口 ============
 

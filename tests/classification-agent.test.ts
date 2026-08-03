@@ -143,3 +143,33 @@ test('Agent对股东会增资决议给出投资实施建议', async () => {
   assert.equal(result.trace.at(-1)?.node, 'complete');
   assert.equal(result.llmCallCount, 0);
 });
+
+test('Agent将立项表决结果锁定在项目立项并使用安全兜底', async () => {
+  const result = await runClassificationAgent({
+    sourcePath: '佰特微立项表决结果.pdf',
+    facts: {
+      schemaVersion: 1,
+      documentType: 'voting_result',
+      rawDocumentType: '立项表决结果',
+      title: '佰特微医疗B轮融资项目立项表决结果',
+      documentNumber: null,
+      version: null,
+      dates: [],
+      parties: [],
+      signStatus: 'unknown',
+      transactionChanges: [],
+      explicitStageClues: ['立项会委员对项目立项进行表决'],
+      evidenceQuotes: ['表决结果：3票同意，0票不同意', '本项目通过立项'],
+      warnings: [],
+      sourceQuality: 'text',
+      extractionConfidence: 95,
+    },
+  });
+
+  assert.equal(result.status, 'needs_review');
+  assert.equal(result.decision.status, 'decided');
+  assert.equal(result.decision.businessStage, 'initiation');
+  assert.equal(result.decision.selectedCategory?.folderId, 'project-initiation');
+  assert.equal(result.decision.routingMethod, 'safe_stage_fallback');
+  assert.equal(result.trace.at(-1)?.node, 'human_review');
+});

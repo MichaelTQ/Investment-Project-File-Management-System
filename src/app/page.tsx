@@ -37,7 +37,7 @@ import {
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
 import {
-  FLAT_FILE_CATEGORIES,
+  ARCHIVE_CLASSIFICATION_TARGETS,
   FOLDER_STRUCTURE,
   type FolderNode,
   type FlatFileCategory,
@@ -100,6 +100,13 @@ interface AgentDecisionResult {
   decision: {
     status: 'decided' | 'insufficient' | 'conflict';
     selectedCategory: FlatFileCategory | null;
+    businessStage: string | null;
+    stageConfidence: number;
+    routingMethod:
+      | 'context_policy'
+      | 'stage_policy'
+      | 'safe_stage_fallback'
+      | 'needs_stage_review';
     confidence: number;
     evidence: string[];
     contradictions: string[];
@@ -194,6 +201,8 @@ interface ClassifyResult {
   contentPreview?: string;
   process: ClassifyProcess;
   classificationMode: 'agent' | 'comparison';
+  businessStage?: string | null;
+  documentType?: string;
   legacyClassification?: {
     category: FlatFileCategory | null;
     confidence: number;
@@ -697,7 +706,7 @@ function ClassifyResultItem({
     if (result.archiveStatus !== 'pending' || !agentSelectionValue) return;
     setSelectedCategoryId(current => current || agentSelectionValue);
   }, [agentSelectionValue, result.archiveStatus]);
-  const selectedCategory = FLAT_FILE_CATEGORIES.find(
+  const selectedCategory = ARCHIVE_CLASSIFICATION_TARGETS.find(
     category => getCategorySelectionValue(category) === selectedCategoryId
   );
   const isArchiving = result.archiveStatus === 'archiving';
@@ -760,6 +769,17 @@ function ClassifyResultItem({
               {agentCategory
                 ? `${agentCategory.folderPath.join(' / ')} / ${agentCategory.fileName}`
                 : '暂未形成唯一分类建议'}
+            </p>
+            <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
+              业务阶段：{PROJECT_STAGE_LABELS[
+                result.agentDecision?.decision.businessStage ??
+                  result.businessStage ??
+                  'unknown'
+              ] ?? '待确认'}
+              {' · '}
+              文件类型：{result.documentType ?? '待识别'}
+              {result.agentDecision?.decision.routingMethod ===
+                'safe_stage_fallback' && ' · 已使用同阶段安全兜底'}
             </p>
             <div className="mt-2 flex items-center gap-2">
               <Progress value={agentConfidence} className="h-1.5 flex-1" />
@@ -852,7 +872,7 @@ function ClassifyResultItem({
                   <SelectValue placeholder="请选择归档分类" />
                 </SelectTrigger>
                 <SelectContent>
-                  {FLAT_FILE_CATEGORIES.map(category => (
+                  {ARCHIVE_CLASSIFICATION_TARGETS.map(category => (
                     <SelectItem
                       key={`${category.folderId}-${category.fileName}`}
                       value={getCategorySelectionValue(category)}
