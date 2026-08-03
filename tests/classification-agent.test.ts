@@ -58,7 +58,7 @@ test('Agent会动态检索多份关联章程并在获得决定性证据后停止
   });
 
   assert.equal(result.status, 'decided');
-  assert.equal(result.decision.selectedCategory?.fileName, '公司章程');
+  assert.equal(result.decision.selectedFolder?.name, '投资决策');
   assert.equal(result.rounds, 2);
   assert.equal(result.selectedRelatedDocuments.length, 2);
   assert.equal(
@@ -79,7 +79,7 @@ test('Agent在章程缺少关联文件时不猜测并转人工', async () => {
 
   assert.equal(result.status, 'needs_review');
   assert.equal(result.decision.status, 'insufficient');
-  assert.equal(result.decision.selectedCategory, null);
+  assert.equal(result.decision.selectedFolder, null);
   assert.equal(result.trace.at(-1)?.node, 'human_review');
   assert.equal(result.selectedRelatedDocuments.length, 0);
 });
@@ -97,8 +97,8 @@ test('Agent可用股东会决议的注册资本变化识别增资后章程', asy
 
   assert.equal(result.status, 'decided');
   assert.equal(
-    result.decision.selectedCategory?.fileName,
-    '项目公司章程'
+    result.decision.selectedFolder?.name,
+    '投资实施'
   );
   assert.equal(result.selectedRelatedDocuments.length, 1);
   assert.match(result.decision.evidence.join('\n'), /注册资本由 11\.73624 万元增至 13\.04027 万元/);
@@ -114,8 +114,8 @@ test('Agent对合规审查表给出建议但遵守默认人工复核策略', asy
 
   assert.equal(result.status, 'needs_review');
   assert.equal(
-    result.decision.selectedCategory?.fileName,
-    '投资合规性审查表'
+    result.decision.selectedFolder?.name,
+    '投资决策'
   );
   assert.equal(result.decision.status, 'decided');
   assert.equal(result.decision.requiresHumanReview, true);
@@ -139,12 +139,12 @@ test('Agent对股东会增资决议给出投资实施建议', async () => {
     'project_context:document_relations',
     'project_event:shareholders_approved_transaction',
   ]);
-  assert.equal(result.decision.selectedCategory?.fileName, '股东会决议');
+  assert.equal(result.decision.selectedFolder?.name, '投资实施');
   assert.equal(result.trace.at(-1)?.node, 'complete');
   assert.equal(result.llmCallCount, 0);
 });
 
-test('Agent将立项表决结果锁定在项目立项并使用安全兜底', async () => {
+test('Agent将立项表决结果直接归入项目立项文件夹', async () => {
   const result = await runClassificationAgent({
     sourcePath: '佰特微立项表决结果.pdf',
     facts: {
@@ -166,10 +166,10 @@ test('Agent将立项表决结果锁定在项目立项并使用安全兜底', asy
     },
   });
 
-  assert.equal(result.status, 'needs_review');
+  assert.equal(result.status, 'decided');
   assert.equal(result.decision.status, 'decided');
   assert.equal(result.decision.businessStage, 'initiation');
-  assert.equal(result.decision.selectedCategory?.folderId, 'project-initiation');
-  assert.equal(result.decision.routingMethod, 'safe_stage_fallback');
-  assert.equal(result.trace.at(-1)?.node, 'human_review');
+  assert.equal(result.decision.selectedFolder?.folderId, 'project-initiation');
+  assert.equal(result.decision.routingMethod, 'stage_policy');
+  assert.equal(result.trace.at(-1)?.node, 'complete');
 });

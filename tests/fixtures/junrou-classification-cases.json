@@ -4,20 +4,18 @@
   "status": "pilot_gold_set_approved",
   "approvedAt": "2026-08-01",
   "approvalSource": "user_domain_review",
-  "labelPolicy": "expectedCategory由现有目录、文件视觉证据和关联交易文件共同形成，并已由业务负责人验收。",
+  "labelPolicy": "expectedFolder由业务阶段、文件视觉证据和关联交易文件共同形成，并已由业务负责人验收。",
   "cases": [
     {
       "id": "junrou-charter-pre-transaction",
       "relativePath": "投资决策/公司章程.pdf",
       "documentType": "company_charter",
-      "expectedCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "公司章程",
+      "expectedFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "decisiveEvidence": [
@@ -36,9 +34,8 @@
       "id": "junrou-charter-post-transaction",
       "relativePath": "投资实施/6君柔科技-公司章程.pdf",
       "documentType": "company_charter",
-      "expectedCategory": {
+      "expectedFolder": {
         "folderId": "investment-implementation",
-        "fileName": "项目公司章程",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -62,9 +59,8 @@
       "id": "junrou-shareholder-resolution",
       "relativePath": "投资实施/7君柔科技-股东会决议.pdf",
       "documentType": "shareholder_resolution",
-      "expectedCategory": {
+      "expectedFolder": {
         "folderId": "investment-implementation",
-        "fileName": "股东会决议",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -86,9 +82,8 @@
       "id": "junrou-closing-confirmation",
       "relativePath": "投资实施/5中山致远望睿交割确认函.pdf",
       "documentType": "closing_confirmation",
-      "expectedCategory": {
+      "expectedFolder": {
         "folderId": "investment-implementation",
-        "fileName": "确权文件",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -110,9 +105,8 @@
       "id": "junrou-payment-notice",
       "relativePath": "投资实施/8中山致远望睿缴款通知书.pdf",
       "documentType": "payment_notice",
-      "expectedCategory": {
+      "expectedFolder": {
         "folderId": "investment-implementation",
-        "fileName": "付款通知函",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -135,14 +129,12 @@
       "id": "junrou-investment-compliance-review",
       "relativePath": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
       "documentType": "investment_compliance_review",
-      "expectedCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "投资合规性审查表",
+      "expectedFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "decisiveEvidence": [

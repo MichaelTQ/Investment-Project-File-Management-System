@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-01T10:02:04.458Z",
+  "generatedAt": "2026-08-03T09:58:00.123Z",
   "mode": "local-vision-ocr-context-shadow",
   "limitations": [
     "六份PDF全部无文字层，使用macOS Vision OCR",
     "本地事实适配器不等同于Coze LLM事实抽取器",
-    "未调用Coze LLM的legacy最终分类，只评估关键词预判",
-    "上下文规则v2覆盖当前六个金标准文档类型，仍需其他项目留出集验证"
+    "v5 已移除细分类关键词基线",
+    "上下文规则v5覆盖当前六个阶段文件夹金标准，仍需其他项目留出集验证"
   ],
   "summary": {
     "evaluatedCaseCount": 6,
     "scannedPdfCount": 6,
     "factTypeCorrectCount": 6,
-    "keywordTopCorrectCount": 2,
+    "keywordTopCorrectCount": 0,
     "keywordAutoDecisionCount": 0,
     "contextCoveredCount": 6,
     "contextCoveredCorrectCount": 6,
@@ -25,8 +25,8 @@
       "sha256": "e5fb45b5647b61a121ee1d88f6f72f62f78cc2e6e878cc545268406f7b4abda8",
       "pageCount": 21,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 9152,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 601,
+      "ocrEmptyPageCount": 21,
       "facts": {
         "schemaVersion": 1,
         "documentType": "company_charter",
@@ -195,102 +195,54 @@
         "extractionConfidence": 85
       },
       "goldDocumentType": "company_charter",
-      "goldCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "公司章程",
+      "goldFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "基金投资及投资执行",
-            "投资决策",
-            "上会材料"
-          ],
-          "folderId": "decision-meeting",
-          "fileName": "公司章程",
-          "keywords": [
-            "章程",
-            "工商登记",
-            "公司章程"
-          ],
-          "description": "项目公司工商登记章程"
-        },
-        "topScore": 4,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
-        "topMatchesGold": true,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "topMatchesGold": false,
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-decision",
+          "name": "投资决策",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
-            "投资决策",
-            "上会材料"
+            "投资决策"
           ],
-          "folderId": "decision-meeting",
-          "fileName": "公司章程",
-          "keywords": [
-            "章程",
-            "工商登记",
-            "公司章程"
-          ],
-          "description": "项目公司工商登记章程"
+          "businessStage": "investment_decision",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_decision",
+        "stageConfidence": 50,
+        "routingMethod": "context_policy",
         "confidence": 50,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-decision",
+              "name": "投资决策",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
-                "投资决策",
-                "上会材料"
+                "投资决策"
               ],
-              "folderId": "decision-meeting",
-              "fileName": "公司章程",
-              "keywords": [
-                "章程",
-                "工商登记",
-                "公司章程"
-              ],
-              "description": "项目公司工商登记章程"
+              "businessStage": "investment_decision",
+              "isSystemFolder": true
             },
             "score": 50,
             "evidence": [
               "项目内关联章程“投资实施/6君柔科技-公司章程.pdf”注册资本更高，当前文件更可能是交易前版本"
-            ],
-            "contradictions": []
-          },
-          {
-            "category": {
-              "folderPath": [
-                "投资项目档案",
-                "基金投资及投资执行",
-                "投资实施"
-              ],
-              "folderId": "investment-implementation",
-              "fileName": "项目公司章程",
-              "keywords": [
-                "项目公司章程",
-                "新章程"
-              ],
-              "description": "项目公司章程"
-            },
-            "score": 25,
-            "evidence": [
-              "项目已有投资实施事件；该信息只作为弱先验，不能单独决定历史文件阶段"
             ],
             "contradictions": []
           }
@@ -300,8 +252,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": false,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 公司章程”，得分 50。",
-        "policyVersion": "context-decision-v2"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策”，得分 50。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     },
@@ -311,8 +263,8 @@
       "sha256": "5de798d872ea3c6f18d377d5c2df79885d0d3256d11296e8d34e7823e4996c12",
       "pageCount": 26,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 10603,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 680,
+      "ocrEmptyPageCount": 26,
       "facts": {
         "schemaVersion": 1,
         "documentType": "company_charter",
@@ -508,9 +460,8 @@
         "extractionConfidence": 85
       },
       "goldDocumentType": "company_charter",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "项目公司章程",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -519,88 +470,46 @@
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "基金投资及投资执行",
-            "投资决策",
-            "上会材料"
-          ],
-          "folderId": "decision-meeting",
-          "fileName": "公司章程",
-          "keywords": [
-            "章程",
-            "工商登记",
-            "公司章程"
-          ],
-          "description": "项目公司工商登记章程"
-        },
-        "topScore": 4,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
         "topMatchesGold": false,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-implementation",
+          "name": "投资实施",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
             "投资实施"
           ],
-          "folderId": "investment-implementation",
-          "fileName": "项目公司章程",
-          "keywords": [
-            "项目公司章程",
-            "新章程"
-          ],
-          "description": "项目公司章程"
+          "businessStage": "investment_execution",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_execution",
+        "stageConfidence": 60,
+        "routingMethod": "context_policy",
         "confidence": 55,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-implementation",
+              "name": "投资实施",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
                 "投资实施"
               ],
-              "folderId": "investment-implementation",
-              "fileName": "项目公司章程",
-              "keywords": [
-                "项目公司章程",
-                "新章程"
-              ],
-              "description": "项目公司章程"
+              "businessStage": "investment_execution",
+              "isSystemFolder": true
             },
             "score": 55,
             "evidence": [
               "项目内关联章程“投资决策/公司章程.pdf”注册资本更低，当前文件更可能是增资后版本",
               "项目已有投资实施事件；该信息只作为弱先验，不能单独决定历史文件阶段"
             ],
-            "contradictions": []
-          },
-          {
-            "category": {
-              "folderPath": [
-                "投资项目档案",
-                "基金投资及投资执行",
-                "投资决策",
-                "上会材料"
-              ],
-              "folderId": "decision-meeting",
-              "fileName": "公司章程",
-              "keywords": [
-                "章程",
-                "工商登记",
-                "公司章程"
-              ],
-              "description": "项目公司工商登记章程"
-            },
-            "score": 20,
-            "evidence": [],
             "contradictions": []
           }
         ],
@@ -610,8 +519,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": false,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 项目公司章程”，得分 55。",
-        "policyVersion": "context-decision-v2"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施”，得分 55。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     },
@@ -621,8 +530,8 @@
       "sha256": "16f7d6ff8efa57d7cde23df47ab20e400c1a9a903e10f3f991f5725cf0a87d2a",
       "pageCount": 11,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 2365,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 921,
+      "ocrEmptyPageCount": 11,
       "facts": {
         "schemaVersion": 1,
         "documentType": "shareholder_resolution",
@@ -784,9 +693,8 @@
         "extractionConfidence": 85
       },
       "goldDocumentType": "shareholder_resolution",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "股东会决议",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -795,64 +703,40 @@
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "基金投资及投资执行",
-            "投资决策",
-            "决策文件"
-          ],
-          "folderId": "decision-documents",
-          "fileName": "投委会决议",
-          "keywords": [
-            "决议",
-            "投委会",
-            "投资决策",
-            "投委会决议"
-          ],
-          "description": "投资决策委员会决议"
-        },
-        "topScore": 4,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
         "topMatchesGold": false,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-implementation",
+          "name": "投资实施",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
             "投资实施"
           ],
-          "folderId": "investment-implementation",
-          "fileName": "股东会决议",
-          "keywords": [
-            "股东会",
-            "决议",
-            "股东会决议"
-          ],
-          "description": "项目公司股东会决议"
+          "businessStage": "investment_execution",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_execution",
+        "stageConfidence": 100,
+        "routingMethod": "context_policy",
         "confidence": 100,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-implementation",
+              "name": "投资实施",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
                 "投资实施"
               ],
-              "folderId": "investment-implementation",
-              "fileName": "股东会决议",
-              "keywords": [
-                "股东会",
-                "决议",
-                "股东会决议"
-              ],
-              "description": "项目公司股东会决议"
+              "businessStage": "investment_execution",
+              "isSystemFolder": true
             },
             "score": 100,
             "evidence": [
@@ -870,8 +754,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": false,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 股东会决议”，得分 100。",
-        "policyVersion": "context-decision-v2+shareholder-resolution-v1"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施”，得分 100。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     },
@@ -881,8 +765,8 @@
       "sha256": "46e844224bef515a71fe169942cf4b0a6d7bae8ea6fcb1bcd3b2defcde1f0fbb",
       "pageCount": 1,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 662,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 117,
+      "ocrEmptyPageCount": 1,
       "facts": {
         "schemaVersion": 1,
         "documentType": "closing_confirmation",
@@ -922,9 +806,8 @@
         "extractionConfidence": 75
       },
       "goldDocumentType": "closing_confirmation",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "确权文件",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -933,65 +816,40 @@
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "基金投资及投资执行",
-            "投资实施"
-          ],
-          "folderId": "investment-implementation",
-          "fileName": "付款通知函",
-          "keywords": [
-            "付款",
-            "通知函",
-            "确认函",
-            "付款通知"
-          ],
-          "description": "拟投资标的确认函(即付款通知函)"
-        },
-        "topScore": 4,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
         "topMatchesGold": false,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-implementation",
+          "name": "投资实施",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
             "投资实施"
           ],
-          "folderId": "investment-implementation",
-          "fileName": "确权文件",
-          "keywords": [
-            "确权",
-            "股东名册",
-            "交割",
-            "出资证明"
-          ],
-          "description": "股东名册、交割确认函、股东出资证明书"
+          "businessStage": "investment_execution",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_execution",
+        "stageConfidence": 100,
+        "routingMethod": "context_policy",
         "confidence": 100,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-implementation",
+              "name": "投资实施",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
                 "投资实施"
               ],
-              "folderId": "investment-implementation",
-              "fileName": "确权文件",
-              "keywords": [
-                "确权",
-                "股东名册",
-                "交割",
-                "出资证明"
-              ],
-              "description": "股东名册、交割确认函、股东出资证明书"
+              "businessStage": "investment_execution",
+              "isSystemFolder": true
             },
             "score": 100,
             "evidence": [
@@ -1011,8 +869,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": false,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 确权文件”，得分 100。",
-        "policyVersion": "context-decision-v2+closing-confirmation-v1"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施”，得分 100。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     },
@@ -1022,8 +880,8 @@
       "sha256": "9e11a26986d2f764b9b6cc6e2677dbd7eeb39ca95b7243f0092da08e96521134",
       "pageCount": 1,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 634,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 389,
+      "ocrEmptyPageCount": 1,
       "facts": {
         "schemaVersion": 1,
         "documentType": "payment_notice",
@@ -1106,9 +964,8 @@
         "extractionConfidence": 75
       },
       "goldDocumentType": "payment_notice",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "付款通知函",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -1117,64 +974,40 @@
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "项目退出",
-            "退出执行"
-          ],
-          "folderId": "exit-implementation",
-          "fileName": "交易协议",
-          "keywords": [
-            "交易",
-            "协议",
-            "交易协议"
-          ],
-          "description": "退出交易协议"
-        },
-        "topScore": 2,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
         "topMatchesGold": false,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-implementation",
+          "name": "投资实施",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
             "投资实施"
           ],
-          "folderId": "investment-implementation",
-          "fileName": "付款通知函",
-          "keywords": [
-            "付款",
-            "通知函",
-            "确认函",
-            "付款通知"
-          ],
-          "description": "拟投资标的确认函(即付款通知函)"
+          "businessStage": "investment_execution",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_execution",
+        "stageConfidence": 100,
+        "routingMethod": "context_policy",
         "confidence": 100,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-implementation",
+              "name": "投资实施",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
                 "投资实施"
               ],
-              "folderId": "investment-implementation",
-              "fileName": "付款通知函",
-              "keywords": [
-                "付款",
-                "通知函",
-                "确认函",
-                "付款通知"
-              ],
-              "description": "拟投资标的确认函(即付款通知函)"
+              "businessStage": "investment_execution",
+              "isSystemFolder": true
             },
             "score": 100,
             "evidence": [
@@ -1194,8 +1027,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": false,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施 / 付款通知函”，得分 100。",
-        "policyVersion": "context-decision-v2+payment-notice-v1"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资实施”，得分 100。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     },
@@ -1205,8 +1038,8 @@
       "sha256": "cc97241214983adab4327b79d0dda4c1f70b98d52fa1040318c67a8cd2d7df94",
       "pageCount": 6,
       "textLayerCharacterCount": 0,
-      "ocrCharacterCount": 2798,
-      "ocrEmptyPageCount": 0,
+      "ocrCharacterCount": 263,
+      "ocrEmptyPageCount": 6,
       "facts": {
         "schemaVersion": 1,
         "documentType": "investment_compliance_review",
@@ -1324,80 +1157,50 @@
         "extractionConfidence": 85
       },
       "goldDocumentType": "investment_compliance_review",
-      "goldCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "投资合规性审查表",
+      "goldFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "factTypeMatchesGold": true,
       "keywordBaseline": {
-        "topCategory": {
-          "folderPath": [
-            "投资项目档案",
-            "基金投资及投资执行",
-            "投资决策",
-            "上会材料"
-          ],
-          "folderId": "decision-meeting",
-          "fileName": "投资合规性审查表",
-          "keywords": [
-            "投资项目合规性审查表",
-            "投资合规性审查",
-            "合规性审查表",
-            "子基金管理人意见"
-          ],
-          "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
-        },
-        "topScore": 1,
-        "passed": false,
-        "ambiguous": false,
+        "topFolder": null,
         "canAutoDecide": false,
-        "topMatchesGold": true,
-        "note": "仍需Coze LLM消歧或人工确认"
+        "topMatchesGold": false,
+        "note": "v5 已移除细分类关键词基线"
       },
       "contextDecision": {
         "status": "decided",
-        "selectedCategory": {
+        "selectedFolder": {
+          "folderId": "investment-decision",
+          "name": "投资决策",
           "folderPath": [
             "投资项目档案",
             "基金投资及投资执行",
-            "投资决策",
-            "上会材料"
+            "投资决策"
           ],
-          "folderId": "decision-meeting",
-          "fileName": "投资合规性审查表",
-          "keywords": [
-            "投资项目合规性审查表",
-            "投资合规性审查",
-            "合规性审查表",
-            "子基金管理人意见"
-          ],
-          "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+          "businessStage": "investment_decision",
+          "isSystemFolder": true
         },
+        "businessStage": "investment_decision",
+        "stageConfidence": 100,
+        "routingMethod": "context_policy",
         "confidence": 100,
         "candidates": [
           {
-            "category": {
+            "folder": {
+              "folderId": "investment-decision",
+              "name": "投资决策",
               "folderPath": [
                 "投资项目档案",
                 "基金投资及投资执行",
-                "投资决策",
-                "上会材料"
+                "投资决策"
               ],
-              "folderId": "decision-meeting",
-              "fileName": "投资合规性审查表",
-              "keywords": [
-                "投资项目合规性审查表",
-                "投资合规性审查",
-                "合规性审查表",
-                "子基金管理人意见"
-              ],
-              "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+              "businessStage": "investment_decision",
+              "isSystemFolder": true
             },
             "score": 100,
             "evidence": [
@@ -1415,8 +1218,8 @@
         ],
         "contradictions": [],
         "requiresHumanReview": true,
-        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策 / 上会材料 / 投资合规性审查表”，得分 100。",
-        "policyVersion": "context-decision-v2+investment-compliance-review-v1"
+        "reasoning": "上下文证据支持归入“基金投资及投资执行 / 投资决策”，得分 100。",
+        "policyVersion": "context-decision-v5"
       },
       "contextMatchesGold": true
     }

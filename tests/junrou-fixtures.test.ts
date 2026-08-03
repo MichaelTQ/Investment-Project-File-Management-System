@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-import { FLAT_FILE_CATEGORIES } from "../src/lib/folder-structure";
+import { SYSTEM_ARCHIVE_FOLDERS } from "../src/lib/folder-structure";
 
 const projectRoot = process.cwd();
 
@@ -73,9 +73,8 @@ test("君柔已验收金标准引用真实文件和现有分类", () => {
     cases: Array<{
       id: string;
       relativePath: string;
-      expectedCategory: {
+      expectedFolder: {
         folderId: string;
-        fileName: string;
       } | null;
       relatedFiles: string[];
     }>;
@@ -100,15 +99,13 @@ test("君柔已验收金标准引用真实文件和现有分类", () => {
       );
     }
 
-    if (!classificationCase.expectedCategory) continue;
+    if (!classificationCase.expectedFolder) continue;
     assert.equal(
-      FLAT_FILE_CATEGORIES.some(
-        category =>
-          category.folderId === classificationCase.expectedCategory?.folderId &&
-          category.fileName === classificationCase.expectedCategory?.fileName
+      SYSTEM_ARCHIVE_FOLDERS.some(
+        folder => folder.folderId === classificationCase.expectedFolder?.folderId
       ),
       true,
-      `分类树中不存在预期类别: ${classificationCase.id}`
+      `文件夹树中不存在预期阶段: ${classificationCase.id}`
     );
   }
 });

@@ -14,7 +14,7 @@ import {
   getProject,
   type ArchivedFile,
 } from "@/lib/storage";
-import { ARCHIVE_CLASSIFICATION_TARGETS } from "@/lib/folder-structure";
+import { getArchiveFolder } from "@/lib/folder-structure";
 import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/document-facts";
 import {
   commitArchivedProjectDocument,
@@ -36,8 +36,7 @@ export async function POST(request: NextRequest) {
     let fileSize = 0;
     let mimeType = "application/octet-stream";
     let projectId = "";
-    let categoryId = "";
-    let categoryName = "";
+    let folderId = "";
     let archiveTitle = "";
     let reasoning = "";
     let parsedConfidence = 0;
@@ -52,17 +51,10 @@ export async function POST(request: NextRequest) {
       fileSize = Number(body.fileSize || 0);
       mimeType = String(body.mimeType || mimeType);
       projectId = String(body.projectId || "");
-      categoryId = String(body.categoryId || "");
-      categoryName = String(body.categoryName || "");
+      folderId = String(body.folderId || "");
       archiveTitle = String(body.archiveTitle || "").trim();
       reasoning = String(body.reasoning || "");
       parsedConfidence = Number(body.confidence || 0);
-      folderPath = Array.isArray(body.folderPath)
-        ? body.folderPath.filter(
-            (segment: unknown): segment is string =>
-              typeof segment === "string"
-          )
-        : [];
       sourcePath = String(body.sourcePath || originalName);
       const parsedFacts = DocumentFactsSchema.safeParse(body.documentFacts);
       documentFacts = parsedFacts.success ? parsedFacts.data : null;
@@ -74,8 +66,7 @@ export async function POST(request: NextRequest) {
       fileSize = file?.size || 0;
       mimeType = file?.type || mimeType;
       projectId = String(formData.get("projectId") ?? "");
-      categoryId = String(formData.get("categoryId") ?? "");
-      categoryName = String(formData.get("categoryName") ?? "");
+      folderId = String(formData.get("folderId") ?? "");
       archiveTitle = String(formData.get("archiveTitle") ?? "").trim();
       reasoning = String(formData.get("reasoning") ?? "");
       parsedConfidence = Number(formData.get("confidence") ?? 0);
@@ -89,29 +80,16 @@ export async function POST(request: NextRequest) {
         documentFacts = null;
       }
 
-      try {
-        const parsedFolderPath = JSON.parse(
-          String(formData.get("folderPath") ?? "[]")
-        );
-        if (Array.isArray(parsedFolderPath)) {
-          folderPath = parsedFolderPath.filter(
-            (segment): segment is string => typeof segment === "string"
-          );
-        }
-      } catch {
-        return NextResponse.json({ error: "归档路径格式错误" }, { status: 400 });
-      }
     }
 
     if (
       (!file && !storageKey) ||
       !originalName ||
       !projectId ||
-      !categoryId ||
-      !categoryName
+      !folderId
     ) {
       return NextResponse.json(
-        { error: "缺少文件、项目或分类信息" },
+        { error: "缺少文件、项目或目标文件夹信息" },
         { status: 400 }
       );
     }
@@ -119,15 +97,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "无效的 S3 临时文件地址" }, { status: 400 });
     }
 
-    const category = ARCHIVE_CLASSIFICATION_TARGETS.find(
-      (item) =>
-        item.folderId === categoryId &&
-        item.fileName === categoryName &&
-        JSON.stringify(item.folderPath) === JSON.stringify(folderPath)
-    );
-    if (!category) {
-      return NextResponse.json({ error: "无效的归档分类" }, { status: 400 });
+    const targetFolder = getArchiveFolder(folderId);
+    if (!targetFolder) {
+      return NextResponse.json({ error: "无效的目标文件夹" }, { status: 400 });
     }
+    folderPath = targetFolder.folderPath;
 
     const project = await getProject(projectId);
     if (!project) {
@@ -144,9 +118,8 @@ export async function POST(request: NextRequest) {
           fileSize,
           projectId,
           projectName: project.name,
-          categoryId: category.folderId,
-          categoryName: category.fileName,
-          folderPath: category.folderPath,
+          folderId: targetFolder.folderId,
+          folderPath,
           mimeType,
           confidence,
           reasoning,
@@ -157,9 +130,8 @@ export async function POST(request: NextRequest) {
           originalName,
           projectId,
           projectName: project.name,
-          categoryId: category.folderId,
-          categoryName: category.fileName,
-          folderPath: category.folderPath,
+          folderId: targetFolder.folderId,
+          folderPath,
           mimeType,
           confidence,
           reasoning,
@@ -354,16 +326,14 @@ export async function PATCH(request: NextRequest) {
       const moves = body.moves.filter(
         (move: unknown): move is {
           id: string;
-          categoryId: string;
-          categoryName: string;
+          folderId: string;
           folderPath: string[];
         } => {
           if (!move || typeof move !== "object") return false;
           const item = move as Record<string, unknown>;
           return (
             typeof item.id === "string" &&
-            typeof item.categoryId === "string" &&
-            typeof item.categoryName === "string" &&
+            typeof item.folderId === "string" &&
             Array.isArray(item.folderPath) &&
             item.folderPath.every(segment => typeof segment === "string")
           );
@@ -405,13 +375,13 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
-    const { id, categoryId, categoryName, folderPath } = body;
+    const { id, folderId, folderPath } = body;
 
-    if (!id || !categoryId || !categoryName || !folderPath || !Array.isArray(folderPath)) {
-      return NextResponse.json({ error: "缺少必要参数: id, categoryId, categoryName, folderPath" }, { status: 400 });
+    if (!id || !folderId || !folderPath || !Array.isArray(folderPath)) {
+      return NextResponse.json({ error: "缺少必要参数: id, folderId, folderPath" }, { status: 400 });
     }
 
-    const result = await moveArchivedFile(id, { categoryId, categoryName, folderPath });
+    const result = await moveArchivedFile(id, { folderId, folderPath });
     if (!result) {
       return NextResponse.json({ error: "文件不存在" }, { status: 404 });
     }

@@ -17,6 +17,8 @@
 
 本文档描述目标方案，不代表所有内容已经实现。实施过程中如调整关键架构、数据模型或验收标准，应同步更新本文档。
 
+> 2026-08-03 架构收口：实际归档已改为 v5“阶段文件夹模型”。本文中关于细分类别、上会材料/决策文件叶子目录、`selected_category_*` 目标字段和类别策略文件的内容仅保留为历史规划背景，不再是当前实现依据。当前字段和调用契约以 `CLASSIFICATION_CORE_LOGIC.md` 为准。
+
 ### 当前实施状态
 
 截至当前版本：
@@ -24,16 +26,16 @@
 - 已完成君柔 35 份业务文件的机器清单和重复检测；
 - 已完成 7 个项目事件的上下文草案；
 - 6 个君柔金标准分类用例已于 2026-08-01 通过业务验收；
-- 已将“投资合规性审查表”加入投资决策/上会材料，并建立正证据、排除项和默认人工复核规则；
+- 已将“投资合规性审查表”判断为投资决策阶段，并保留默认人工复核规则；
 - 已实现 `DocumentFactsSchema`、事实响应安全解析和降级结果；
 - 事实响应适配器可逐字段校正非标准日期、缺失数组、超长交易变化和越界完整度，并保留校正警告；只有缺少最小核心载荷或 JSON 无法解析时才整份降级；
 - 已实现事实抽取器，并通过 `extractFacts=true` 或 `ENABLE_DOCUMENT_FACTS_SHADOW=true` 以 shadow mode 接入 `/api/classify`；
 - 已新增 `project_contexts`、`project_events`、`document_facts` 和 `classification_decisions` Drizzle Schema 与 SQL 迁移；
 - 已实现项目记忆存储层、源指纹幂等 upsert、预归档事实记录和归档后关联；
 - 已通过 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true` 接入事实与 legacy 决策的可选持久化；
-- 已实现 `context-decision-v2` 内存型上下文决策器，覆盖交易前/增资后公司章程、股东会决议、交割确认函、缴款通知书和投资合规性审查表；
+- 已实现 `context-decision-v5` 阶段文件夹决策器，文档类型只用于证据分析，不再生成细分目录；
 - `/api/classify` 支持 `contextDecision=true`，可在不持久化的情况下输入项目快照和关联文件事实，返回 shadow 上下文建议；
-- 已对 6 份君柔金标准原始 PDF 完成真实文件 shadow 评测：6/6 文档类型抽取正确，上下文 v2 覆盖 6 份且 6/6 命中；
+- 已将君柔金标准从叶子类别标签迁移为阶段文件夹标签；
 - 评测确认 6 份 PDF 全部无文字层，OCR/视觉抽取是真实档案链路的必要组成；
 - 已安装 `@langchain/langgraph`，实现 `classification-agent-langgraph-v1` 状态图；
 - Agent 已具备证据规划、关联文件检索、条件循环、上下文决策、完成和转人工节点；

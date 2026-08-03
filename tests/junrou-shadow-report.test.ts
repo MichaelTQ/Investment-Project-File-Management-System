@@ -11,7 +11,7 @@ interface ShadowCase {
   factTypeMatchesGold: boolean;
   contextMatchesGold: boolean;
   contextDecision: {
-    selectedCategory: unknown;
+    selectedFolder: unknown;
   };
 }
 
@@ -62,11 +62,11 @@ test('六份PDF均需OCR，文档类型抽取全部命中', () => {
   assert.equal(report.cases.every(item => item.factTypeMatchesGold), true);
 });
 
-test('上下文v2覆盖六个金标准案例且全部命中', () => {
+test('上下文v5覆盖六个阶段文件夹金标准且全部命中', () => {
   assert.equal(report.summary.contextCoveredCount, 6);
   assert.equal(report.summary.contextCoveredCorrectCount, 6);
   const covered = report.cases.filter(
-    item => item.contextDecision.selectedCategory
+    item => item.contextDecision.selectedFolder
   );
   assert.equal(covered.length, 6);
   assert.equal(covered.every(item => item.contextMatchesGold), true);

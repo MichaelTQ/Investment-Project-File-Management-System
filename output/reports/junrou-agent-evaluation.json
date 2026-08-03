@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-08-01T10:03:32.172Z",
-  "graphVersion": "classification-agent-langgraph-v1",
+  "generatedAt": "2026-08-03T09:58:06.795Z",
+  "graphVersion": "classification-agent-langgraph-v2",
   "mode": "non-persistent-shadow",
   "summary": {
     "evaluatedCaseCount": 6,
@@ -16,32 +16,25 @@
     {
       "id": "junrou-charter-pre-transaction",
       "relativePath": "投资决策/公司章程.pdf",
-      "goldCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "公司章程",
+      "goldFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "agentStatus": "decided",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-decision",
+        "name": "投资决策",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ],
-        "folderId": "decision-meeting",
-        "fileName": "公司章程",
-        "keywords": [
-          "章程",
-          "工商登记",
-          "公司章程"
-        ],
-        "description": "项目公司工商登记章程"
+        "businessStage": "investment_decision",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
@@ -51,13 +44,17 @@
       "llmCallCount": 0,
       "requestedEvidence": [
         "related_document:company_charter",
+        "related_document:shareholder_resolution",
+        "related_document:capital_increase_agreement",
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:shareholders_approved_transaction"
       ],
       "trace": [
         {
           "node": "plan_evidence",
           "tool": "inspect_document_facts",
-          "summary": "文档类型为 company_charter，发现 1 份尚未比较的关联文件",
+          "summary": "文档类型为 company_charter，发现 1 份与事件、主体、版本或交易关系相关的候选证据",
           "round": 0
         },
         {
@@ -74,18 +71,17 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v2 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v5 完成上下文分类建议",
           "round": 1
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     },
     {
       "id": "junrou-charter-post-transaction",
       "relativePath": "投资实施/6君柔科技-公司章程.pdf",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "项目公司章程",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -93,19 +89,16 @@
         ]
       },
       "agentStatus": "decided",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-implementation",
+        "name": "投资实施",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
           "投资实施"
         ],
-        "folderId": "investment-implementation",
-        "fileName": "项目公司章程",
-        "keywords": [
-          "项目公司章程",
-          "新章程"
-        ],
-        "description": "项目公司章程"
+        "businessStage": "investment_execution",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
@@ -115,13 +108,17 @@
       "llmCallCount": 0,
       "requestedEvidence": [
         "related_document:company_charter",
+        "related_document:shareholder_resolution",
+        "related_document:capital_increase_agreement",
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:shareholders_approved_transaction"
       ],
       "trace": [
         {
           "node": "plan_evidence",
           "tool": "inspect_document_facts",
-          "summary": "文档类型为 company_charter，发现 1 份尚未比较的关联文件",
+          "summary": "文档类型为 company_charter，发现 1 份与事件、主体、版本或交易关系相关的候选证据",
           "round": 0
         },
         {
@@ -138,18 +135,17 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v2 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v5 完成上下文分类建议",
           "round": 1
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     },
     {
       "id": "junrou-shareholder-resolution",
       "relativePath": "投资实施/7君柔科技-股东会决议.pdf",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "股东会决议",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -157,57 +153,63 @@
         ]
       },
       "agentStatus": "decided",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-implementation",
+        "name": "投资实施",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
           "投资实施"
         ],
-        "folderId": "investment-implementation",
-        "fileName": "股东会决议",
-        "keywords": [
-          "股东会",
-          "决议",
-          "股东会决议"
-        ],
-        "description": "项目公司股东会决议"
+        "businessStage": "investment_execution",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
       "safeAbstention": false,
       "requiresHumanReview": false,
-      "rounds": 0,
+      "rounds": 1,
       "llmCallCount": 0,
       "requestedEvidence": [
+        "related_document:capital_increase_agreement",
+        "related_document:company_charter",
+        "related_document:shareholder_agreement",
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:shareholders_approved_transaction"
       ],
       "trace": [
         {
           "node": "plan_evidence",
           "tool": "inspect_document_facts",
-          "summary": "文档类型为 shareholder_resolution，当前没有可继续检索的关联文件",
+          "summary": "文档类型为 shareholder_resolution，发现 2 份与事件、主体、版本或交易关系相关的候选证据",
           "round": 0
+        },
+        {
+          "node": "retrieve_related_document",
+          "tool": "retrieve_project_document_facts",
+          "summary": "选择关联文件“投资决策/公司章程.pdf”用于事实对比",
+          "round": 1
         },
         {
           "node": "context_decision",
           "tool": "decide_with_project_context",
           "summary": "decided，最高得分 100，证据满足自动建议条件",
-          "round": 0
+          "round": 1
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v2+shareholder-resolution-v1 完成上下文分类建议",
-          "round": 0
+          "summary": "Agent以 context-decision-v5 完成上下文分类建议",
+          "round": 1
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     },
     {
       "id": "junrou-closing-confirmation",
       "relativePath": "投资实施/5中山致远望睿交割确认函.pdf",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "确权文件",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -215,21 +217,16 @@
         ]
       },
       "agentStatus": "decided",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-implementation",
+        "name": "投资实施",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
           "投资实施"
         ],
-        "folderId": "investment-implementation",
-        "fileName": "确权文件",
-        "keywords": [
-          "确权",
-          "股东名册",
-          "交割",
-          "出资证明"
-        ],
-        "description": "股东名册、交割确认函、股东出资证明书"
+        "businessStage": "investment_execution",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
@@ -238,6 +235,11 @@
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
+        "related_document:capital_increase_agreement",
+        "related_document:payment_notice",
+        "related_document:bank_receipt",
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:capital_increase_agreement_signed",
         "project_event:closing_conditions_confirmed"
       ],
@@ -256,18 +258,17 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v2+closing-confirmation-v1 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v5 完成上下文分类建议",
           "round": 0
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     },
     {
       "id": "junrou-payment-notice",
       "relativePath": "投资实施/8中山致远望睿缴款通知书.pdf",
-      "goldCategory": {
+      "goldFolder": {
         "folderId": "investment-implementation",
-        "fileName": "付款通知函",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
@@ -275,21 +276,16 @@
         ]
       },
       "agentStatus": "decided",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-implementation",
+        "name": "投资实施",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
           "投资实施"
         ],
-        "folderId": "investment-implementation",
-        "fileName": "付款通知函",
-        "keywords": [
-          "付款",
-          "通知函",
-          "确认函",
-          "付款通知"
-        ],
-        "description": "拟投资标的确认函(即付款通知函)"
+        "businessStage": "investment_execution",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
@@ -298,6 +294,11 @@
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
+        "related_document:capital_increase_agreement",
+        "related_document:closing_confirmation",
+        "related_document:bank_receipt",
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:capital_increase_agreement_signed",
         "project_event:closing_conditions_confirmed"
       ],
@@ -316,42 +317,34 @@
         },
         {
           "node": "complete",
-          "summary": "Agent以 context-decision-v2+payment-notice-v1 完成上下文分类建议",
+          "summary": "Agent以 context-decision-v5 完成上下文分类建议",
           "round": 0
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     },
     {
       "id": "junrou-investment-compliance-review",
       "relativePath": "中山火炬电子产业基金管理有限公司-君柔科技.pdf",
-      "goldCategory": {
-        "folderId": "decision-meeting",
-        "fileName": "投资合规性审查表",
+      "goldFolder": {
+        "folderId": "investment-decision",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ]
       },
       "agentStatus": "needs_review",
-      "suggestedCategory": {
+      "suggestedFolder": {
+        "folderId": "investment-decision",
+        "name": "投资决策",
         "folderPath": [
           "投资项目档案",
           "基金投资及投资执行",
-          "投资决策",
-          "上会材料"
+          "投资决策"
         ],
-        "folderId": "decision-meeting",
-        "fileName": "投资合规性审查表",
-        "keywords": [
-          "投资项目合规性审查表",
-          "投资合规性审查",
-          "合规性审查表",
-          "子基金管理人意见"
-        ],
-        "description": "投资决策阶段形成的项目合规性审查表及子基金管理人合规意见"
+        "businessStage": "investment_decision",
+        "isSystemFolder": true
       },
       "decisionStatus": "decided",
       "matchesGold": true,
@@ -360,6 +353,8 @@
       "rounds": 0,
       "llmCallCount": 0,
       "requestedEvidence": [
+        "project_context:direct_events",
+        "project_context:document_relations",
         "project_event:fund_compliance_review"
       ],
       "trace": [
@@ -382,7 +377,7 @@
           "round": 0
         }
       ],
-      "graphVersion": "classification-agent-langgraph-v1"
+      "graphVersion": "classification-agent-langgraph-v2"
     }
   ]
 }
