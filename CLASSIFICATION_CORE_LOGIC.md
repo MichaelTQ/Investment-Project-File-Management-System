@@ -138,7 +138,11 @@ businessStage 明确？
 
 Context 综合具有可恢复降级：如果大模型超时、返回空文本、没有完整 JSON 或返回内容不符合 Schema，系统会用当前有效文件事实生成确定性规则 Context，将具体原因写入 `synthesisWarnings`，但不会把更新标记为失败。文件日期不明确时使用 `date=null`。只有规则 Context 本身也无法生成时，才属于真正的 Context 更新失败。
 
-“没有完整 JSON”会进一步区分为三类：空文本、非 JSON 说明文字、JSON 未闭合（高度疑似输出被截断）。当前 `coze-coding-dev-sdk` 的 `invoke()` 只拼接并返回流式 `content`，不保留 `finish_reason` 和 token 使用量，因此系统能识别输出形态，但不能仅凭 SDK 返回值直接证明上游为何结束。Context 输入最多允许 100 份文件、约 60,000 字符事实卡片，输入较大且输出结构复杂时，截断风险会增加。
+“没有完整 JSON”会进一步区分为三类：空文本、非 JSON 说明文字、JSON 未闭合。Context 输入最多允许 100 份文件、约 60,000 字符事实卡片，输入较大且输出结构复杂时，截断风险会增加。
+
+`project-context-synthesizer-v3` 对输出增加了明确体积上限：限制事件、关系、冲突和问题的数量及单项文字长度。首次响应无法通过 JSON/Schema 校验时，系统会自动移除上一版 Context、使用更低温度和无缩进紧凑 JSON 再调用一次；重试成功即使用 LLM Context，并在数据质量提示中保留首次失败原因。两次都失败时才切换为规则 Context。
+
+`project-context-synthesizer-v4` 不再通过会丢弃响应元数据的 `coze-coding-dev-sdk.invoke()` 生成 Context，而是直接调用兼容的 Chat Completions 接口：显式设置 `max_tokens=8192`、`response_format=json_object`、关闭思考模式，并读取 `finish_reason` 与实际输出 token 数。若达到输出上限，数据质量提示会直接记录 `finish_reason=length` 和 token 用量；v3 的紧凑重试继续作为第二道保护。
 
 ## 四、API 现在传什么
 

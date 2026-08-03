@@ -163,10 +163,65 @@ test('缺少 JSON 时区分空响应、非 JSON 文本和疑似截断', () => {
   );
 });
 
+test('首次 JSON 被截断时自动用紧凑模式重试', async () => {
+  let invocationCount = 0;
+  const result = await synthesizeProjectContext({
+    projectName: '测试项目',
+    documents,
+    client: {
+      invoke: async () => {
+        invocationCount += 1;
+        if (invocationCount === 1) {
+          return {
+            content: '{"schemaVersion":1,"timeline":[',
+            finishReason: 'length',
+            outputTokens: 8192,
+          };
+        }
+        return {
+          content: JSON.stringify({
+            schemaVersion: 1,
+            projectName: '测试项目',
+            targetCompany: '深圳测试科技有限公司',
+            contextStatus: 'llm_synthesized',
+            latestEvidencedStage: 'investment_decision',
+            stageConfidence: 'high',
+            importantCaveat: '仅依据现有文件。',
+            timeline: [
+              {
+                date: '2026-02-03',
+                eventType: 'investment_committee_approved',
+                stage: 'investment_decision',
+                title: '投委会形成决议',
+                evidenceFiles: ['投资决策/投委会决议.pdf'],
+                evidence: '投资决策委员会决议',
+                confidence: 'high',
+              },
+            ],
+            stageHypotheses: [],
+            documentRelations: [],
+            conflicts: [],
+            openQuestions: [],
+          }),
+        };
+      },
+    } as never,
+  });
+
+  assert.equal(result.status, 'llm_synthesized');
+  assert.equal(result.llmCallCount, 2);
+  assert.equal(invocationCount, 2);
+  assert.match(
+    result.context.synthesisWarnings?.join('\n') ?? '',
+    /紧凑模式重试成功|finish_reason=length|8192\/8192/
+  );
+});
+
 test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   const prompt = buildProjectContextPrompt({
     projectName: '测试项目',
     factCards: [],
   });
   assert.match(String(prompt[0]?.content), /不能把文件上传顺序当作业务发生顺序/);
+  assert.match(String(prompt[0]?.content), /timeline 最多 4 项/);
 });
