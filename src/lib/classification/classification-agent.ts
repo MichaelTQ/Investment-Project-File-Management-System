@@ -123,6 +123,12 @@ const RELATED_TYPE_PLANS: Partial<Record<DocumentType, DocumentType[]>> = {
     'business_plan',
     'meeting_minutes',
   ],
+  voting_result: [
+    'meeting_minutes',
+    'project_initiation_application',
+    'project_initiation_report',
+    'investment_committee_resolution',
+  ],
 };
 
 function evidencePlanFor(documentType: DocumentType): string[] {

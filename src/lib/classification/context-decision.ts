@@ -1,11 +1,17 @@
 import { z } from 'zod';
 
 import {
-  FLAT_FILE_CATEGORIES,
+  ARCHIVE_CLASSIFICATION_TARGETS,
+  getFolderBusinessStage,
+  getStageFallbackCategory,
   type FlatFileCategory,
 } from '../folder-structure';
-import { PROJECT_STAGES } from '../project-memory';
+import { PROJECT_STAGES, type ProjectStage } from '../project-memory';
 import { getCategoryEvidencePolicy } from './category-policies';
+import {
+  inferBusinessStage,
+  type BusinessStageDecision,
+} from './business-stage';
 import {
   DocumentFactsSchema,
   type DocumentFacts,
@@ -99,6 +105,13 @@ export interface ContextCandidateScore {
 export interface ContextClassificationDecision {
   status: 'decided' | 'insufficient' | 'conflict';
   selectedCategory: FlatFileCategory | null;
+  businessStage: ProjectStage | null;
+  stageConfidence: number;
+  routingMethod:
+    | 'context_policy'
+    | 'stage_policy'
+    | 'safe_stage_fallback'
+    | 'needs_stage_review';
   confidence: number;
   candidates: ContextCandidateScore[];
   evidence: string[];
@@ -122,7 +135,7 @@ interface MutableCandidate {
   contradictions: string[];
 }
 
-const POLICY_VERSION = 'context-decision-v3';
+const POLICY_VERSION = 'context-decision-v4';
 const MIN_DECISION_SCORE = 50;
 const MIN_SCORE_GAP = 15;
 
@@ -135,7 +148,7 @@ function findCategory(
   folderId: string,
   fileName: string
 ): FlatFileCategory {
-  const category = FLAT_FILE_CATEGORIES.find(
+  const category = ARCHIVE_CLASSIFICATION_TARGETS.find(
     item => item.folderId === folderId && item.fileName === fileName
   );
   if (!category) {
@@ -678,32 +691,30 @@ const GENERIC_CATEGORY_NAMES: Partial<
   shareholder_register: ['确权文件'],
 };
 
-function categoryStage(category: FlatFileCategory): (typeof PROJECT_STAGES)[number] {
-  const stageByFolder: Record<string, (typeof PROJECT_STAGES)[number]> = {
-    'pre-project': 'pre_initiation',
-    'project-initiation': 'initiation',
-    'due-diligence': 'due_diligence',
-    'decision-meeting': 'investment_decision',
-    'decision-documents': 'investment_decision',
-    'investment-implementation': 'investment_execution',
-    'post-investment-report': 'post_investment',
-    'field-research': 'post_investment',
-    'enterprise-materials': 'post_investment',
-    'risk-management': 'post_investment',
-    'exit-meeting': 'exit_decision',
-    'exit-decision-docs': 'exit_decision',
-    'exit-implementation': 'exit_execution',
-  };
-  return stageByFolder[category.folderId] ?? 'unknown';
+function categoryStage(category: FlatFileCategory): ProjectStage {
+  return (
+    category.businessStage ??
+    getFolderBusinessStage(category.folderId) ??
+    'unknown'
+  );
 }
 
 function scoreGenericDocument(
-  params: DecideWithProjectContextParams
+  params: DecideWithProjectContextParams,
+  stageDecision: BusinessStageDecision
 ): MutableCandidate[] {
   const categoryNames = GENERIC_CATEGORY_NAMES[params.facts.documentType] ?? [];
-  const categories = FLAT_FILE_CATEGORIES.filter(category =>
+  let categories = ARCHIVE_CLASSIFICATION_TARGETS.filter(category =>
     categoryNames.includes(category.fileName)
   );
+  if (stageDecision.selectedStage) {
+    categories = categories.filter(
+      category => categoryStage(category) === stageDecision.selectedStage
+    );
+    if (categories.length === 0) {
+      categories = [getStageFallbackCategory(stageDecision.selectedStage)];
+    }
+  }
   if (categories.length === 0) return [];
   const text = combinedFactsText(params.facts);
   const directEvents =
@@ -718,6 +729,22 @@ function scoreGenericDocument(
       evidence: [],
       contradictions: [],
     };
+    if (!stageDecision.selectedStage) {
+      candidate.contradictions.push(stageDecision.reasoning);
+      return candidate;
+    }
+    addEvidence(
+      candidate,
+      Math.max(30, stageDecision.confidence - 20),
+      `业务阶段已锁定为 ${stageDecision.selectedStage}：${stageDecision.evidence.join('；')}`
+    );
+    if (category.isStageFallback) {
+      addEvidence(
+        candidate,
+        10,
+        '当前阶段没有与文档类型直接对应的细分目录，使用同阶段安全兜底目录'
+      );
+    }
     if (text.includes(category.fileName)) {
       addEvidence(candidate, 25, `文件标题或事实明确匹配“${category.fileName}”`);
     }
@@ -767,9 +794,37 @@ function scoreGenericDocument(
 
 function finalizeDecision(
   candidates: MutableCandidate[],
-  facts: DocumentFacts
+  facts: DocumentFacts,
+  stageDecision: BusinessStageDecision,
+  routingMethod: ContextClassificationDecision['routingMethod'] = 'context_policy'
 ): ContextClassificationDecision {
-  const normalized = candidates
+  let stageSafeCandidates = candidates;
+  if (stageDecision.selectedStage) {
+    const candidatesInStage = candidates.filter(
+      candidate => categoryStage(candidate.category) === stageDecision.selectedStage
+    );
+    stageSafeCandidates =
+      candidatesInStage.length > 0
+        ? candidatesInStage
+        : [
+            {
+              category: getStageFallbackCategory(stageDecision.selectedStage),
+              score: Math.max(60, stageDecision.confidence),
+              evidence: [
+                `业务阶段已锁定为 ${stageDecision.selectedStage}`,
+                '原有专用候选均不属于已锁定阶段，改用同阶段安全兜底目录',
+              ],
+              contradictions: candidates.flatMap(candidate =>
+                candidate.contradictions.map(
+                  contradiction =>
+                    `原候选“${candidate.category.fileName}”：${contradiction}`
+                )
+              ),
+            },
+          ];
+  }
+
+  const normalized = stageSafeCandidates
     .map(candidate => ({
       ...candidate,
       score: clampScore(candidate.score),
@@ -792,6 +847,7 @@ function finalizeDecision(
     !hasEnoughEvidence ||
     hasConflict ||
     extractionRisk ||
+    Boolean(best.category.isStageFallback) ||
     Boolean(policy?.defaultRequiresHumanReview);
   const status = !hasEnoughEvidence
     ? 'insufficient'
@@ -811,6 +867,17 @@ function finalizeDecision(
   return {
     status,
     selectedCategory,
+    businessStage:
+      selectedCategory !== null
+        ? categoryStage(selectedCategory)
+        : stageDecision.selectedStage,
+    stageConfidence: stageDecision.confidence,
+    routingMethod:
+      selectedCategory?.isStageFallback
+        ? 'safe_stage_fallback'
+        : stageDecision.selectedStage
+          ? routingMethod
+          : 'needs_stage_review',
     confidence: best.score,
     candidates: normalized,
     evidence,
@@ -826,33 +893,64 @@ function finalizeDecision(
 export function decideWithProjectContext(
   params: DecideWithProjectContextParams
 ): ContextClassificationDecision {
+  const stageDecision = inferBusinessStage({
+    sourcePath: params.sourcePath,
+    facts: params.facts,
+    projectContext: params.projectContext,
+    relatedDocuments: params.relatedDocuments,
+  });
   if (params.facts.documentType === 'company_charter') {
-    return finalizeDecision(scoreCompanyCharter(params), params.facts);
+    return finalizeDecision(
+      scoreCompanyCharter(params),
+      params.facts,
+      stageDecision
+    );
   }
   if (params.facts.documentType === 'investment_compliance_review') {
     return finalizeDecision(
       scoreInvestmentComplianceReview(params),
-      params.facts
+      params.facts,
+      stageDecision
     );
   }
   if (params.facts.documentType === 'shareholder_resolution') {
-    return finalizeDecision(scoreShareholderResolution(params), params.facts);
+    return finalizeDecision(
+      scoreShareholderResolution(params),
+      params.facts,
+      stageDecision
+    );
   }
   if (params.facts.documentType === 'closing_confirmation') {
-    return finalizeDecision(scoreClosingConfirmation(params), params.facts);
+    return finalizeDecision(
+      scoreClosingConfirmation(params),
+      params.facts,
+      stageDecision
+    );
   }
   if (params.facts.documentType === 'payment_notice') {
-    return finalizeDecision(scorePaymentNotice(params), params.facts);
+    return finalizeDecision(
+      scorePaymentNotice(params),
+      params.facts,
+      stageDecision
+    );
   }
 
-  const genericCandidates = scoreGenericDocument(params);
+  const genericCandidates = scoreGenericDocument(params, stageDecision);
   if (genericCandidates.length > 0) {
-    return finalizeDecision(genericCandidates, params.facts);
+    return finalizeDecision(
+      genericCandidates,
+      params.facts,
+      stageDecision,
+      'stage_policy'
+    );
   }
 
   return {
     status: 'insufficient',
     selectedCategory: null,
+    businessStage: stageDecision.selectedStage,
+    stageConfidence: stageDecision.confidence,
+    routingMethod: 'needs_stage_review',
     confidence: 0,
     candidates: [],
     evidence: [],

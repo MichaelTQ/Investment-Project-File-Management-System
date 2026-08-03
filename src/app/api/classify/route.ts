@@ -7,7 +7,11 @@ import {
   type ContentPart,
   type Message,
 } from 'coze-coding-dev-sdk';
-import { FLAT_FILE_CATEGORIES, type FlatFileCategory } from '@/lib/folder-structure';
+import {
+  ARCHIVE_CLASSIFICATION_TARGETS,
+  getCategoriesForBusinessStage,
+  type FlatFileCategory,
+} from '@/lib/folder-structure';
 import {
   assessKeywordMatches,
   getCategoryByLlmIndex,
@@ -22,6 +26,10 @@ import {
   extractDocumentFacts,
 } from '@/lib/classification/fact-extractor';
 import type { DocumentFacts } from '@/lib/classification/document-facts';
+import {
+  inferBusinessStage,
+  type BusinessStageDecision,
+} from '@/lib/classification/business-stage';
 import { getCategoryEvidencePolicy } from '@/lib/classification/category-policies';
 import {
   decideWithProjectContext,
@@ -71,6 +79,7 @@ interface KeywordMatchDetail {
 
 // 分类过程详情
 interface ClassifyProcess {
+  step0_businessStage?: BusinessStageDecision;
   step0_factExtraction?: {
     enabled: boolean;
     status: 'success' | 'fallback';
@@ -164,6 +173,8 @@ interface ClassifyResult {
   contentPreview?: string;
   process: ClassifyProcess;
   classificationMode: 'agent' | 'comparison';
+  businessStage?: string | null;
+  documentType?: string;
   suggestedArchiveTitle?: string;
   documentFacts?: DocumentFacts;
   contextDecision?: ContextClassificationDecision;
@@ -273,6 +284,8 @@ async function classifyWithLLM(
   contentText: string,
   projectName: string,
   customHeaders: Record<string, string>,
+  categories: FlatFileCategory[],
+  lockedBusinessStage?: string,
   imageDataUrl?: string
 ): Promise<{
   categoryIndex: number | null;
@@ -285,7 +298,7 @@ async function classifyWithLLM(
   const config = new Config();
   const client = new LLMClient(config, customHeaders);
 
-  const categoryOptions = FLAT_FILE_CATEGORIES.map((cat, index) =>
+  const categoryOptions = categories.map((cat, index) =>
     `${index + 1}. ${cat.folderPath.join('/')} / ${cat.fileName} (关键词: ${cat.keywords.join(', ')})`
   ).join('\n');
 
@@ -299,6 +312,10 @@ async function classifyWithLLM(
 ${categoryOptions}
 
 请严格从以上分类中选择，不得自行创造新的分类。
+
+${lockedBusinessStage
+    ? `【阶段锁定】系统已根据文件事实将业务阶段锁定为 ${lockedBusinessStage}。以上候选均属于该阶段，不得改选其他业务阶段。如果没有更准确的细分类型，必须选择该阶段的“其他材料”安全兜底项。`
+    : '【阶段安全】如果无法确定业务阶段，不得仅凭文档类型猜测其他阶段的同名类别。'}
 
 【分类规则】
 1. 综合判断文件名、正文主题、文件结构和可见图片内容
@@ -424,7 +441,8 @@ ${imageDataUrl
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       const { categoryIndex, category } = getCategoryByLlmIndex(
-        parsed.categoryIndex
+        parsed.categoryIndex,
+        categories
       );
       return {
         categoryIndex,
@@ -852,8 +870,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 第一步：关键词快速匹配
-    const keywordMatches = matchByKeywords(fileName, contentText);
+    // 第一步：先判业务阶段。阶段明确后，传统分类也只能在该阶段内选择。
+    const legacyStageDecision = inferBusinessStage({
+      sourcePath: sourcePath || fileName,
+      text: contentText,
+    });
+    const legacyCategories = legacyStageDecision.selectedStage
+      ? getCategoriesForBusinessStage(legacyStageDecision.selectedStage)
+      : ARCHIVE_CLASSIFICATION_TARGETS;
+    const keywordMatches = matchByKeywords(
+      fileName,
+      contentText,
+      legacyCategories
+    );
     const keywordAssessment = assessKeywordMatches(keywordMatches);
 
     const keywordMatchDetails: KeywordMatchDetail[] = keywordMatches.slice(0, 5).map(m => ({
@@ -866,6 +895,7 @@ export async function POST(request: NextRequest) {
     }));
 
     const process: ClassifyProcess = {
+      step0_businessStage: legacyStageDecision,
       step0_factExtraction: factExtractionStep,
       step0_contextDecision: contextClassificationDecision
         ? {
@@ -883,14 +913,17 @@ export async function POST(request: NextRequest) {
       step0_agentOrchestration: agentOrchestrationStep,
       step0_projectSessionMemory: projectSessionMemoryStep,
       step1_keywordMatch: {
-        totalCategories: FLAT_FILE_CATEGORIES.length,
+        totalCategories: legacyCategories.length,
         matchedCategories: keywordMatches.length,
         details: keywordMatchDetails,
         bestMatch: keywordMatchDetails[0],
         threshold: KEYWORD_SCORE_THRESHOLD,
         scoreGap: keywordAssessment.scoreGap ?? undefined,
         ambiguous: keywordAssessment.ambiguous,
-        passed: !imageDataUrl && keywordAssessment.passed
+        passed:
+          Boolean(legacyStageDecision.selectedStage) &&
+          !imageDataUrl &&
+          keywordAssessment.passed
       },
       finalDecision: {
         method: 'none',
@@ -924,6 +957,23 @@ export async function POST(request: NextRequest) {
         requiresArchiveConfirmation: true,
       };
       // 传统分类关闭时，Agent 建议作为唯一外层结果。
+    } else if (!legacyStageDecision.selectedStage) {
+      process.finalDecision = {
+        method: 'none',
+        explanation:
+          '业务阶段无法唯一确定，传统分类仅保留关键词诊断，不再从全局同名文件类型中猜测归档目录',
+      };
+      result = {
+        fileName,
+        fileSize,
+        category: null,
+        confidence: legacyStageDecision.confidence,
+        reasoning: legacyStageDecision.reasoning,
+        contentPreview,
+        process,
+        classificationMode: 'comparison',
+        requiresArchiveConfirmation: true,
+      };
     } else if (!imageDataUrl && keywordAssessment.passed) {
       const bestMatch = keywordMatches[0];
       const evidencePolicy = getCategoryEvidencePolicy(
@@ -966,6 +1016,8 @@ export async function POST(request: NextRequest) {
         contentText,
         project?.name || '',
         customHeaders,
+        legacyCategories,
+        legacyStageDecision.selectedStage ?? undefined,
         imageDataUrl
       );
 
@@ -1039,6 +1091,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (documentFacts) result.documentFacts = documentFacts;
+    result.documentType = documentFacts?.documentType;
+    result.businessStage =
+      agentClassificationResult?.decision.businessStage ??
+      contextClassificationDecision?.businessStage ??
+      legacyStageDecision.selectedStage;
     if (contextClassificationDecision) {
       result.contextDecision = contextClassificationDecision;
     }
