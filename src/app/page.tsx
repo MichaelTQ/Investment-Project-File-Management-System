@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -32,53 +31,22 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
-  ChevronRight, ChevronDown, Loader2, Brain, Search, Zap,
+  ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
 import {
-  ARCHIVE_CLASSIFICATION_TARGETS,
   FOLDER_STRUCTURE,
+  SYSTEM_ARCHIVE_FOLDERS,
   type FolderNode,
-  type FlatFileCategory,
+  type ArchiveFolder,
   type Project,
   type ArchivedFile,
 } from '@/lib/folder-structure';
 
-// 类型定义
-interface KeywordMatchDetail {
-  categoryName: string;
-  folderPath: string[];
-  score: number;
-  matchedKeywords: string[];
-  fileNameMatches: string[];
-  contentMatches: string[];
-}
-
 interface ClassifyProcess {
-  step1_keywordMatch: {
-    totalCategories: number;
-    matchedCategories: number;
-    details: KeywordMatchDetail[];
-    bestMatch?: KeywordMatchDetail;
-    threshold: number;
-    scoreGap?: number;
-    ambiguous?: boolean;
-    passed: boolean;
-  };
-  step2_llmAnalysis?: {
-    triggered: boolean;
-    reason: string;
-    result?: {
-      categoryIndex: number | null;
-      categoryName: string;
-      confidence: number;
-      reasoning: string;
-      suggestedArchiveTitle: string;
-    };
-  };
   finalDecision: {
-    method: 'agent' | 'keyword' | 'llm' | 'fallback' | 'none';
+    method: 'agent' | 'stage' | 'none';
     explanation: string;
   };
 }
@@ -99,13 +67,12 @@ interface AgentDecisionResult {
   status: 'decided' | 'needs_review';
   decision: {
     status: 'decided' | 'insufficient' | 'conflict';
-    selectedCategory: FlatFileCategory | null;
+    selectedFolder: ArchiveFolder | null;
     businessStage: string | null;
     stageConfidence: number;
     routingMethod:
       | 'context_policy'
       | 'stage_policy'
-      | 'safe_stage_fallback'
       | 'needs_stage_review';
     confidence: number;
     evidence: string[];
@@ -139,7 +106,7 @@ interface ProjectSessionMemoryResult {
     factStatus: 'extracted' | 'repaired' | 'fallback' | 'type_recovered';
     warnings: string[];
     agentStatus: 'decided' | 'needs_review' | null;
-    selectedCategory: string | null;
+    selectedFolder: string | null;
   }>;
   projectContext?: {
     contextStatus: string;
@@ -183,8 +150,8 @@ interface ProjectSessionMemoryResult {
     sourcePath: string;
     previousStatus: 'decided' | 'needs_review';
     status: 'decided' | 'needs_review';
-    previousCategory: string | null;
-    selectedCategory: string | null;
+    previousFolder: string | null;
+    selectedFolder: string | null;
     agentDecision: AgentDecisionResult;
   }>;
   expiresAt?: string;
@@ -195,7 +162,7 @@ interface ClassifyResult {
   fileName: string;
   sourcePath?: string;
   fileSize: number;
-  category: FlatFileCategory | null;
+  targetFolder: ArchiveFolder | null;
   confidence: number;
   reasoning: string;
   contentPreview?: string;
@@ -204,7 +171,7 @@ interface ClassifyResult {
   businessStage?: string | null;
   documentType?: string;
   legacyClassification?: {
-    category: FlatFileCategory | null;
+    targetFolder: ArchiveFolder | null;
     confidence: number;
     reasoning: string;
   };
@@ -249,7 +216,7 @@ function AgentDecisionPanel({
   agent: AgentDecisionResult;
   projectMemory?: ProjectSessionMemoryResult;
 }) {
-  const suggestion = agent.decision.selectedCategory;
+  const suggestion = agent.decision.selectedFolder;
   const needsReview = agent.status === 'needs_review';
 
   return (
@@ -283,7 +250,7 @@ function AgentDecisionPanel({
         <p className="text-xs text-muted-foreground">建议归档位置</p>
         <p className="mt-1 break-words font-medium text-violet-900">
           {suggestion
-            ? `${suggestion.folderPath.join(' / ')} / ${suggestion.fileName}`
+            ? suggestion.folderPath.join(' / ')
             : '暂不建议分类，等待人工处理'}
         </p>
         <p className="mt-2 text-xs leading-5 text-muted-foreground">
@@ -408,7 +375,7 @@ function AgentDecisionPanel({
                     {document.extractionConfidence}；来源：{document.sourceQuality}
                   </p>
                   <p>
-                    Agent：{document.selectedCategory ?? document.agentStatus ?? '尚无结论'}
+                    Agent：{document.selectedFolder ?? document.agentStatus ?? '尚无结论'}
                   </p>
                   {document.warnings.length > 0 && (
                     <p className="break-words text-amber-700">
@@ -458,8 +425,8 @@ function AgentDecisionPanel({
                 {projectMemory.reEvaluatedDocuments.map(document => (
                   <li key={document.sourcePath} className="break-words">
                     {document.sourcePath}：
-                    {document.previousCategory ?? '无结论'} →{' '}
-                    {document.selectedCategory ?? '仍需复核'}
+                    {document.previousFolder ?? '无结论'} →{' '}
+                    {document.selectedFolder ?? '仍需复核'}
                   </li>
                 ))}
               </ul>
@@ -505,7 +472,6 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
-  const hasFiles = node.files && node.files.length > 0;
   const isSelected = selectedFolder === node.id;
 
   return (
@@ -522,22 +488,11 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
           isOpen ? <FolderOpen className="h-4 w-4 text-primary shrink-0" /> : <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
         ) : (<Folder className="h-4 w-4 text-muted-foreground shrink-0" />)}
         <span className="text-sm font-medium truncate">{node.name}</span>
-        {hasFiles && <Badge variant="outline" className="ml-auto text-xs shrink-0">{node.files?.length}</Badge>}
       </div>
       {isOpen && hasChildren && (
         <div>
           {node.children!.map(child => (
             <FolderTree key={child.id} node={child} level={level + 1} selectedFolder={selectedFolder} onSelectFolder={onSelectFolder} />
-          ))}
-        </div>
-      )}
-      {isOpen && hasFiles && (
-        <div style={{ paddingLeft: `${(level + 1) * 16 + 24}px` }}>
-          {node.files!.map((file, idx) => (
-            <div key={idx} className="flex items-center gap-2 py-1 text-muted-foreground">
-              <FileText className="h-3 w-3 shrink-0" />
-              <span className="text-xs truncate">{file.name}</span>
-            </div>
           ))}
         </div>
       )}
@@ -578,91 +533,32 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
 // ============ 分类过程面板 ============
 function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
   const [isExpanded, setIsExpanded] = useState(false);
-
   return (
-    <div className="mt-3 border rounded-lg overflow-hidden">
+    <div className="mt-3 overflow-hidden rounded-lg border">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between p-3 bg-muted/50 hover:bg-muted transition-colors text-left"
+        className="flex w-full items-center justify-between bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
       >
         <div className="flex items-center gap-2">
           <Zap className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium">查看分类过程</span>
+          <span className="text-sm font-medium">查看归档判断</span>
           <Badge variant="outline" className="text-xs">
-            {process.finalDecision.method === 'agent' ? 'Agent 建议' : process.finalDecision.method === 'keyword' ? '关键词匹配' : process.finalDecision.method === 'llm' ? 'AI 分析' : process.finalDecision.method === 'fallback' ? '降级匹配' : '未分类'}
+            {process.finalDecision.method === 'agent'
+              ? 'Agent 建议'
+              : process.finalDecision.method === 'stage'
+                ? '阶段判断'
+                : '待人工选择'}
           </Badge>
         </div>
         {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </button>
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-background">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className={`p-1.5 rounded ${process.step1_keywordMatch.passed ? 'bg-green-100' : 'bg-amber-100'}`}>
-                <Search className={`h-4 w-4 ${process.step1_keywordMatch.passed ? 'text-green-600' : 'text-amber-600'}`} />
-              </div>
-              <span className="text-sm font-medium">步骤 1：关键词匹配</span>
-              {process.step1_keywordMatch.passed ? <Badge className="bg-green-100 text-green-700 text-xs">通过</Badge> : <Badge variant="outline" className="text-xs">未通过</Badge>}
-            </div>
-            <div className="pl-8 space-y-2 text-sm">
-              <p className="text-muted-foreground">
-                扫描 <span className="font-medium text-foreground">{process.step1_keywordMatch.totalCategories}</span> 个文件类别，匹配到 <span className="font-medium text-foreground">{process.step1_keywordMatch.matchedCategories}</span> 个
-              </p>
-              <p className="text-muted-foreground">
-                阈值：<span className="font-medium">{process.step1_keywordMatch.threshold} 分</span>
-                {process.step1_keywordMatch.bestMatch && <span>，最高得分：<span className="font-medium">{process.step1_keywordMatch.bestMatch.score} 分</span></span>}
-              </p>
-              {process.step1_keywordMatch.details.length > 0 && (
-                <div className="space-y-1 mt-2">
-                  <p className="text-xs text-muted-foreground">匹配详情（前 5 名）：</p>
-                  {process.step1_keywordMatch.details.slice(0, 5).map((detail, idx) => (
-                    <div key={idx} className="flex flex-wrap items-center gap-2 text-xs bg-muted/50 p-2 rounded">
-                      <span className="font-medium text-foreground">{detail.categoryName}</span>
-                      <span className="text-muted-foreground">得分: {detail.score}</span>
-                      <span className="text-muted-foreground">|</span>
-                      <span className="text-muted-foreground">文件名: {detail.fileNameMatches.length > 0 ? detail.fileNameMatches.join(', ') : '无'}</span>
-                      <span className="text-muted-foreground">|</span>
-                      <span className="text-muted-foreground">内容: {detail.contentMatches.length > 0 ? detail.contentMatches.join(', ') : '无'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <Separator />
-          {process.step2_llmAnalysis && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={`p-1.5 rounded ${process.step2_llmAnalysis.result ? 'bg-blue-100' : 'bg-muted'}`}>
-                  <Brain className={`h-4 w-4 ${process.step2_llmAnalysis.result ? 'text-blue-600' : 'text-muted-foreground'}`} />
-                </div>
-                <span className="text-sm font-medium">步骤 2：AI 智能分析</span>
-                {process.step2_llmAnalysis.result && <Badge className="bg-blue-100 text-blue-700 text-xs">置信度 {process.step2_llmAnalysis.result.confidence}%</Badge>}
-              </div>
-              <div className="pl-8 space-y-2 text-sm">
-                <p className="text-muted-foreground">{process.step2_llmAnalysis.triggered ? process.step2_llmAnalysis.reason : '关键词匹配已通过，无需 AI 分析'}</p>
-                {process.step2_llmAnalysis.result && (
-                  <div className="bg-blue-50 p-3 rounded text-sm">
-                    <p className="font-medium text-blue-900">AI 判断结果：</p>
-                    <p className="text-blue-700 mt-1">分类：{process.step2_llmAnalysis.result.categoryName}</p>
-                    <p className="text-blue-700">理由：{process.step2_llmAnalysis.result.reasoning}</p>
-                    {process.step2_llmAnalysis.result.suggestedArchiveTitle && (
-                      <p className="text-blue-700">
-                        建议标题：{process.step2_llmAnalysis.result.suggestedArchiveTitle}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-          <Separator />
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded bg-primary/10"><CheckCircle2 className="h-4 w-4 text-primary" /></div>
-              <span className="text-sm font-medium">最终决策</span>
-            </div>
-            <div className="pl-8 text-sm"><p className="text-muted-foreground">{process.finalDecision.explanation}</p></div>
+        <div className="bg-background p-4">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <p className="text-sm leading-5 text-muted-foreground">
+              {process.finalDecision.explanation}
+            </p>
           </div>
         </div>
       )}
@@ -682,32 +578,30 @@ function ClassifyResultItem({
   onConfirmArchive: (
     clientId: string,
     archiveTitle: string,
-    category: FlatFileCategory
+    folder: ArchiveFolder
   ) => void;
   onCancelArchive: (clientId: string) => void;
 }) {
-  const getCategorySelectionValue = (category: FlatFileCategory) =>
-    `${category.folderId}:${category.fileName}`;
-  const agentCategory = result.agentDecision?.decision.selectedCategory ?? null;
+  const agentFolder = result.agentDecision?.decision.selectedFolder ?? null;
   const legacyClassification = result.legacyClassification;
   const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
   const agentNeedsReview = result.agentDecision?.status !== 'decided';
-  const agentSelectionValue = agentCategory
-    ? getCategorySelectionValue(agentCategory)
+  const agentSelectionValue = agentFolder
+    ? agentFolder.folderId
     : '';
   const [archiveTitle, setArchiveTitle] = useState(
-    result.fileName.replace(/\.[^.]+$/, '') || agentCategory?.fileName || ''
+    result.fileName.replace(/\.[^.]+$/, '')
   );
-  const [selectedCategoryId, setSelectedCategoryId] = useState(
+  const [selectedFolderId, setSelectedFolderId] = useState(
     agentSelectionValue
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     if (result.archiveStatus !== 'pending' || !agentSelectionValue) return;
-    setSelectedCategoryId(current => current || agentSelectionValue);
+    setSelectedFolderId(current => current || agentSelectionValue);
   }, [agentSelectionValue, result.archiveStatus]);
-  const selectedCategory = ARCHIVE_CLASSIFICATION_TARGETS.find(
-    category => getCategorySelectionValue(category) === selectedCategoryId
+  const selectedFolder = SYSTEM_ARCHIVE_FOLDERS.find(
+    folder => folder.folderId === selectedFolderId
   );
   const isArchiving = result.archiveStatus === 'archiving';
   const needsConfirmation =
@@ -715,10 +609,9 @@ function ClassifyResultItem({
     !result.archived &&
     result.archiveStatus !== 'cancelled';
   const classificationsDisagree = Boolean(
-    agentCategory &&
-    legacyClassification?.category &&
-    getCategorySelectionValue(agentCategory) !==
-      getCategorySelectionValue(legacyClassification.category)
+    agentFolder &&
+    legacyClassification?.targetFolder &&
+    agentFolder.folderId !== legacyClassification.targetFolder.folderId
   );
 
   return (
@@ -766,8 +659,8 @@ function ClassifyResultItem({
               </Badge>
             </div>
             <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
-              {agentCategory
-                ? `${agentCategory.folderPath.join(' / ')} / ${agentCategory.fileName}`
+              {agentFolder
+                ? agentFolder.folderPath.join(' / ')
                 : '暂未形成唯一分类建议'}
             </p>
             <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
@@ -778,8 +671,6 @@ function ClassifyResultItem({
               ] ?? '待确认'}
               {' · '}
               文件类型：{result.documentType ?? '待识别'}
-              {result.agentDecision?.decision.routingMethod ===
-                'safe_stage_fallback' && ' · 已使用同阶段安全兜底'}
             </p>
             <div className="mt-2 flex items-center gap-2">
               <Progress value={agentConfidence} className="h-1.5 flex-1" />
@@ -803,7 +694,7 @@ function ClassifyResultItem({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="flex items-center gap-1.5 text-xs font-medium text-slate-800">
                   <Zap className="h-3.5 w-3.5" />
-                  传统分类结果
+                  规则阶段对照
                 </p>
                 {legacyClassification ? (
                   <Badge variant="outline" className="bg-white text-[10px]">
@@ -816,15 +707,15 @@ function ClassifyResultItem({
                 )}
               </div>
               <p className="mt-2 break-words text-sm font-medium leading-5 text-slate-900">
-                {legacyClassification?.category
-                  ? `${legacyClassification.category.folderPath.join(' / ')} / ${legacyClassification.category.fileName}`
+                {legacyClassification?.targetFolder
+                  ? legacyClassification.targetFolder.folderPath.join(' / ')
                   : legacyClassification
-                    ? '未能确定归档类别'
-                    : '该文件上传时传统分类开关处于关闭状态'}
+                    ? '未能确定业务阶段'
+                    : '该文件上传时规则对照开关处于关闭状态'}
               </p>
               <p className="mt-2 break-words text-xs leading-5 text-slate-600">
                 {legacyClassification?.reasoning ??
-                  '打开开关后，新上传文件会同时运行传统分类用于并列对照。'}
+                  '打开开关后，新上传文件会同时运行确定性阶段规则用于并列对照。'}
               </p>
             </div>
           )}
@@ -833,7 +724,7 @@ function ClassifyResultItem({
         {classificationsDisagree && (
           <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            Agent 与传统分类结果不一致，请结合证据后确认最终归档位置。
+            Agent 与规则阶段判断不一致，请结合证据后确认最终归档位置。
           </div>
         )}
 
@@ -860,24 +751,24 @@ function ClassifyResultItem({
               </p>
             </div>
             <div className="min-w-0 space-y-1.5">
-              <Label className="text-xs" htmlFor={`archive-category-${result.clientId}`}>
-                最终归档分类
+              <Label className="text-xs" htmlFor={`archive-folder-${result.clientId}`}>
+                最终归档文件夹
               </Label>
               <Select
-                value={selectedCategoryId}
+                value={selectedFolderId}
                 disabled={isArchiving}
-                onValueChange={setSelectedCategoryId}
+                onValueChange={setSelectedFolderId}
               >
-                <SelectTrigger id={`archive-category-${result.clientId}`} className="w-full bg-background">
-                  <SelectValue placeholder="请选择归档分类" />
+                <SelectTrigger id={`archive-folder-${result.clientId}`} className="w-full bg-background">
+                  <SelectValue placeholder="请选择业务阶段文件夹" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ARCHIVE_CLASSIFICATION_TARGETS.map(category => (
+                  {SYSTEM_ARCHIVE_FOLDERS.map(folder => (
                     <SelectItem
-                      key={`${category.folderId}-${category.fileName}`}
-                      value={getCategorySelectionValue(category)}
+                      key={folder.folderId}
+                      value={folder.folderId}
                     >
-                      {category.folderPath.slice(1).join(' / ')} / {category.fileName}
+                      {folder.folderPath.slice(1).join(' / ')}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -894,7 +785,7 @@ function ClassifyResultItem({
                 maxLength={50}
                 disabled={isArchiving}
                 onChange={(event) => setArchiveTitle(event.target.value)}
-                placeholder={agentCategory?.fileName || '请输入档案标题'}
+                placeholder="请输入档案标题"
               />
               <p className="break-words text-[11px] leading-4 text-muted-foreground">
                 {archiveTitle.length}/50 字；扩展名及重名序号由系统自动补充。
@@ -918,10 +809,10 @@ function ClassifyResultItem({
                 type="button"
                 size="sm"
                 className="w-full"
-                disabled={!archiveTitle.trim() || !selectedCategory || isArchiving}
+                disabled={!archiveTitle.trim() || !selectedFolder || isArchiving}
                 onClick={() => {
-                  if (selectedCategory) {
-                    onConfirmArchive(result.clientId, archiveTitle.trim(), selectedCategory);
+                  if (selectedFolder) {
+                    onConfirmArchive(result.clientId, archiveTitle.trim(), selectedFolder);
                   }
                 }}
               >
@@ -972,14 +863,14 @@ function ClassifyResultItem({
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
                   <div className="flex items-center justify-between gap-2">
                     <h4 className="flex items-center gap-2 text-sm font-medium">
-                      <Zap className="h-4 w-4" />传统分类详情
+                      <Zap className="h-4 w-4" />规则阶段判断详情
                     </h4>
                     <Badge variant="outline">{legacyClassification.confidence}%</Badge>
                   </div>
                   <p className="break-words text-sm font-medium">
-                    {legacyClassification.category
-                      ? `${legacyClassification.category.folderPath.join(' / ')} / ${legacyClassification.category.fileName}`
-                      : '未能确定归档类别'}
+                    {legacyClassification.targetFolder
+                      ? legacyClassification.targetFolder.folderPath.join(' / ')
+                      : '未能确定归档阶段'}
                   </p>
                   <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
                     {legacyClassification.reasoning || '暂无详细理由'}
@@ -1078,7 +969,6 @@ interface ArchiveTreeNode {
     id: string;
     originalName: string;
     archivedName: string;
-    categoryName: string;
     fileSize: number;
     mimeType: string;
     archivedAt: string;
@@ -1170,13 +1060,12 @@ function MoveArchiveDialog({
   fileCount: number;
   isFolder: boolean;
   blockedPath?: string[];
-  onMove: (categoryId: string, categoryName: string, folderPath: string[]) => void;
+  onMove: (folderId: string, folderPath: string[]) => void;
   onCancel: () => void;
   moving: boolean;
   existingFiles: ArchivedFile[];
 }) {
   const [selectedId, setSelectedId] = useState<string>("");
-  const [selectedName, setSelectedName] = useState<string>("");
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [newSubfolder, setNewSubfolder] = useState("");
 
@@ -1188,9 +1077,8 @@ function MoveArchiveDialog({
     return mergeFolderStructure(FOLDER_STRUCTURE, customPaths);
   }, [existingFiles]);
 
-  const handleSelect = (id: string, name: string, path: string[]) => {
+  const handleSelect = (id: string, _name: string, path: string[]) => {
     setSelectedId(id);
-    setSelectedName(name);
     setSelectedPath(path);
     setNewSubfolder("");
   };
@@ -1201,14 +1089,12 @@ function MoveArchiveDialog({
     if (newSubfolder.trim()) {
       const subName = newSubfolder.trim();
       return {
-        categoryId: `${selectedId}-${subName}`,
-        categoryName: subName,
+        folderId: `${selectedId}-${subName}`,
         folderPath: [...selectedPath, subName],
       };
     }
     return {
-      categoryId: selectedId,
-      categoryName: selectedName,
+      folderId: selectedId,
       folderPath: selectedPath,
     };
   };
@@ -1280,7 +1166,7 @@ function MoveArchiveDialog({
           <Button
             onClick={() => {
               const target = getFinalTarget();
-              if (target) onMove(target.categoryId, target.categoryName, target.folderPath);
+              if (target) onMove(target.folderId, target.folderPath);
             }}
             disabled={!selectedId || moving}
           >
@@ -1588,7 +1474,7 @@ function ArchivedFilesList({
     }
   };
 
-  const handleMove = async (targetCategoryId: string, targetCategoryName: string, targetFolderPath: string[]) => {
+  const handleMove = async (targetFolderId: string, targetFolderPath: string[]) => {
     if (!moveTarget) return;
     setMoving(true);
     try {
@@ -1596,8 +1482,7 @@ function ArchivedFilesList({
         if (!moveTarget.isFolder) {
           return {
             id: file.id,
-            categoryId: targetCategoryId,
-            categoryName: targetCategoryName,
+            folderId: targetFolderId,
             folderPath: targetFolderPath,
           };
         }
@@ -1606,8 +1491,7 @@ function ArchivedFilesList({
         const folderPath = [...targetFolderPath, moveTarget.name, ...relativePath];
         return {
           id: file.id,
-          categoryId: `${targetCategoryId}-${folderPath.slice(targetFolderPath.length).join('-')}`,
-          categoryName: folderPath.at(-1) || moveTarget.name,
+          folderId: `${targetFolderId}-${folderPath.slice(targetFolderPath.length).join('-')}`,
           folderPath,
         };
       });
@@ -1899,7 +1783,6 @@ interface AnalysisRecord {
   originalName: string;
   archivedName: string;
   projectName: string;
-  categoryName: string;
   folderPath: string[];
   fileSize: number;
   confidence: number;
@@ -2291,7 +2174,7 @@ export default function Home() {
   const handleConfirmArchive = async (
     clientId: string,
     archiveTitle: string,
-    selectedCategory: FlatFileCategory
+    selectedFolder: ArchiveFolder
   ) => {
     const pendingResult = results.find(result => result.clientId === clientId);
     if (
@@ -2329,9 +2212,7 @@ export default function Home() {
               fileSize: pendingResult.fileSize,
               mimeType: pendingResult.sourceMimeType,
               projectId: pendingResult.sourceProjectId,
-              categoryId: selectedCategory.folderId,
-              categoryName: selectedCategory.fileName,
-              folderPath: selectedCategory.folderPath,
+              folderId: selectedFolder.folderId,
               archiveTitle,
               confidence: archiveConfidence,
               reasoning: archiveReasoning,
@@ -2343,9 +2224,7 @@ export default function Home() {
             const formData = new FormData();
             formData.append('file', pendingResult.sourceFile!);
             formData.append('projectId', pendingResult.sourceProjectId!);
-            formData.append('categoryId', selectedCategory.folderId);
-            formData.append('categoryName', selectedCategory.fileName);
-            formData.append('folderPath', JSON.stringify(selectedCategory.folderPath));
+            formData.append('folderId', selectedFolder.folderId);
             formData.append('archiveTitle', archiveTitle);
             formData.append('confidence', String(archiveConfidence));
             formData.append('reasoning', archiveReasoning);
@@ -2377,7 +2256,7 @@ export default function Home() {
         if (result.clientId === clientId) {
           return {
               ...result,
-              category: selectedCategory,
+              targetFolder: selectedFolder,
               suggestedArchiveTitle: archiveTitle,
               requiresArchiveConfirmation: false,
               archiveStatus: 'archived',
@@ -2609,7 +2488,7 @@ export default function Home() {
             legacyClassification:
               result.classificationMode === 'comparison'
                 ? {
-                    category: result.category,
+                    targetFolder: result.targetFolder,
                     confidence: result.confidence,
                     reasoning: result.reasoning,
                   }
@@ -2646,13 +2525,10 @@ export default function Home() {
           : '未知错误';
         setResults(prev => [...prev, {
           clientId,
-          fileName: file.name, fileSize: file.size, category: null, confidence: 0,
+          fileName: file.name, fileSize: file.size, targetFolder: null, confidence: 0,
           reasoning: `文件处理失败：${errorMessage}`,
           classificationMode: showLegacyClassification ? 'comparison' : 'agent',
-          process: {
-            step1_keywordMatch: { totalCategories: 0, matchedCategories: 0, details: [], threshold: 5, passed: false },
-            finalDecision: { method: 'none' as const, explanation: `文件处理失败：${errorMessage}` }
-          }
+          process: { finalDecision: { method: 'none' as const, explanation: `文件处理失败：${errorMessage}` } }
         }]);
       }
       processedFiles++;
@@ -3002,13 +2878,13 @@ export default function Home() {
                       htmlFor="legacy-classification-toggle"
                       className="cursor-pointer text-xs font-normal text-muted-foreground"
                     >
-                      显示传统分类
+                      显示规则阶段对照
                     </Label>
                     <Switch
                       id="legacy-classification-toggle"
                       checked={showLegacyClassification}
                       onCheckedChange={setShowLegacyClassification}
-                      aria-label="运行并显示传统分类对照"
+                      aria-label="运行并显示规则阶段对照"
                     />
                   </div>
                 </div>
@@ -3016,8 +2892,8 @@ export default function Home() {
                   {results.length > 0
                     ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}`
                     : showLegacyClassification
-                      ? '上传后并列显示 Agent 与传统分类结果'
-                      : '传统分类默认关闭，上传后直接显示 Agent 建议'}
+                      ? '上传后并列显示 Agent 与规则阶段判断'
+                      : '规则对照默认关闭，上传后直接显示 Agent 建议'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">

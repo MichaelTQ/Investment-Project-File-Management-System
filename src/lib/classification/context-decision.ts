@@ -1,13 +1,11 @@
 import { z } from 'zod';
 
 import {
-  ARCHIVE_CLASSIFICATION_TARGETS,
-  getFolderBusinessStage,
-  getStageFallbackCategory,
-  type FlatFileCategory,
+  getArchiveFolder,
+  getFolderForBusinessStage,
+  type ArchiveFolder,
 } from '../folder-structure';
 import { PROJECT_STAGES, type ProjectStage } from '../project-memory';
-import { getCategoryEvidencePolicy } from './category-policies';
 import {
   inferBusinessStage,
   type BusinessStageDecision,
@@ -96,7 +94,7 @@ export type ProjectContextSnapshot = z.infer<
 export type RelatedDocumentFacts = z.infer<typeof RelatedDocumentFactsSchema>;
 
 export interface ContextCandidateScore {
-  category: FlatFileCategory;
+  folder: ArchiveFolder;
   score: number;
   evidence: string[];
   contradictions: string[];
@@ -104,13 +102,12 @@ export interface ContextCandidateScore {
 
 export interface ContextClassificationDecision {
   status: 'decided' | 'insufficient' | 'conflict';
-  selectedCategory: FlatFileCategory | null;
+  selectedFolder: ArchiveFolder | null;
   businessStage: ProjectStage | null;
   stageConfidence: number;
   routingMethod:
     | 'context_policy'
     | 'stage_policy'
-    | 'safe_stage_fallback'
     | 'needs_stage_review';
   confidence: number;
   candidates: ContextCandidateScore[];
@@ -129,32 +126,19 @@ export interface DecideWithProjectContextParams {
 }
 
 interface MutableCandidate {
-  category: FlatFileCategory;
+  folder: ArchiveFolder;
   score: number;
   evidence: string[];
   contradictions: string[];
 }
 
-const POLICY_VERSION = 'context-decision-v4';
+const POLICY_VERSION = 'context-decision-v5';
 const MIN_DECISION_SCORE = 50;
 const MIN_SCORE_GAP = 15;
 
 function clampScore(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function findCategory(
-  folderId: string,
-  fileName: string
-): FlatFileCategory {
-  const category = ARCHIVE_CLASSIFICATION_TARGETS.find(
-    item => item.folderId === folderId && item.fileName === fileName
-  );
-  if (!category) {
-    throw new Error(`上下文规则引用了不存在的类别：${folderId}/${fileName}`);
-  }
-  return category;
 }
 
 function addEvidence(
@@ -290,11 +274,12 @@ function approximatelyEqual(left: number, right: number): boolean {
 
 function createCandidate(
   folderId: string,
-  fileName: string,
   baseScore: number
 ): MutableCandidate {
+  const folder = getArchiveFolder(folderId);
+  if (!folder) throw new Error(`上下文规则引用了不存在的文件夹：${folderId}`);
   return {
-    category: findCategory(folderId, fileName),
+    folder,
     score: baseScore,
     evidence: [],
     contradictions: [],
@@ -304,12 +289,8 @@ function createCandidate(
 function scoreCompanyCharter(
   params: DecideWithProjectContextParams
 ): MutableCandidate[] {
-  const decision = createCandidate('decision-meeting', '公司章程', 20);
-  const execution = createCandidate(
-    'investment-implementation',
-    '项目公司章程',
-    20
-  );
+  const decision = createCandidate('investment-decision', 20);
+  const execution = createCandidate('investment-implementation', 20);
   const text = combinedFactsText(params.facts);
   const executionTerms = [
     '增资后',
@@ -484,11 +465,7 @@ function scoreCompanyCharter(
 function scoreInvestmentComplianceReview(
   params: DecideWithProjectContextParams
 ): MutableCandidate[] {
-  const candidate = createCandidate(
-    'decision-meeting',
-    '投资合规性审查表',
-    35
-  );
+  const candidate = createCandidate('investment-decision', 35);
   const text = combinedFactsText(params.facts);
 
   if (
@@ -554,11 +531,7 @@ function directlyRelatedEvents(
 function scoreShareholderResolution(
   params: DecideWithProjectContextParams
 ): MutableCandidate[] {
-  const candidate = createCandidate(
-    'investment-implementation',
-    '股东会决议',
-    20
-  );
+  const candidate = createCandidate('investment-implementation', 20);
   const text = combinedFactsText(params.facts);
 
   if (hasAny(text, ['股东会决议', '股东决定'])) {
@@ -592,11 +565,7 @@ function scoreShareholderResolution(
 function scoreClosingConfirmation(
   params: DecideWithProjectContextParams
 ): MutableCandidate[] {
-  const candidate = createCandidate(
-    'investment-implementation',
-    '确权文件',
-    20
-  );
+  const candidate = createCandidate('investment-implementation', 20);
   const text = combinedFactsText(params.facts);
 
   if (hasAny(text, ['交割确认函', '交割证明书', '交割确认书'])) {
@@ -636,11 +605,7 @@ function scoreClosingConfirmation(
 function scorePaymentNotice(
   params: DecideWithProjectContextParams
 ): MutableCandidate[] {
-  const candidate = createCandidate(
-    'investment-implementation',
-    '付款通知函',
-    20
-  );
+  const candidate = createCandidate('investment-implementation', 20);
   const text = combinedFactsText(params.facts);
 
   if (hasAny(text, ['缴款通知书', '付款通知函', '付款通知书'])) {
@@ -668,128 +633,22 @@ function scorePaymentNotice(
   return [candidate];
 }
 
-const GENERIC_CATEGORY_NAMES: Partial<
-  Record<DocumentFacts['documentType'], string[]>
-> = {
-  capital_increase_agreement: ['增资协议'],
-  shareholder_agreement: ['股东协议'],
-  board_resolution: ['董事会决议'],
-  investment_committee_resolution: ['投委会决议', '退出投委会决议'],
-  bank_receipt: ['转账凭证'],
-  due_diligence_report: ['业务尽调报告', '财务尽调报告', '法律尽调报告'],
-  business_plan: ['商业计划书'],
-  project_initiation_report: ['立项报告'],
-  project_initiation_application: ['立项申请书'],
-  meeting_minutes: ['立项评审纪要'],
-  voting_result: ['表决票', '退出表决票'],
-  investment_recommendation: ['投资建议书'],
-  business_license: ['营业执照'],
-  financial_statement: ['审计报告', '财务预测', '纳税报表'],
-  credit_report: ['贷款资料'],
-  confidentiality_agreement: ['保密协议'],
-  capital_contribution_certificate: ['确权文件'],
-  shareholder_register: ['确权文件'],
-};
-
-function categoryStage(category: FlatFileCategory): ProjectStage {
-  return (
-    category.businessStage ??
-    getFolderBusinessStage(category.folderId) ??
-    'unknown'
-  );
-}
-
 function scoreGenericDocument(
-  params: DecideWithProjectContextParams,
+  _params: DecideWithProjectContextParams,
   stageDecision: BusinessStageDecision
 ): MutableCandidate[] {
-  const categoryNames = GENERIC_CATEGORY_NAMES[params.facts.documentType] ?? [];
-  let categories = ARCHIVE_CLASSIFICATION_TARGETS.filter(category =>
-    categoryNames.includes(category.fileName)
-  );
-  if (stageDecision.selectedStage) {
-    categories = categories.filter(
-      category => categoryStage(category) === stageDecision.selectedStage
-    );
-    if (categories.length === 0) {
-      categories = [getStageFallbackCategory(stageDecision.selectedStage)];
-    }
-  }
-  if (categories.length === 0) return [];
-  const text = combinedFactsText(params.facts);
-  const directEvents =
-    params.projectContext?.timeline.filter(event =>
-      event.evidenceFiles.includes(params.sourcePath)
-    ) ?? [];
-
-  return categories.map(category => {
-    const candidate: MutableCandidate = {
-      category,
-      score: 20,
-      evidence: [],
+  if (!stageDecision.selectedStage) return [];
+  return [
+    {
+      folder: getFolderForBusinessStage(stageDecision.selectedStage),
+      score: Math.max(MIN_DECISION_SCORE, stageDecision.confidence),
+      evidence: [
+        `业务阶段已确定为 ${stageDecision.selectedStage}`,
+        ...stageDecision.evidence,
+      ],
       contradictions: [],
-    };
-    if (!stageDecision.selectedStage) {
-      candidate.contradictions.push(stageDecision.reasoning);
-      return candidate;
-    }
-    addEvidence(
-      candidate,
-      Math.max(30, stageDecision.confidence - 20),
-      `业务阶段已锁定为 ${stageDecision.selectedStage}：${stageDecision.evidence.join('；')}`
-    );
-    if (category.isStageFallback) {
-      addEvidence(
-        candidate,
-        10,
-        '当前阶段没有与文档类型直接对应的细分目录，使用同阶段安全兜底目录'
-      );
-    }
-    if (text.includes(category.fileName)) {
-      addEvidence(candidate, 25, `文件标题或事实明确匹配“${category.fileName}”`);
-    }
-    const matchedKeywords = category.keywords.filter(
-      keyword => keyword.length >= 3 && text.includes(keyword)
-    );
-    if (matchedKeywords.length > 0) {
-      addEvidence(
-        candidate,
-        Math.min(20, matchedKeywords.length * 5),
-        `结构化事实命中类别特征：${matchedKeywords.slice(0, 4).join('、')}`
-      );
-    }
-    const expectedStage = categoryStage(category);
-    const matchingEvents = directEvents.filter(
-      event => event.stage === expectedStage
-    );
-    if (matchingEvents.length > 0) {
-      addEvidence(
-        candidate,
-        30,
-        `项目事件“${matchingEvents[0]?.title}”将该文件关联到 ${expectedStage}`
-      );
-    } else if (
-      directEvents.length > 0 &&
-      directEvents.every(event => event.stage !== expectedStage)
-    ) {
-      addContradiction(
-        candidate,
-        25,
-        `该文件直接关联的项目事件不属于候选阶段 ${expectedStage}`
-      );
-    }
-    if (
-      directEvents.length === 0 &&
-      params.projectContext?.latestEvidencedStage === expectedStage
-    ) {
-      addEvidence(
-        candidate,
-        5,
-        '项目最晚证据阶段与候选阶段一致，但该信息仅作为弱先验'
-      );
-    }
-    return candidate;
-  });
+    },
+  ];
 }
 
 function finalizeDecision(
@@ -801,23 +660,23 @@ function finalizeDecision(
   let stageSafeCandidates = candidates;
   if (stageDecision.selectedStage) {
     const candidatesInStage = candidates.filter(
-      candidate => categoryStage(candidate.category) === stageDecision.selectedStage
+      candidate => candidate.folder.businessStage === stageDecision.selectedStage
     );
     stageSafeCandidates =
       candidatesInStage.length > 0
         ? candidatesInStage
         : [
             {
-              category: getStageFallbackCategory(stageDecision.selectedStage),
+              folder: getFolderForBusinessStage(stageDecision.selectedStage),
               score: Math.max(60, stageDecision.confidence),
               evidence: [
                 `业务阶段已锁定为 ${stageDecision.selectedStage}`,
-                '原有专用候选均不属于已锁定阶段，改用同阶段安全兜底目录',
+                '上下文候选与已确认阶段冲突，按阶段文件夹作为最终归档位置',
               ],
               contradictions: candidates.flatMap(candidate =>
                 candidate.contradictions.map(
                   contradiction =>
-                    `原候选“${candidate.category.fileName}”：${contradiction}`
+                    `原候选“${candidate.folder.name}”：${contradiction}`
                 )
               ),
             },
@@ -837,56 +696,45 @@ function finalizeDecision(
     runnerUp && best.score >= MIN_DECISION_SCORE && scoreGap < MIN_SCORE_GAP
   );
   const hasEnoughEvidence = best.score >= MIN_DECISION_SCORE;
-  const policy = getCategoryEvidencePolicy(
-    best.category.folderId,
-    best.category.fileName
-  );
   const extractionRisk =
     facts.extractionConfidence < 60 || facts.sourceQuality === 'filename_only';
   const requiresHumanReview =
     !hasEnoughEvidence ||
     hasConflict ||
     extractionRisk ||
-    Boolean(best.category.isStageFallback) ||
-    Boolean(policy?.defaultRequiresHumanReview);
+    facts.documentType === 'investment_compliance_review';
   const status = !hasEnoughEvidence
     ? 'insufficient'
     : hasConflict
       ? 'conflict'
       : 'decided';
-  const selectedCategory = status === 'decided' ? best.category : null;
+  const selectedFolder = status === 'decided' ? best.folder : null;
   const evidence = best.evidence;
   const contradictions = best.contradictions;
   const reasoning =
     status === 'decided'
-      ? `上下文证据支持归入“${best.category.folderPath.slice(1).join(' / ')} / ${best.category.fileName}”，得分 ${best.score}。`
+      ? `上下文证据支持归入“${best.folder.folderPath.slice(1).join(' / ')}”，得分 ${best.score}。`
       : status === 'conflict'
         ? `前两名候选仅相差 ${scoreGap} 分，项目证据存在冲突，不能自动决定。`
         : `最高候选仅 ${best.score} 分，缺少足够的项目级证据。`;
 
   return {
     status,
-    selectedCategory,
+    selectedFolder,
     businessStage:
-      selectedCategory !== null
-        ? categoryStage(selectedCategory)
+      selectedFolder !== null
+        ? selectedFolder.businessStage
         : stageDecision.selectedStage,
     stageConfidence: stageDecision.confidence,
     routingMethod:
-      selectedCategory?.isStageFallback
-        ? 'safe_stage_fallback'
-        : stageDecision.selectedStage
-          ? routingMethod
-          : 'needs_stage_review',
+      stageDecision.selectedStage ? routingMethod : 'needs_stage_review',
     confidence: best.score,
     candidates: normalized,
     evidence,
     contradictions,
     requiresHumanReview,
     reasoning,
-    policyVersion: policy
-      ? `${POLICY_VERSION}+${policy.policyVersion}`
-      : POLICY_VERSION,
+    policyVersion: POLICY_VERSION,
   };
 }
 
@@ -947,7 +795,7 @@ export function decideWithProjectContext(
 
   return {
     status: 'insufficient',
-    selectedCategory: null,
+    selectedFolder: null,
     businessStage: stageDecision.selectedStage,
     stageConfidence: stageDecision.confidence,
     routingMethod: 'needs_stage_review',
@@ -955,10 +803,10 @@ export function decideWithProjectContext(
     candidates: [],
     evidence: [],
     contradictions: [
-      `${POLICY_VERSION} 尚未配置文档类型 ${params.facts.documentType} 的上下文规则`,
+      `${POLICY_VERSION} 无法仅凭现有证据判断文件所属业务阶段`,
     ],
     requiresHumanReview: true,
-    reasoning: '当前文档类型尚无上下文决策规则，保留 legacy 分类结果。',
+    reasoning: '当前证据不足以确定业务阶段，需要人工选择阶段文件夹。',
     policyVersion: POLICY_VERSION,
   };
 }

@@ -86,20 +86,14 @@ export interface CreateClassificationDecisionParams {
   projectId: string;
   archivedFileId?: string;
   documentFactId?: string;
-  selectedCategoryId?: string;
-  selectedCategoryName?: string;
+  selectedFolderId?: string;
+  selectedFolderName?: string;
   selectedFolderPath?: string[];
-  candidateCategories?: Array<Record<string, unknown>>;
+  candidateFolders?: Array<Record<string, unknown>>;
   evidence?: string[];
   contradictions?: string[];
   decisionScore: number;
-  decisionSource:
-    | 'keyword'
-    | 'llm'
-    | 'fallback'
-    | 'context'
-    | 'human'
-    | 'none';
+  decisionSource: 'context' | 'human' | 'none';
   reasoning: string;
   modelVersion?: string;
   policyVersion: string;
@@ -377,10 +371,11 @@ export async function createClassificationDecisionRecord(
       project_id: params.projectId,
       archived_file_id: params.archivedFileId ?? null,
       document_fact_id: params.documentFactId ?? null,
-      selected_category_id: params.selectedCategoryId ?? null,
-      selected_category_name: params.selectedCategoryName ?? null,
+      // 托管数据库暂未迁移列名；业务层只使用 folder 字段。
+      selected_category_id: params.selectedFolderId ?? null,
+      selected_category_name: params.selectedFolderName ?? null,
       selected_folder_path: params.selectedFolderPath ?? null,
-      candidate_categories: params.candidateCategories ?? [],
+      candidate_categories: params.candidateFolders ?? [],
       evidence: params.evidence ?? [],
       contradictions: params.contradictions ?? [],
       decision_score: clampConfidence(params.decisionScore),

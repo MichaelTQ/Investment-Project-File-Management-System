@@ -58,8 +58,8 @@ export interface ReEvaluatedDocument {
   sourcePath: string;
   previousStatus: ClassificationAgentResult['status'];
   status: ClassificationAgentResult['status'];
-  previousCategory: string | null;
-  selectedCategory: string | null;
+  previousFolder: string | null;
+  selectedFolder: string | null;
   agentDecision: ClassificationAgentResult;
 }
 
@@ -72,7 +72,7 @@ export interface ProjectMemoryDocumentView {
   factStatus: 'extracted' | 'repaired' | 'fallback' | 'type_recovered';
   warnings: string[];
   agentStatus: ClassificationAgentResult['status'] | null;
-  selectedCategory: string | null;
+  selectedFolder: string | null;
 }
 
 export interface ProjectSessionMemoryView {
@@ -142,18 +142,17 @@ function normalizeSourcePath(sourcePath: string): string {
   return sourcePath.trim().replaceAll('\\', '/').replace(/^\/+/, '');
 }
 
-function selectedCategoryName(
+function selectedFolderName(
   decision: ClassificationAgentResult | null
 ): string | null {
-  return decision?.decision.selectedCategory?.fileName ?? null;
+  return decision?.decision.selectedFolder?.name ?? null;
 }
 
 function decisionSignature(decision: ClassificationAgentResult | null): string {
   return JSON.stringify({
     status: decision?.status ?? null,
     decisionStatus: decision?.decision.status ?? null,
-    folderId: decision?.decision.selectedCategory?.folderId ?? null,
-    fileName: selectedCategoryName(decision),
+    folderId: decision?.decision.selectedFolder?.folderId ?? null,
     requiresHumanReview: decision?.decision.requiresHumanReview ?? true,
   });
 }
@@ -219,7 +218,7 @@ function projectDocumentViews(
           : 'extracted',
       warnings: document.facts.warnings,
       agentStatus: document.agentDecision?.status ?? null,
-      selectedCategory: selectedCategoryName(document.agentDecision),
+      selectedFolder: selectedFolderName(document.agentDecision),
     }));
 }
 
@@ -511,8 +510,8 @@ async function rebuildLoadedProject(
           sourcePath: record.sourcePath,
           previousStatus: previousDecision.status,
           status: decision.status,
-          previousCategory: selectedCategoryName(previousDecision),
-          selectedCategory: selectedCategoryName(decision),
+          previousFolder: selectedFolderName(previousDecision),
+          selectedFolder: selectedFolderName(decision),
           agentDecision: decision,
         });
       }
@@ -876,7 +875,7 @@ export function getSessionProjectMemorySnapshot(projectId: string): {
     sourcePath: string;
     documentType: DocumentFacts['documentType'];
     agentStatus: ClassificationAgentResult['status'] | null;
-    selectedCategory: string | null;
+    selectedFolder: string | null;
   }>;
 } | null {
   const project = memoryStore().projects.get(projectId.trim());
@@ -889,7 +888,7 @@ export function getSessionProjectMemorySnapshot(projectId: string): {
       sourcePath: document.sourcePath,
       documentType: document.facts.documentType,
       agentStatus: document.agentDecision?.status ?? null,
-      selectedCategory: selectedCategoryName(document.agentDecision),
+      selectedFolder: selectedFolderName(document.agentDecision),
     })),
   };
 }

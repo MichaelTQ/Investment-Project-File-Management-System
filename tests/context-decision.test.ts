@@ -89,8 +89,8 @@ test('关联章程的注册资本差异可识别交易前章程', () => {
   });
 
   assert.equal(decision.status, 'decided');
-  assert.equal(decision.selectedCategory?.folderId, 'decision-meeting');
-  assert.equal(decision.selectedCategory?.fileName, '公司章程');
+  assert.equal(decision.selectedFolder?.folderId, 'investment-decision');
+  assert.equal(decision.selectedFolder?.name, '投资决策');
   assert.equal(decision.requiresHumanReview, false);
   assert.ok(decision.evidence.some(item => item.includes('注册资本更高')));
 });
@@ -110,10 +110,10 @@ test('增资变化和关联低资本章程可识别投资实施章程', () => {
 
   assert.equal(decision.status, 'decided');
   assert.equal(
-    decision.selectedCategory?.folderId,
+    decision.selectedFolder?.folderId,
     'investment-implementation'
   );
-  assert.equal(decision.selectedCategory?.fileName, '项目公司章程');
+  assert.equal(decision.selectedFolder?.name, '投资实施');
   assert.ok(decision.confidence >= 90);
   assert.ok(decision.evidence.some(item => item.includes('结构化事实')));
 });
@@ -126,7 +126,7 @@ test('项目当前处于投资实施不能单独决定历史章程位置', () =>
   });
 
   assert.equal(decision.status, 'insufficient');
-  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.selectedFolder, null);
   assert.equal(decision.requiresHumanReview, true);
 });
 
@@ -144,9 +144,9 @@ test('投资合规性审查表有充分证据仍默认人工复核', () => {
   });
 
   assert.equal(decision.status, 'decided');
-  assert.equal(decision.selectedCategory?.fileName, '投资合规性审查表');
+  assert.equal(decision.selectedFolder?.name, '投资决策');
   assert.equal(decision.requiresHumanReview, true);
-  assert.match(decision.policyVersion, /investment-compliance-review-v1/);
+  assert.equal(decision.policyVersion, 'context-decision-v5');
 });
 
 test('一般性合规表述不足以形成上下文决策', () => {
@@ -161,7 +161,7 @@ test('一般性合规表述不足以形成上下文决策', () => {
   });
 
   assert.equal(decision.status, 'insufficient');
-  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.selectedFolder, null);
   assert.equal(decision.requiresHumanReview, true);
 });
 
@@ -181,12 +181,12 @@ test('目标公司股东会批准增资和章程修改时归入投资实施', ()
   });
 
   assert.equal(decision.status, 'decided');
-  assert.equal(decision.selectedCategory?.fileName, '股东会决议');
+  assert.equal(decision.selectedFolder?.name, '投资实施');
   assert.equal(decision.requiresHumanReview, false);
-  assert.match(decision.policyVersion, /shareholder-resolution-v1/);
+  assert.equal(decision.policyVersion, 'context-decision-v5');
 });
 
-test('投委会决议不能被股东会规则误收，并在投决阶段安全兜底', () => {
+test('投委会决议不能被股东会规则误收，并直接归入投决阶段', () => {
   const decision = decideWithProjectContext({
     sourcePath: '投资决策/基金投委会决议.pdf',
     facts: facts({
@@ -199,10 +199,10 @@ test('投委会决议不能被股东会规则误收，并在投决阶段安全�
 
   assert.equal(decision.status, 'decided');
   assert.equal(decision.businessStage, 'investment_decision');
-  assert.equal(decision.selectedCategory?.folderId, 'investment-decision');
-  assert.equal(decision.selectedCategory?.fileName, '其他投资决策材料');
-  assert.equal(decision.routingMethod, 'safe_stage_fallback');
-  assert.equal(decision.requiresHumanReview, true);
+  assert.equal(decision.selectedFolder?.folderId, 'investment-decision');
+  assert.equal(decision.selectedFolder?.name, '投资决策');
+  assert.equal(decision.routingMethod, 'context_policy');
+  assert.equal(decision.requiresHumanReview, false);
   assert.ok(decision.contradictions.some(item => item.includes('投委会')));
 });
 
@@ -221,9 +221,9 @@ test('交割确认函根据交割条件和项目事件归入确权文件', () =>
   });
 
   assert.equal(decision.status, 'decided');
-  assert.equal(decision.selectedCategory?.fileName, '确权文件');
+  assert.equal(decision.selectedFolder?.name, '投资实施');
   assert.equal(decision.requiresHumanReview, false);
-  assert.match(decision.policyVersion, /closing-confirmation-v1/);
+  assert.equal(decision.policyVersion, 'context-decision-v5');
 });
 
 test('缴款通知书根据支付要求和交易文件归入付款通知函', () => {
@@ -241,9 +241,9 @@ test('缴款通知书根据支付要求和交易文件归入付款通知函', ()
   });
 
   assert.equal(decision.status, 'decided');
-  assert.equal(decision.selectedCategory?.fileName, '付款通知函');
+  assert.equal(decision.selectedFolder?.name, '投资实施');
   assert.equal(decision.requiresHumanReview, false);
-  assert.match(decision.policyVersion, /payment-notice-v1/);
+  assert.equal(decision.policyVersion, 'context-decision-v5');
 });
 
 test('银行回单不能被付款通知规则误收', () => {
@@ -258,11 +258,11 @@ test('银行回单不能被付款通知规则误收', () => {
   });
 
   assert.equal(decision.status, 'insufficient');
-  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.selectedFolder, null);
   assert.ok(decision.contradictions.some(item => item.includes('银行回单')));
 });
 
-test('立项表决结果在缺少细分类时安全归入项目立项阶段', () => {
+test('立项表决结果直接归入项目立项阶段', () => {
   const decision = decideWithProjectContext({
     sourcePath: '佰特微立项表决结果.pdf',
     facts: facts({
@@ -279,10 +279,10 @@ test('立项表决结果在缺少细分类时安全归入项目立项阶段', ()
 
   assert.equal(decision.status, 'decided');
   assert.equal(decision.businessStage, 'initiation');
-  assert.equal(decision.selectedCategory?.folderId, 'project-initiation');
-  assert.equal(decision.selectedCategory?.fileName, '其他立项材料');
-  assert.equal(decision.routingMethod, 'safe_stage_fallback');
-  assert.equal(decision.requiresHumanReview, true);
+  assert.equal(decision.selectedFolder?.folderId, 'project-initiation');
+  assert.equal(decision.selectedFolder?.name, '项目立项');
+  assert.equal(decision.routingMethod, 'stage_policy');
+  assert.equal(decision.requiresHumanReview, false);
 });
 
 test('真正的投委会表决票仍归入投资决策', () => {
@@ -298,9 +298,9 @@ test('真正的投委会表决票仍归入投资决策', () => {
 
   assert.equal(decision.status, 'decided');
   assert.equal(decision.businessStage, 'investment_decision');
-  assert.equal(decision.selectedCategory?.folderId, 'decision-documents');
-  assert.equal(decision.selectedCategory?.fileName, '表决票');
-  assert.notEqual(decision.routingMethod, 'safe_stage_fallback');
+  assert.equal(decision.selectedFolder?.folderId, 'investment-decision');
+  assert.equal(decision.selectedFolder?.name, '投资决策');
+  assert.equal(decision.routingMethod, 'stage_policy');
 });
 
 test('退出表决票仍归入退出决策', () => {
@@ -316,8 +316,8 @@ test('退出表决票仍归入退出决策', () => {
 
   assert.equal(decision.status, 'decided');
   assert.equal(decision.businessStage, 'exit_decision');
-  assert.equal(decision.selectedCategory?.folderId, 'exit-decision-docs');
-  assert.equal(decision.selectedCategory?.fileName, '退出表决票');
+  assert.equal(decision.selectedFolder?.folderId, 'exit-decision');
+  assert.equal(decision.selectedFolder?.name, '退出决策');
 });
 
 test('无法判断阶段的表决结果不会猜测其他阶段目录', () => {
@@ -333,7 +333,7 @@ test('无法判断阶段的表决结果不会猜测其他阶段目录', () => {
 
   assert.equal(decision.status, 'insufficient');
   assert.equal(decision.businessStage, null);
-  assert.equal(decision.selectedCategory, null);
+  assert.equal(decision.selectedFolder, null);
   assert.equal(decision.routingMethod, 'needs_stage_review');
 });
 
