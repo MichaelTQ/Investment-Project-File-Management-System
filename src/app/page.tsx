@@ -2714,6 +2714,46 @@ export default function Home() {
                       ；事件{' '}
                       {projectContextState.projectContext?.timeline.length ?? 0} 个
                     </p>
+                    {projectContextState.contextState.status === 'failed' &&
+                      projectContextState.contextState.lastError && (
+                        <div
+                          role="alert"
+                          className="rounded border border-red-200 bg-red-50 p-2 text-red-800"
+                        >
+                          <p className="font-medium">Context 更新失败原因</p>
+                          <p className="mt-1 break-words">
+                            {projectContextState.contextState.lastError}
+                          </p>
+                          <p className="mt-1 text-[11px] text-red-700">
+                            系统仍保留上一版可用 Context；修复原因后可重新生成。
+                          </p>
+                        </div>
+                      )}
+                    {projectContextState.persistenceWarning && (
+                      <div className="rounded border border-orange-200 bg-orange-50 p-2 text-orange-800">
+                        <p className="font-medium">项目记忆持久化告警</p>
+                        <p className="mt-1 break-words">
+                          {projectContextState.persistenceWarning}
+                        </p>
+                      </div>
+                    )}
+                    {(projectContextState.projectContext?.synthesisWarnings
+                      ?.length ?? 0) > 0 && (
+                      <details className="rounded border border-slate-200 bg-slate-50 p-2 text-slate-700">
+                        <summary className="cursor-pointer font-medium">
+                          查看 Context 数据质量提示
+                        </summary>
+                        <ul className="mt-1 space-y-1">
+                          {projectContextState.projectContext?.synthesisWarnings?.map(
+                            warning => (
+                              <li key={warning} className="break-words">
+                                {warning}
+                              </li>
+                            )
+                          )}
+                        </ul>
+                      </details>
+                    )}
                     {projectContextState.contextState.dirtyReasons.length > 0 && (
                       <ul className="space-y-1 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">
                         {projectContextState.contextState.dirtyReasons.map(reason => (
