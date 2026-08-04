@@ -192,6 +192,42 @@ test('候选文件先使用已提交Context判断，归档提交后才进入正�
   );
 });
 
+test('归档可先持久化事实并标记Context待更新，随后独立重建', async () => {
+  let contextLlmCalls = 0;
+  const staged = await commitArchivedProjectDocument({
+    projectId: 'deferred-context-project',
+    projectName: '异步Context项目',
+    sourcePath: '立项申请.pdf',
+    facts: {
+      ...preTransactionCharter,
+      documentType: 'project_initiation_application',
+      title: '项目立项申请',
+      evidenceQuotes: ['申请项目立项'],
+    },
+    archivedFileId: 'archived-initiation-1',
+    deferContextRebuild: true,
+    contextSynthesizerClient: {
+      invoke: async () => {
+        contextLlmCalls += 1;
+        throw new Error('归档快速响应不应调用Context模型');
+      },
+    } as never,
+  });
+
+  assert.equal(staged.documentCount, 1);
+  assert.equal(staged.contextState.status, 'dirty');
+  assert.equal(staged.contextSynthesis, undefined);
+  assert.equal(contextLlmCalls, 0);
+  assert.equal(
+    (await loadDurableProjectMemory('deferred-context-project')).documents.size,
+    1
+  );
+
+  const rebuilt = await rebuildProjectContext('deferred-context-project');
+  assert.equal(rebuilt.contextState.status, 'clean');
+  assert.equal(rebuilt.contextState.version, 1);
+});
+
 test('进程内缓存版本未变化时只读取轻量 revision，不重复下载项目快照', async () => {
   await commitArchivedProjectDocument({
     projectId: 'warm-cache-project',

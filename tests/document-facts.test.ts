@@ -12,6 +12,7 @@ import {
   clearDocumentFactsCacheForTests,
   DOCUMENT_FACTS_MAX_OUTPUT_TOKENS,
   extractDocumentFacts,
+  parseCompactDocumentFactsResponse,
 } from '../src/lib/classification/fact-extractor';
 
 const validFacts = {
@@ -142,8 +143,33 @@ test('事实抽取 Prompt 明确禁止执行归档分类并限制正文长度', 
   assert.match(String(messages[0].content), /不要选择归档目录/);
   assert.match(String(messages[0].content), /最小事实集合/);
   assert.match(String(messages[0].content), /同一事实只能出现一次/);
-  assert.ok(String(messages[1].content).length < 7_000);
-  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 1_200);
+  assert.match(String(messages[0].content), /短字段协议/);
+  assert.ok(String(messages[1].content).length < 6_000);
+  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 600);
+});
+
+test('紧凑事实协议可恢复为稳定的完整 Schema', () => {
+  const facts = parseCompactDocumentFactsResponse(JSON.stringify({
+    dt: 'company_charter',
+    r: '公司章程',
+    t: '深圳君柔科技有限公司章程',
+    n: null,
+    v: '修订版',
+    d: [['2026-04-10', '批准日期', '股东会一致通过']],
+    p: [['深圳君柔科技有限公司', '项目公司']],
+    s: 'b',
+    c: [['注册资本', '11.73624万元', '13.04027万元', '注册资本增加']],
+    g: ['批准增资并修改章程'],
+    e: ['注册资本13.04027万元'],
+    w: [],
+    q: 'v',
+    x: 92,
+  }));
+
+  assert.equal(facts.documentType, 'company_charter');
+  assert.equal(facts.signStatus, 'signed_and_sealed');
+  assert.equal(facts.sourceQuality, 'visual_summary');
+  assert.equal(facts.transactionChanges[0]?.after, '13.04027万元');
 });
 
 test('事实抽取器支持注入客户端并对非法响应安全降级', async () => {
