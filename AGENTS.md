@@ -76,7 +76,8 @@ src/
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
 - Agent shadow 请求具有有效 `projectId` 时自动使用 Coze S3 持久化项目记忆；关联章程、股东会决议和增资协议可触发历史章程重新判断，结果不写入 Supabase
 - 项目记忆使用逻辑 `snapshot` 与轻量 `revision` 对象；物理对象使用 Coze 上传返回的真实随机后缀 key，版本未变化时复用进程缓存，旧追加式历史只在快照验证成功后清理
-- 分类与归档响应包含分阶段耗时和 LLM 输入/输出诊断，Context/事实/OCR 输出上限分别为 3072/2048/1200 tokens
+- 分类与归档响应包含顶层/子阶段耗时和 LLM 响应头/完整流式耗时诊断，Context/事实/OCR 输出上限分别为 3072/1200/1200 tokens
+- 带文字层、25MB 以内的 PDF 优先通过 PDF.js 本地提取；扫描件自动回退 FetchClient/OCR。相同项目与内容指纹的成功事实可在进程内缓存 12 小时，降级结果不缓存
 
 ### page.tsx（主页面组件）
 - **三栏布局**: 项目管理+文件夹结构 | 上传+分类结果 | 归档文件树+分析记录

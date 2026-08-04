@@ -5,6 +5,7 @@ import {
 
 import {
   createFallbackDocumentFacts,
+  DocumentFactsSchema,
   parseDocumentFactsResponse,
   type DocumentFactsExtractionResult,
 } from './document-facts';
@@ -14,9 +15,11 @@ import {
   type ModelCallDiagnostics,
 } from './chat-completions';
 
-const DOCUMENT_FACTS_CONTENT_LIMIT = 8_000;
-export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 2_048;
+const DOCUMENT_FACTS_CONTENT_LIMIT = 6_000;
+export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 1_200;
 const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
+const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
+const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
 export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-lite-260215';
 export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v2';
 
@@ -31,6 +34,72 @@ export interface ExtractDocumentFactsParams {
   customHeaders: Record<string, string>;
   imageDataUrl?: string;
   client?: InvokeClient;
+  cacheKey?: string;
+}
+
+interface CachedDocumentFacts {
+  facts: DocumentFactsExtractionResult['facts'];
+  cachedAt: number;
+}
+
+type RuntimeWithDocumentFactsCache = typeof globalThis & {
+  __documentFactsExtractionCache?: Map<string, CachedDocumentFacts>;
+  __documentFactsExtractionInFlight?: Map<
+    string,
+    Promise<DocumentFactsExtractionResult>
+  >;
+};
+
+function factsCache() {
+  const runtime = globalThis as RuntimeWithDocumentFactsCache;
+  runtime.__documentFactsExtractionCache ??= new Map();
+  runtime.__documentFactsExtractionInFlight ??= new Map();
+  return {
+    values: runtime.__documentFactsExtractionCache,
+    inFlight: runtime.__documentFactsExtractionInFlight,
+  };
+}
+
+function versionedCacheKey(cacheKey: string): string {
+  return `${DOCUMENT_FACTS_EXTRACTOR_VERSION}:${DOCUMENT_FACTS_MODEL}:${cacheKey}`;
+}
+
+function pruneFactsCache(now: number): void {
+  const cache = factsCache().values;
+  for (const [key, value] of cache) {
+    if (now - value.cachedAt > DOCUMENT_FACTS_CACHE_TTL_MS) cache.delete(key);
+  }
+  if (cache.size <= DOCUMENT_FACTS_CACHE_MAX_ENTRIES) return;
+  const oldest = [...cache.entries()].sort(
+    (left, right) => left[1].cachedAt - right[1].cachedAt
+  );
+  for (const [key] of oldest.slice(
+    0,
+    cache.size - DOCUMENT_FACTS_CACHE_MAX_ENTRIES
+  )) {
+    cache.delete(key);
+  }
+}
+
+export function getCachedDocumentFacts(
+  cacheKey: string | undefined
+): DocumentFactsExtractionResult | null {
+  if (!cacheKey) return null;
+  const now = Date.now();
+  pruneFactsCache(now);
+  const cached = factsCache().values.get(versionedCacheKey(cacheKey));
+  if (!cached) return null;
+  return {
+    status: 'success',
+    facts: DocumentFactsSchema.parse(cached.facts),
+    cacheHit: true,
+  };
+}
+
+export function clearDocumentFactsCacheForTests(): void {
+  const cache = factsCache();
+  cache.values.clear();
+  cache.inFlight.clear();
 }
 
 export function buildDocumentFactsPrompt(params: {
@@ -62,9 +131,10 @@ shareholder_register, other, unknown
 6. 如果内容来自扫描 PDF 视觉摘要，应将 sourceQuality 设为 visual_summary 或 mixed，并在 warnings 中说明信息可能不完整。
 7. extractionConfidence 表示事实抽取完整度，不表示归档分类置信度。
 8. dates、parties、transactionChanges、explicitStageClues、evidenceQuotes、warnings 必须始终输出数组；没有内容时输出 []，不得省略字段。
-9. 最多输出 dates 8项、parties 15项、transactionChanges 10项、explicitStageClues 8项、evidenceQuotes 8项、warnings 5项；相同事实必须合并去重。
-10. transactionChanges 的 before 和 after 各不超过 120 字，evidence 不超过 160 字；其他证据和提示单项不超过 160 字。
-11. 不要复述文档，不要输出分析过程或背景说明。输出无 Markdown、无缩进的紧凑 JSON。
+9. 只输出后续阶段判断真正需要的最小事实集合。最多输出 dates 4项、parties 8项、transactionChanges 6项、explicitStageClues 4项、evidenceQuotes 4项、warnings 3项。
+10. 同一事实只能出现一次：已写入 dates 或 transactionChanges 的内容不要再复制到 explicitStageClues 或 evidenceQuotes。只保留最有区分力的原文证据。
+11. transactionChanges 的 before 和 after 各不超过 100 字；其他证据和提示单项不超过 120 字。完整 JSON 目标不超过 1000 个汉字。
+12. 不要复述文档，不要输出分析过程或背景说明。输出无 Markdown、无缩进的紧凑 JSON。
 
 只输出一个 JSON 对象，不要输出 Markdown 或其他说明。JSON 必须严格符合：
 {
@@ -114,7 +184,7 @@ ${params.imageDataUrl
   ];
 }
 
-export async function extractDocumentFacts(
+async function extractDocumentFactsUncached(
   params: ExtractDocumentFactsParams
 ): Promise<DocumentFactsExtractionResult> {
   const messages = buildDocumentFactsPrompt({
@@ -175,5 +245,37 @@ export async function extractDocumentFacts(
       error: message,
       modelCall,
     };
+  }
+}
+
+export async function extractDocumentFacts(
+  params: ExtractDocumentFactsParams
+): Promise<DocumentFactsExtractionResult> {
+  const cached = getCachedDocumentFacts(params.cacheKey);
+  if (cached) return cached;
+  if (!params.cacheKey) return extractDocumentFactsUncached(params);
+
+  const key = versionedCacheKey(params.cacheKey);
+  const cache = factsCache();
+  const inFlight = cache.inFlight.get(key);
+  if (inFlight) {
+    const result = await inFlight;
+    return result.status === 'success' ? { ...result, cacheHit: true } : result;
+  }
+
+  const task = extractDocumentFactsUncached(params);
+  cache.inFlight.set(key, task);
+  try {
+    const result = await task;
+    if (result.status === 'success') {
+      cache.values.set(key, {
+        facts: DocumentFactsSchema.parse(result.facts),
+        cachedAt: Date.now(),
+      });
+      pruneFactsCache(Date.now());
+    }
+    return result;
+  } finally {
+    cache.inFlight.delete(key);
   }
 }

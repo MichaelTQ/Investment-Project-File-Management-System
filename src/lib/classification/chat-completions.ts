@@ -8,6 +8,7 @@ export interface ModelCallDiagnostics {
   outputTokens: number | null;
   finishReason: string | null;
   maxOutputTokens: number;
+  responseHeadersDurationMs?: number;
   durationMs: number;
 }
 
@@ -213,9 +214,10 @@ export async function invokeChatCompletion(
       signal: AbortSignal.timeout(config.timeout),
     }
   );
-  const durationMs = Date.now() - startedAt;
+  const responseHeadersDurationMs = Date.now() - startedAt;
   const contentType = response.headers.get('content-type') ?? '';
   const rawText = await response.text();
+  const durationMs = Date.now() - startedAt;
   if (!response.ok) {
     let payload: ChatCompletionsResponse | null = null;
     try {
@@ -240,6 +242,7 @@ export async function invokeChatCompletion(
       outputTokens: parsed.outputTokens,
       finishReason: parsed.finishReason,
       maxOutputTokens: params.maxOutputTokens,
+      responseHeadersDurationMs,
       durationMs,
     },
   };
