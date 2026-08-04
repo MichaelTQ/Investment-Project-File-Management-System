@@ -17,7 +17,11 @@ import {
 } from './chat-completions';
 
 const DOCUMENT_FACTS_CONTENT_LIMIT = 5_000;
-export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 600;
+// 这是护栏，不是省时手段：撞上它 JSON 必然截断，解析失败后整份事实退化为
+// 只含文件名的空壳（createFallbackDocumentFacts），而且内容越丰富的文件越容易
+// 触发——本该分得更准的文件反而退化。实测正常输出约 590 tokens，留足余量。
+// 想缩短生成耗时应收紧 prompt 里的逐字段长度，而不是压低这里。
+export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 900;
 const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
@@ -25,7 +29,14 @@ export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-mini-260215';
 export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v3-compact';
 
 interface InvokeClient {
-  invoke: LLMClient['invoke'];
+  // 与 LLMClient['invoke'] 兼容，但显式带上 finishReason：截断与其他失败必须能区分。
+  invoke: (
+    ...args: Parameters<LLMClient['invoke']>
+  ) => Promise<{
+    content: string;
+    finishReason?: string | null;
+    outputTokens?: number | null;
+  }>;
 }
 
 export interface ExtractDocumentFactsParams {
@@ -277,8 +288,8 @@ async function extractDocumentFactsUncached(
         inputCharacters,
         estimatedInputTokens: Math.ceil(inputCharacters / 2),
         outputCharacters: content.length,
-        outputTokens: null,
-        finishReason: null,
+        outputTokens: response.outputTokens ?? null,
+        finishReason: response.finishReason ?? null,
         maxOutputTokens: DOCUMENT_FACTS_MAX_OUTPUT_TOKENS,
         durationMs: Date.now() - startedAt,
       };
@@ -303,13 +314,19 @@ async function extractDocumentFactsUncached(
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误';
     console.error('Document facts extraction error:', error);
+    // 输出撞上 max_tokens 时 JSON 必然不完整，解析必定失败。这类失败与超时、
+    // 网络错误不同：模型其实已经写出了大部分事实，只是没写完整就被丢弃。
+    // 单独标注，避免与"按策略触发的人工复核"在界面上无法区分。
+    const truncated = modelCall?.finishReason === 'length';
+    const warning = truncated
+      ? `结构化事实抽取失败：模型输出达到 ${
+          modelCall?.maxOutputTokens ?? DOCUMENT_FACTS_MAX_OUTPUT_TOKENS
+        } tokens 上限被截断，已产出的事实无法解析而全部丢弃（${message}）`
+      : `结构化事实抽取失败：${message}`;
     return {
       status: 'fallback',
-      facts: createFallbackDocumentFacts(
-        params.fileName,
-        `结构化事实抽取失败：${message}`
-      ),
-      error: message,
+      facts: createFallbackDocumentFacts(params.fileName, warning),
+      error: warning,
       modelCall,
     };
   }

@@ -145,7 +145,35 @@ test('事实抽取 Prompt 明确禁止执行归档分类并限制正文长度', 
   assert.match(String(messages[0].content), /同一事实只能出现一次/);
   assert.match(String(messages[0].content), /短字段协议/);
   assert.ok(String(messages[1].content).length < 6_000);
-  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 600);
+  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 900);
+});
+
+// 回归：上限曾设为 600，而实测正常输出约 590 tokens。撞顶会让 JSON 截断、
+// 解析失败并退化为只含文件名的空壳，且在界面上与"按策略转人工复核"无法区分。
+test('输出因达到上限被截断时给出可区分的降级原因', async () => {
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  const truncated = await extractDocumentFacts({
+    fileName: '佰特微立项会纪要.pdf',
+    contentText: '立项会议纪要',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        // 生成在中途停笔，括号未闭合。
+        content: '{"dt":"meeting_minutes","t":"佰特微立项会纪要","d":[["2026-01-02","会议日期","会议于',
+        finishReason: 'length',
+      }),
+    },
+  }).finally(() => {
+    console.error = originalConsoleError;
+  });
+
+  assert.equal(truncated.status, 'fallback');
+  assert.equal(truncated.facts.sourceQuality, 'filename_only');
+  assert.match(truncated.error ?? '', /上限被截断/);
+  assert.match(truncated.facts.warnings.join('\n'), /上限被截断/);
+  assert.equal(truncated.modelCall?.finishReason, 'length');
 });
 
 test('紧凑事实协议可恢复为稳定的完整 Schema', () => {

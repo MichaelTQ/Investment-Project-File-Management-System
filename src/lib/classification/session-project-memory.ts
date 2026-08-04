@@ -711,9 +711,9 @@ async function rebuildLoadedProject(
   const reevaluationDurationMs = Date.now() - reevaluationStartAt;
   memoryStore().projects.set(project.projectId, project);
   void skipPersistSourcePath;
-  await persistProjectSnapshot(loaded);
 
-  // 记录重建历史
+  // 重建历史只是本地计算，不含 I/O；因此先组装好再和上面的重建结果一起写入，
+  // 避免为同一份快照付两次 S3 往返（每次写入含 list、write、读回校验和清理）。
   const totalDurationMs = Date.now() - rebuildStartAt;
   const inputTokens = synthesis.modelCalls.reduce(
     (sum, call) => sum + (call.estimatedInputTokens ?? 0),
