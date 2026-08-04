@@ -18,7 +18,7 @@ import {
 const ConfidenceLabelSchema = z.enum(['low', 'medium', 'high']);
 
 // Context 的消费方是规则 Agent，不是人类读者，因此说明字段只需要能区分证据，
-// 不需要成段叙述。输出 token 数几乎等于 Context 重建耗时（约 110 tokens/秒），
+// 不需要成段叙述。输出 token 数几乎等于 Context 重建耗时（实测约 150 tokens/秒），
 // 收紧这些上限是缩短重建时间最直接的手段。conflicts 保留原有条数，
 // 因为冲突是人工复核的主要入口。
 export const GENERATED_CONTEXT_LIMITS = {
@@ -30,6 +30,10 @@ export const GENERATED_CONTEXT_LIMITS = {
   titleCharacters: 30,
   explanationCharacters: 70,
   caveatCharacters: 100,
+  // 条目数固定不代表输出量固定：项目文档越多，模型越倾向在每个条目里引用更多
+  // sourcePath，而中文路径每条约 20 tokens。不限制这一项，输出会随项目规模
+  // 线性膨胀并撞上 max_tokens，触发整轮作废的紧凑重试。定位证据用不到全部文件。
+  evidenceFilesPerItem: 4,
 } as const;
 
 export const ProjectTimelineEventSchema = z.object({
@@ -105,7 +109,7 @@ const GeneratedTimelineEventSchema = ProjectTimelineEventSchema.extend({
   evidenceFiles: z
     .array(z.string().trim().min(1).max(1024))
     .min(1)
-    .max(20),
+    .max(GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem),
   evidence: z
     .string()
     .trim()
@@ -117,7 +121,7 @@ const GeneratedStageHypothesisSchema = ProjectStageHypothesisSchema.extend({
   evidenceFiles: z
     .array(z.string().trim().min(1).max(1024))
     .min(1)
-    .max(20),
+    .max(GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem),
   reasoning: z
     .string()
     .trim()
@@ -142,7 +146,7 @@ const GeneratedContextConflictSchema = ProjectContextConflictSchema.extend({
   evidenceFiles: z
     .array(z.string().trim().min(1).max(1024))
     .min(1)
-    .max(20),
+    .max(GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem),
 });
 
 export const GeneratedProjectContextPayloadSchema = z.object({

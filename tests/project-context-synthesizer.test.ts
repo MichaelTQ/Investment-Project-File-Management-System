@@ -230,7 +230,53 @@ test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   assert.doesNotMatch(String(prompt[0]?.content), /"schemaVersion": 1/);
   assert.match(String(prompt[0]?.content), /这些是上限不是目标/);
   assert.match(String(prompt[0]?.content), /不是给人阅读的报告/);
-  assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 1536);
+  assert.match(String(prompt[0]?.content), /每个 evidenceFiles 最多 4 个 sourcePath/);
+  assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 2560);
+});
+
+// 回归：evidenceFiles 曾无实际上限（每项 20 个路径），项目文档变多后输出随之膨胀，
+// 撞上 max_tokens 导致首轮作废并触发紧凑重试，总耗时反而翻倍。
+test('单个条目引用过多文件时在本地截断而不是让输出膨胀', async () => {
+  // 路径必须真实存在，否则会先被 validateEvidenceReferences 过滤掉，测不到截断本身。
+  const manyDocuments = Array.from({ length: 15 }, (_, index) => ({
+    sourcePath: `投资决策/证据${index}.pdf`,
+    facts: facts(
+      'investment_committee_resolution',
+      `证据${index}`,
+      '2026-02-03'
+    ),
+  }));
+  const result = await synthesizeProjectContext({
+    projectName: '测试项目',
+    documents: manyDocuments,
+    client: {
+      invoke: async () => ({
+        content: JSON.stringify({
+          targetCompany: null,
+          latestEvidencedStage: 'investment_decision',
+          stageConfidence: 'high',
+          timeline: [
+            {
+              date: '2026-02-03',
+              eventType: 'investment_committee_approved',
+              stage: 'investment_decision',
+              title: '投委会形成决议',
+              evidenceFiles: manyDocuments.map(document => document.sourcePath),
+              evidence: '投资决策委员会决议',
+              confidence: 'high',
+            },
+          ],
+          stageHypotheses: [],
+          documentRelations: [],
+          conflicts: [],
+          openQuestions: [],
+        }),
+      }),
+    } as never,
+  });
+
+  assert.equal(result.llmCallCount, 1);
+  assert.equal(result.context.timeline[0]?.evidenceFiles.length, 4);
 });
 
 test('成功调用会保留输出体量与耗时诊断', async () => {
@@ -257,7 +303,7 @@ test('成功调用会保留输出体量与耗时诊断', async () => {
   assert.equal(result.modelCalls.length, 1);
   assert.equal(result.modelCalls[0]?.outputTokens, 120);
   assert.equal(result.modelCalls[0]?.finishReason, 'stop');
-  assert.equal(result.modelCalls[0]?.maxOutputTokens, 1536);
+  assert.equal(result.modelCalls[0]?.maxOutputTokens, 2560);
   assert.ok((result.modelCalls[0]?.outputCharacters ?? 0) > 0);
 });
 

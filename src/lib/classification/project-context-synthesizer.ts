@@ -21,10 +21,11 @@ export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-mini-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
 const MAX_FACT_CARD_CHARACTERS = 32_000;
-// 生成耗时与输出 token 数近似线性（实测约 110 tokens/秒），因此这里既是成本上限，
-// 也是重建延迟上限。预算需要高于 GENERATED_CONTEXT_LIMITS 下的预期输出量：
-// 一旦因 max_tokens 截断导致 JSON 不完整，会触发紧凑模式重试，反而多花一次调用。
-export const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 1_536;
+// 这是护栏，不是省时手段。生成耗时与输出 token 数近似线性（实测约 150 tokens/秒，
+// 不含约 500ms 响应头），但缩短耗时要靠 GENERATED_CONTEXT_LIMITS 让模型少写，
+// 而不是靠这里截断：一旦撞上此上限，JSON 不完整会导致整轮作废并触发紧凑模式重试，
+// 总耗时反而翻倍。取值必须显著高于限制下的预期输出量，宁可留足余量。
+export const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 2_560;
 const PROJECT_CONTEXT_TIMEOUT_MS = 120_000;
 
 interface InvokeClient {
@@ -410,9 +411,10 @@ export function buildProjectContextPrompt(params: {
 10. 不得逐份复述事实卡片；只有会改变阶段、事件、关系或冲突判断的信息才能进入输出，相同业务事件必须合并。
 11. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 ${GENERATED_CONTEXT_LIMITS.stageHypotheses} 项；conflicts 最多 ${GENERATED_CONTEXT_LIMITS.conflicts} 项；openQuestions 最多 ${GENERATED_CONTEXT_LIMITS.openQuestions} 项。
 12. title 最多 ${GENERATED_CONTEXT_LIMITS.titleCharacters} 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 ${GENERATED_CONTEXT_LIMITS.explanationCharacters} 个汉字。这些是上限不是目标：说明字段只写能定位证据的关键信息（文件、日期、金额、主体、矛盾点），写满上限视为不合格。
-13. 该输出由程序消费，不是给人阅读的报告。禁止铺垫、总结、评价和完整句式，可用名词短语和分号。
-14. 没有证据支撑的数组直接输出 []，不要为了凑数生成低置信度条目。
-15. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
+13. 每个 evidenceFiles 最多 ${GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem} 个 sourcePath，只保留最能支撑该条结论的文件；不要罗列所有相关文件。
+14. 该输出由程序消费，不是给人阅读的报告。禁止铺垫、总结、评价和完整句式，可用名词短语和分号。
+15. 没有证据支撑的数组直接输出 []，不要为了凑数生成低置信度条目。
+16. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
 
 只输出一个严格 JSON 对象，结构如下：
 {
@@ -538,7 +540,7 @@ function normalizeGeneratedPayload(value: unknown): {
     );
   };
   const evidenceFiles = (input: unknown) => {
-    const selected = list(input, 20);
+    const selected = list(input, GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem);
     return Array.isArray(selected)
       ? selected.map(item => text(item, 1024))
       : selected;
