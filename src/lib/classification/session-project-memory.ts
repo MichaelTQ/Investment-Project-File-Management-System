@@ -13,6 +13,8 @@ import {
   loadDurableProjectRevision,
   saveDurableProjectMemorySnapshot,
   type ProjectContextLifecycleState,
+  type RebuildHistoryEntry,
+  MAX_REBUILD_HISTORY,
 } from './durable-project-memory';
 import type { DocumentFacts, DocumentType } from './document-facts';
 import {
@@ -42,6 +44,7 @@ interface SessionProjectRecord {
   context: ProjectContextSnapshot | null;
   contextState: ProjectContextLifecycleState;
   documents: Map<string, SessionDocumentRecord>;
+  rebuildHistory: RebuildHistoryEntry[];
   updatedAt: number;
 }
 
@@ -103,6 +106,7 @@ export interface ProjectSessionMemoryView {
     error?: string;
   };
   reEvaluatedDocuments: ReEvaluatedDocument[];
+  rebuildHistory: RebuildHistoryEntry[];
   expiresAt?: string;
 }
 
@@ -298,6 +302,22 @@ function mergeProjects(
   }
   durable.revision = Math.max(durable.revision, local.revision);
   durable.updatedAt = Math.max(durable.updatedAt, local.updatedAt);
+  // 合并重建历史：以 durable 为主，补充 local 中更新的条目
+  const durableHistory = durable.rebuildHistory ?? [];
+  const localHistory = local.rebuildHistory ?? [];
+  if (localHistory.length > 0) {
+    const durableTimestamps = new Set(durableHistory.map(e => e.timestamp));
+    const newEntries = localHistory.filter(e => !durableTimestamps.has(e.timestamp));
+    if (newEntries.length > 0) {
+      durable.rebuildHistory = [...durableHistory, ...newEntries]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, MAX_REBUILD_HISTORY);
+    } else {
+      durable.rebuildHistory = durableHistory;
+    }
+  } else if (!durable.rebuildHistory) {
+    durable.rebuildHistory = durableHistory;
+  }
   return durable;
 }
 
@@ -371,6 +391,7 @@ function fallbackProject(
       context: null,
       contextState: initialContextState(),
       documents: new Map(),
+      rebuildHistory: [],
       updatedAt: now,
     }
   );
@@ -410,6 +431,7 @@ async function loadProjectRecord(projectId: string): Promise<LoadedProject> {
         context: durable.context,
         contextState: durable.contextState,
         documents: durable.documents,
+        rebuildHistory: durable.rebuildHistory ?? [],
         updatedAt: Math.max(
           now,
           ...[...durable.documents.values()].map(document => document.updatedAt)
@@ -450,6 +472,7 @@ async function persistProjectSnapshot(loaded: LoadedProject): Promise<void> {
       context: project.context,
       contextState: project.contextState,
       documents: project.documents,
+      rebuildHistory: project.rebuildHistory,
       updatedAt: project.updatedAt,
     });
     if (loaded.needsLegacyCompaction) {
@@ -506,6 +529,7 @@ function memoryView(params: {
       ? synthesisView(params.synthesis)
       : undefined,
     reEvaluatedDocuments: params.reEvaluatedDocuments ?? [],
+    rebuildHistory: project.rebuildHistory,
     expiresAt:
       mode === FALLBACK_MEMORY_MODE
         ? new Date(project.updatedAt + PROJECT_TTL_MS).toISOString()
@@ -514,17 +538,21 @@ function memoryView(params: {
 }
 
 type ReevaluationMode = 'incremental' | 'full';
+type RebuildTrigger = 'add_file' | 'delete_file' | 'manual';
 
 async function rebuildLoadedProject(
   loaded: LoadedProject,
   options: ProjectMemoryMutationContext = {},
   skipPersistSourcePath?: string,
-  reevaluationMode: ReevaluationMode = 'full'
+  reevaluationMode: ReevaluationMode = 'full',
+  trigger: RebuildTrigger = 'manual'
 ): Promise<{
   synthesis: ProjectContextSynthesisResult;
   reEvaluatedDocuments: ReEvaluatedDocument[];
 }> {
+  const rebuildStartAt = Date.now();
   const { project } = loaded;
+  const previousStage = project.context?.latestEvidencedStage ?? 'unknown';
   const pendingChanges = project.contextState.pendingChanges;
   // 如果本轮变更包含删除文件，影响面较大，自动升级为全量重评估。
   const effectiveReevaluationMode: ReevaluationMode =
@@ -544,6 +572,7 @@ async function rebuildLoadedProject(
     lastError: undefined,
   };
   const documents = combinedRelatedDocuments(project, []);
+  const synthesisStartAt = Date.now();
   const synthesis = await synthesizeProjectContext({
     projectName:
       options.projectName?.trim() ||
@@ -559,6 +588,7 @@ async function rebuildLoadedProject(
       : undefined,
     removedSourcePaths: pendingChanges?.deleted,
   });
+  const synthesisDurationMs = Date.now() - synthesisStartAt;
   const synthesisSucceeded = !synthesis.error;
   if (synthesisSucceeded || !project.context) {
     project.context = synthesis.context;
@@ -652,6 +682,7 @@ async function rebuildLoadedProject(
     });
   })();
 
+  const reevaluationStartAt = Date.now();
   for (const record of documentsToReevaluate) {
     const previousDecision = record.agentDecision;
     const decision = await runClassificationAgent({
@@ -677,9 +708,52 @@ async function rebuildLoadedProject(
       }
     }
   }
+  const reevaluationDurationMs = Date.now() - reevaluationStartAt;
   memoryStore().projects.set(project.projectId, project);
   void skipPersistSourcePath;
   await persistProjectSnapshot(loaded);
+
+  // 记录重建历史
+  const totalDurationMs = Date.now() - rebuildStartAt;
+  const inputTokens = synthesis.modelCalls.reduce(
+    (sum, call) => sum + (call.estimatedInputTokens ?? 0),
+    0
+  );
+  const outputTokens = synthesis.modelCalls.reduce(
+    (sum, call) => sum + (call.outputTokens ?? 0),
+    0
+  );
+  const newStage = project.context?.latestEvidencedStage ?? 'unknown';
+  const historyEntry: RebuildHistoryEntry = {
+    trigger,
+    timestamp: rebuildStartAt,
+    totalDurationMs,
+    synthesisDurationMs,
+    reevaluationDurationMs,
+    llmCallCount: synthesis.llmCallCount,
+    inputTokens,
+    outputTokens,
+    inputDocumentCount: synthesis.inputDocumentCount,
+    includedDocumentCount: synthesis.includedDocumentCount,
+    reevaluationMode: effectiveReevaluationMode,
+    totalDocumentCount: project.documents.size,
+    reEvaluatedDocumentCount: documentsToReevaluate.length,
+    changedDecisionCount: reEvaluatedDocuments.length,
+    status: synthesisSucceeded ? 'success' : 'failed',
+    contextVersion: project.contextState.version,
+    contextStatus: synthesis.status,
+    error: synthesis.error,
+  };
+  if (previousStage !== newStage) {
+    historyEntry.stageTransition = { from: previousStage, to: newStage };
+  }
+  project.rebuildHistory = [historyEntry, ...(project.rebuildHistory ?? [])].slice(
+    0,
+    MAX_REBUILD_HISTORY
+  );
+  memoryStore().projects.set(project.projectId, project);
+  await persistProjectSnapshot(loaded);
+
   return { synthesis, reEvaluatedDocuments };
 }
 
@@ -702,7 +776,7 @@ export async function evaluateProjectDocumentCandidate(
       project.contextState.status === 'failed' ||
       (!project.context && project.documents.size > 0)
     ) {
-      rebuildResult = await rebuildLoadedProject(loaded, params, undefined, 'incremental');
+      rebuildResult = await rebuildLoadedProject(loaded, params, undefined, 'incremental', 'add_file');
     }
     const currentFacts = recoverDocumentType(sourcePath, params.facts);
     const availableDocuments = combinedRelatedDocuments(
@@ -797,7 +871,8 @@ export async function commitArchivedProjectDocument(
       loaded,
       params,
       sourcePath,
-      'incremental'
+      'incremental',
+      'add_file'
     );
     const availableDocuments = combinedRelatedDocuments(project, []).filter(
       document => document.sourcePath !== sourcePath
@@ -1002,7 +1077,10 @@ export async function rebuildProjectContext(
     const loaded = await loadProjectRecord(normalizedProjectId);
     const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(
       loaded,
-      options
+      options,
+      undefined,
+      'full',
+      'manual'
     );
     return memoryView({ loaded, synthesis, reEvaluatedDocuments });
   });

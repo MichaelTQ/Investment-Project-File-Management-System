@@ -8,6 +8,49 @@ import {
   writeStoredFile,
 } from '../storage';
 import type { ClassificationAgentResult } from './classification-agent';
+
+export interface RebuildHistoryEntry {
+  /** 重建触发：add_file / delete_file / manual */
+  trigger: 'add_file' | 'delete_file' | 'manual';
+  /** 重建时间戳 */
+  timestamp: number;
+  /** 总耗时 (ms) */
+  totalDurationMs: number;
+  /** LLM 综合阶段耗时 (ms) */
+  synthesisDurationMs: number;
+  /** 重评估阶段耗时 (ms) */
+  reevaluationDurationMs: number;
+  /** LLM 调用次数 */
+  llmCallCount: number;
+  /** LLM 输入 tokens */
+  inputTokens: number;
+  /** LLM 输出 tokens */
+  outputTokens: number;
+  /** 参与综合的文档数 */
+  inputDocumentCount: number;
+  /** 实际纳入的文档数 */
+  includedDocumentCount: number;
+  /** 重评估模式 */
+  reevaluationMode: 'incremental' | 'full';
+  /** 总文档数 */
+  totalDocumentCount: number;
+  /** 实际重评估的文档数 */
+  reEvaluatedDocumentCount: number;
+  /** 重评估后决策变更的文档数 */
+  changedDecisionCount: number;
+  /** 重建结果 */
+  status: 'success' | 'failed';
+  /** Context 版本（重建后） */
+  contextVersion: number;
+  /** Context 状态来源 */
+  contextStatus: 'llm_synthesized' | 'deterministic_fallback';
+  /** 重建前阶段 → 重建后阶段 */
+  stageTransition?: { from: string; to: string };
+  /** 错误信息（失败时） */
+  error?: string;
+}
+
+export const MAX_REBUILD_HISTORY = 50;
 import {
   ProjectContextSnapshotSchema,
   type ProjectContextSnapshot,
@@ -34,6 +77,7 @@ export interface DurableProjectSnapshot {
   context: ProjectContextSnapshot | null;
   contextState: ProjectContextLifecycleState;
   documents: Map<string, DurableDocumentRecord>;
+  rebuildHistory: RebuildHistoryEntry[];
   revision: number;
   loadedFrom?: 'snapshot' | 'legacy';
   snapshotUpdatedAt?: number;
@@ -100,6 +144,7 @@ interface PersistedProjectSnapshot {
   context: ProjectContextSnapshot | null;
   contextState: ProjectContextLifecycleState;
   documents: DurableDocumentRecord[];
+  rebuildHistory?: RebuildHistoryEntry[];
   updatedAt: number;
 }
 
@@ -251,6 +296,38 @@ function parseContextVersion(value: Buffer): PersistedContextVersion | null {
   }
 }
 
+function parseRebuildHistory(raw: unknown): RebuildHistoryEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const entries: RebuildHistoryEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const entry = item as Partial<RebuildHistoryEntry>;
+    if (
+      typeof entry.timestamp !== 'number' ||
+      typeof entry.totalDurationMs !== 'number' ||
+      typeof entry.synthesisDurationMs !== 'number' ||
+      typeof entry.reevaluationDurationMs !== 'number' ||
+      typeof entry.llmCallCount !== 'number' ||
+      typeof entry.inputTokens !== 'number' ||
+      typeof entry.outputTokens !== 'number' ||
+      typeof entry.inputDocumentCount !== 'number' ||
+      typeof entry.includedDocumentCount !== 'number' ||
+      typeof entry.totalDocumentCount !== 'number' ||
+      typeof entry.reEvaluatedDocumentCount !== 'number' ||
+      typeof entry.changedDecisionCount !== 'number' ||
+      typeof entry.contextVersion !== 'number' ||
+      !['add_file', 'delete_file', 'manual'].includes(entry.trigger ?? '') ||
+      !['incremental', 'full'].includes(entry.reevaluationMode ?? '') ||
+      !['success', 'failed'].includes(entry.status ?? '') ||
+      !['llm_synthesized', 'deterministic_fallback'].includes(entry.contextStatus ?? '')
+    ) {
+      continue;
+    }
+    entries.push(entry as RebuildHistoryEntry);
+  }
+  return entries.sort((a, b) => b.timestamp - a.timestamp).slice(0, MAX_REBUILD_HISTORY);
+}
+
 function parseProjectSnapshot(value: Buffer): DurableProjectSnapshot | null {
   try {
     const parsed = JSON.parse(value.toString('utf8')) as Partial<PersistedProjectSnapshot>;
@@ -303,6 +380,7 @@ function parseProjectSnapshot(value: Buffer): DurableProjectSnapshot | null {
       context: context.data,
       contextState,
       documents,
+      rebuildHistory: parseRebuildHistory(parsed.rebuildHistory),
       loadedFrom: 'snapshot',
       snapshotUpdatedAt: parsed.updatedAt,
     };
@@ -567,6 +645,7 @@ export async function loadDurableProjectMemory(
     context,
     contextState,
     documents,
+    rebuildHistory: [],
     revision: documentEntries.filter(entry => entry.projectId === projectId)
       .length,
     loadedFrom: 'legacy',
@@ -579,6 +658,7 @@ export async function saveDurableProjectMemorySnapshot(params: {
   context: ProjectContextSnapshot | null;
   contextState: ProjectContextLifecycleState;
   documents: Map<string, DurableDocumentRecord>;
+  rebuildHistory: RebuildHistoryEntry[];
   updatedAt: number;
 }): Promise<void> {
   const value: PersistedProjectSnapshot = {
@@ -589,6 +669,7 @@ export async function saveDurableProjectMemorySnapshot(params: {
     context: params.context,
     contextState: params.contextState,
     documents: [...params.documents.values()],
+    rebuildHistory: params.rebuildHistory,
     updatedAt: params.updatedAt,
   };
   const requestedSnapshotKey = snapshotKey(params.projectId);
