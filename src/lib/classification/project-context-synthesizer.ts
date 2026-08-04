@@ -16,12 +16,15 @@ import {
 } from './chat-completions';
 
 export const PROJECT_CONTEXT_SYNTHESIZER_VERSION =
-  'project-context-synthesizer-v5';
+  'project-context-synthesizer-v6';
 export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-mini-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
 const MAX_FACT_CARD_CHARACTERS = 32_000;
-export const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 3_072;
+// 生成耗时与输出 token 数近似线性（实测约 110 tokens/秒），因此这里既是成本上限，
+// 也是重建延迟上限。预算需要高于 GENERATED_CONTEXT_LIMITS 下的预期输出量：
+// 一旦因 max_tokens 截断导致 JSON 不完整，会触发紧凑模式重试，反而多花一次调用。
+export const PROJECT_CONTEXT_MAX_OUTPUT_TOKENS = 1_536;
 const PROJECT_CONTEXT_TIMEOUT_MS = 120_000;
 
 interface InvokeClient {
@@ -388,7 +391,7 @@ export function buildProjectContextPrompt(params: {
   );
   const compactRule = params.compact
     ? `
-这是格式修复重试。每个说明字段最多 80 个汉字，只保留最关键证据。`
+这是格式修复重试。每个说明字段最多 50 个汉字，只保留最关键证据。`
     : '';
   const systemPrompt = `你是投资项目档案的“项目上下文综合器”。
 
@@ -405,9 +408,11 @@ export function buildProjectContextPrompt(params: {
 8. confidence 只能是 low、medium、high。
 9. stage 只能是：${PROJECT_STAGES.join(', ')}。
 10. 不得逐份复述事实卡片；只有会改变阶段、事件、关系或冲突判断的信息才能进入输出，相同业务事件必须合并。
-11. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 ${GENERATED_CONTEXT_LIMITS.stageHypotheses} 项；conflicts 和 openQuestions 各最多 ${GENERATED_CONTEXT_LIMITS.conflicts} 项。
-12. title 最多 ${GENERATED_CONTEXT_LIMITS.titleCharacters} 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 ${GENERATED_CONTEXT_LIMITS.explanationCharacters} 个汉字。
-13. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
+11. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 ${GENERATED_CONTEXT_LIMITS.stageHypotheses} 项；conflicts 最多 ${GENERATED_CONTEXT_LIMITS.conflicts} 项；openQuestions 最多 ${GENERATED_CONTEXT_LIMITS.openQuestions} 项。
+12. title 最多 ${GENERATED_CONTEXT_LIMITS.titleCharacters} 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 ${GENERATED_CONTEXT_LIMITS.explanationCharacters} 个汉字。这些是上限不是目标：说明字段只写能定位证据的关键信息（文件、日期、金额、主体、矛盾点），写满上限视为不合格。
+13. 该输出由程序消费，不是给人阅读的报告。禁止铺垫、总结、评价和完整句式，可用名词短语和分号。
+14. 没有证据支撑的数组直接输出 []，不要为了凑数生成低置信度条目。
+15. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
 
 只输出一个严格 JSON 对象，结构如下：
 {

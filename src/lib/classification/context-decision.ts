@@ -17,15 +17,19 @@ import {
 
 const ConfidenceLabelSchema = z.enum(['low', 'medium', 'high']);
 
+// Context 的消费方是规则 Agent，不是人类读者，因此说明字段只需要能区分证据，
+// 不需要成段叙述。输出 token 数几乎等于 Context 重建耗时（约 110 tokens/秒），
+// 收紧这些上限是缩短重建时间最直接的手段。conflicts 保留原有条数，
+// 因为冲突是人工复核的主要入口。
 export const GENERATED_CONTEXT_LIMITS = {
-  timeline: 12,
-  stageHypotheses: 8,
-  documentRelations: 12,
+  timeline: 8,
+  stageHypotheses: 4,
+  documentRelations: 8,
   conflicts: 5,
-  openQuestions: 5,
-  titleCharacters: 60,
-  explanationCharacters: 160,
-  caveatCharacters: 200,
+  openQuestions: 3,
+  titleCharacters: 30,
+  explanationCharacters: 70,
+  caveatCharacters: 100,
 } as const;
 
 export const ProjectTimelineEventSchema = z.object({
