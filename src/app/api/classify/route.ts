@@ -36,6 +36,12 @@ import {
   runClassificationAgent,
   type ClassificationAgentResult,
 } from '@/lib/classification/classification-agent';
+import {
+  decideStageWithModel,
+  LLM_STAGE_DECISION_MODEL,
+  LLM_STAGE_DECISION_VERSION,
+  type LlmStageDecisionResult,
+} from '@/lib/classification/llm-stage-decision';
 import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
 import {
   commitArchivedProjectDocument,
@@ -109,6 +115,15 @@ interface ClassifyProcess {
     error?: string;
     inputWarnings?: string[];
   };
+  step0_modelStageDecision?: {
+    enabled: boolean;
+    status: LlmStageDecisionResult['status'];
+    model: string;
+    policyVersion: string;
+    agreesWithRules?: boolean;
+    error?: string;
+    modelCall?: ModelCallDiagnostics;
+  };
   step0_projectSessionMemory?: {
     enabled: boolean;
     status: 'success' | 'skipped' | 'failed';
@@ -157,6 +172,8 @@ interface ClassifyResult {
   documentFacts?: DocumentFacts;
   contextDecision?: ContextClassificationDecision;
   agentDecision?: ClassificationAgentResult;
+  /** 影子模式：模型给出的阶段判断，仅供对照，不影响 targetFolder。 */
+  modelStageDecision?: LlmStageDecisionResult;
   projectSessionMemory?: ProjectSessionMemoryView;
   requiresArchiveConfirmation?: boolean;
   archived?: {
@@ -309,6 +326,8 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.ENABLE_CONTEXT_DECISION_SHADOW === 'true';
     let runAgentDecision =
       globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
+    let runModelStageDecision =
+      globalThis.process.env.ENABLE_LLM_STAGE_DECISION_SHADOW === 'true';
     let rawProjectContext: unknown;
     let rawRelatedDocumentFacts: unknown;
 
@@ -340,6 +359,10 @@ export async function POST(request: NextRequest) {
         typeof body.agentDecision === 'boolean'
           ? body.agentDecision
           : runAgentDecision;
+      runModelStageDecision =
+        typeof body.modelStageDecision === 'boolean'
+          ? body.modelStageDecision
+          : runModelStageDecision;
       rawProjectContext = body.projectContext;
       rawRelatedDocumentFacts = body.relatedDocumentFacts;
 
@@ -381,6 +404,11 @@ export async function POST(request: NextRequest) {
         agentDecisionValue === null
           ? runAgentDecision
           : agentDecisionValue === 'true';
+      const modelStageDecisionValue = formData.get('modelStageDecision');
+      runModelStageDecision =
+        modelStageDecisionValue === null
+          ? runModelStageDecision
+          : modelStageDecisionValue === 'true';
       rawProjectContext = parseOptionalJson(formData.get('projectContext'));
       rawRelatedDocumentFacts = parseOptionalJson(
         formData.get('relatedDocumentFacts')
@@ -405,7 +433,11 @@ export async function POST(request: NextRequest) {
 
     // 持久化必须以结构化事实为输入，因此显式请求持久化时自动启用抽取。
     extractFacts =
-      extractFacts || persistFacts || runContextDecision || runAgentDecision;
+      extractFacts ||
+      persistFacts ||
+      runContextDecision ||
+      runAgentDecision ||
+      runModelStageDecision;
 
     const projectContext: ProjectContextSnapshot | null =
       parseProjectContextSnapshot(rawProjectContext);
@@ -615,6 +647,10 @@ export async function POST(request: NextRequest) {
     let projectSessionMemoryStep:
       | ClassifyProcess['step0_projectSessionMemory']
       | undefined;
+    let modelStageDecision: LlmStageDecisionResult | undefined;
+    let modelStageDecisionStep:
+      | ClassifyProcess['step0_modelStageDecision']
+      | undefined;
     if (extractFacts) {
       const extraction = await measurePhase('extract_document_facts', () =>
         extractDocumentFacts({
@@ -782,6 +818,42 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 影子模式：让模型基于同一批事实和上下文独立判断阶段，只做对照，不参与
+    // targetFolder 的计算。关联文件优先使用 Agent 实际选中的那几份，保证两边
+    // 看到的材料一致；模型失败时结果为 null，分类流程不受影响。
+    if (runModelStageDecision && documentFacts) {
+      const factsForModel = documentFacts;
+      modelStageDecision = await measurePhase('model_stage_decision', () =>
+        decideStageWithModel({
+          sourcePath: sourcePath || fileName,
+          facts: factsForModel,
+          projectName: project?.name,
+          projectContext:
+            projectSessionMemory?.projectContext ?? projectContext,
+          relatedDocuments:
+            agentClassificationResult?.selectedRelatedDocuments ??
+            relatedDocumentFacts,
+          customHeaders,
+        })
+      );
+      if (modelStageDecision.modelCall) {
+        modelCalls.push(modelStageDecision.modelCall);
+      }
+      const ruleStage =
+        agentClassificationResult?.decision.businessStage ?? null;
+      modelStageDecisionStep = {
+        enabled: true,
+        status: modelStageDecision.status,
+        model: LLM_STAGE_DECISION_MODEL,
+        policyVersion: LLM_STAGE_DECISION_VERSION,
+        agreesWithRules: modelStageDecision.decision
+          ? modelStageDecision.decision.businessStage === ruleStage
+          : undefined,
+        error: modelStageDecision.error,
+        modelCall: modelStageDecision.modelCall,
+      };
+    }
+
     // 最终只判断业务阶段；阶段文件夹本身就是归档目标。
     const legacyStageDecision = inferBusinessStage({
       sourcePath: sourcePath || fileName,
@@ -808,6 +880,7 @@ export async function POST(request: NextRequest) {
           }
         : undefined,
       step0_agentOrchestration: agentOrchestrationStep,
+      step0_modelStageDecision: modelStageDecisionStep,
       step0_projectSessionMemory: projectSessionMemoryStep,
       finalDecision: { method: 'none', explanation: '' },
     };
@@ -860,6 +933,9 @@ export async function POST(request: NextRequest) {
     }
     if (agentClassificationResult) {
       result.agentDecision = agentClassificationResult;
+    }
+    if (modelStageDecision) {
+      result.modelStageDecision = modelStageDecision;
     }
     if (projectSessionMemory) {
       result.projectSessionMemory = projectSessionMemory;

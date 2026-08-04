@@ -74,6 +74,7 @@ src/
 - 支持 `persistFacts=true` 或 `PERSIST_PROJECT_MEMORY_SHADOW=true`，将事实和当前 legacy 分类决策写入项目记忆表；持久化失败不会阻断原分类
 - 支持 `contextDecision=true` 运行非持久化上下文决策器，可接收 `sourcePath`、`projectContext` 和 `relatedDocumentFacts`；当前只作 shadow 对比，不修改原分类或自动归档
 - 支持 `agentDecision=true` 或 `ENABLE_CLASSIFICATION_AGENT_SHADOW=true` 运行 LangGraph Agent，返回建议、证据、冲突和节点轨迹；Agent 调度层当前不调用 LLM
+- 支持 `modelStageDecision=true` 或 `ENABLE_LLM_STAGE_DECISION_SHADOW=true` 运行模型阶段判断影子链路：模型基于同一批文档事实、项目 Context 和 Agent 实际选中的关联文件独立判断业务阶段，结果放在 `modelStageDecision`，只用于对照，不参与 `targetFolder` 计算；模型调用失败时 `decision` 为 null，分类流程不受影响。事实完整度过低、事实仅来自文件名、以及投资合规性审查表这三条强制人工复核规则与规则引擎保持一致，模型不能通过给高分绕过
 - Agent shadow 请求具有有效 `projectId` 时自动使用 Coze S3 持久化项目记忆；关联章程、股东会决议和增资协议可触发历史章程重新判断，结果不写入 Supabase
 - 项目记忆使用逻辑 `snapshot` 与轻量 `revision` 对象；物理对象使用 Coze 上传返回的真实随机后缀 key，版本未变化时复用进程缓存，旧追加式历史只在快照验证成功后清理
 - 分类与归档响应包含顶层/子阶段耗时和 LLM 响应头/完整流式耗时诊断，Context/事实/OCR 输出上限分别为 3072/600/1200 tokens；事实抽取使用短字段元组协议降低实际生成量
