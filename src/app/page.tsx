@@ -113,6 +113,28 @@ interface ProcessingPerformance {
   modelCalls: ModelCallDiagnostics[];
 }
 
+interface RebuildHistoryEntry {
+  trigger: 'add_file' | 'delete_file' | 'manual';
+  timestamp: number;
+  totalDurationMs: number;
+  synthesisDurationMs: number;
+  reevaluationDurationMs: number;
+  llmCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  inputDocumentCount: number;
+  includedDocumentCount: number;
+  reevaluationMode: 'incremental' | 'full';
+  totalDocumentCount: number;
+  reEvaluatedDocumentCount: number;
+  changedDecisionCount: number;
+  status: 'success' | 'failed';
+  contextVersion: number;
+  contextStatus: 'llm_synthesized' | 'deterministic_fallback';
+  stageTransition?: { from: string; to: string };
+  error?: string;
+}
+
 interface ProjectSessionMemoryResult {
   mode: 's3-durable-shadow' | 'process-local-fallback';
   persistent: boolean;
@@ -181,6 +203,7 @@ interface ProjectSessionMemoryResult {
     selectedFolder: string | null;
     agentDecision: AgentDecisionResult;
   }>;
+  rebuildHistory?: RebuildHistoryEntry[];
   expiresAt?: string;
 }
 
@@ -3060,6 +3083,112 @@ export default function Home() {
                               )
                             )}
                           </ol>
+                        </details>
+                      )}
+                    {projectContextState.rebuildHistory &&
+                      projectContextState.rebuildHistory.length > 0 && (
+                        <details className="border-t pt-2">
+                          <summary className="cursor-pointer font-medium text-violet-800">
+                            查看 Context 重建历史（{projectContextState.rebuildHistory.length} 次）
+                          </summary>
+                          <div className="mt-2 space-y-3">
+                            {projectContextState.rebuildHistory.map((entry, index) => (
+                              <div
+                                key={`${entry.timestamp}-${index}`}
+                                className={`rounded-lg border p-3 ${
+                                  entry.status === 'success'
+                                    ? 'border-green-200 bg-green-50'
+                                    : 'border-red-200 bg-red-50'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
+                                        entry.trigger === 'add_file'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : entry.trigger === 'delete_file'
+                                            ? 'bg-orange-100 text-orange-800'
+                                            : 'bg-purple-100 text-purple-800'
+                                      }`}
+                                    >
+                                      {entry.trigger === 'add_file'
+                                        ? '新增文件'
+                                        : entry.trigger === 'delete_file'
+                                          ? '删除文件'
+                                          : '手动重建'}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {new Date(entry.timestamp).toLocaleString('zh-CN')}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`text-xs font-medium ${
+                                      entry.status === 'success' ? 'text-green-700' : 'text-red-700'
+                                    }`}
+                                  >
+                                    {entry.status === 'success' ? '✓ 成功' : '✗ 失败'}
+                                  </span>
+                                </div>
+                                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">耗时：</span>
+                                    <span className="font-medium">
+                                      {entry.totalDurationMs >= 1000
+                                        ? `${(entry.totalDurationMs / 1000).toFixed(1)}s`
+                                        : `${entry.totalDurationMs}ms`}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">版本：</span>
+                                    <span className="font-medium">
+                                      v{entry.contextVersion}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">阶段变化：</span>
+                                    <span className="font-medium">
+                                      {entry.stageTransition
+                                        ? `${entry.stageTransition.from} → ${entry.stageTransition.to}`
+                                        : '未变化'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">重评估：</span>
+                                    <span className="font-medium">
+                                      {entry.reEvaluatedDocumentCount}/{entry.totalDocumentCount} 份
+                                      {entry.reevaluationMode === 'incremental' && (
+                                        <span className="ml-1 text-blue-600">(增量)</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {entry.llmCallCount > 0 && (
+                                    <>
+                                      <div>
+                                        <span className="text-muted-foreground">LLM 调用：</span>
+                                        <span className="font-medium">
+                                          {entry.llmCallCount} 次 · 综合 {entry.synthesisDurationMs}ms
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-muted-foreground">Token：</span>
+                                        <span className="font-medium">
+                                          {entry.inputTokens.toLocaleString()} in /{' '}
+                                          {entry.outputTokens.toLocaleString()} out
+                                        </span>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                                {entry.error && (
+                                  <div className="mt-2 rounded bg-red-100 p-2 text-xs text-red-800">
+                                    <span className="font-medium">错误：</span>
+                                    {entry.error}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </details>
                       )}
                     <Button
