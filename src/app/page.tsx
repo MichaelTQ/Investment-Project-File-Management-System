@@ -42,7 +42,9 @@ import {
   type ArchiveFolder,
   type Project,
   type ArchivedFile,
+  getFolderForBusinessStage,
 } from '@/lib/folder-structure';
+import { inferBusinessStage } from '@/lib/classification/business-stage';
 
 interface ClassifyProcess {
   finalDecision: {
@@ -213,6 +215,8 @@ interface ClassifyResult {
   archiveError?: string;
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
   performance?: ProcessingPerformance;
+  agentPending?: boolean;
+  rulePreliminary?: boolean;
 }
 
 const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
@@ -654,7 +658,8 @@ function ClassifyResultItem({
   const agentFolder = result.agentDecision?.decision.selectedFolder ?? null;
   const legacyClassification = result.legacyClassification;
   const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
-  const agentNeedsReview = result.agentDecision?.status !== 'decided';
+  const agentPending = Boolean(result.agentPending && !result.agentDecision);
+  const agentNeedsReview = !agentPending && result.agentDecision?.status !== 'decided';
   const agentSelectionValue = agentFolder
     ? agentFolder.folderId
     : '';
@@ -686,14 +691,18 @@ function ClassifyResultItem({
   return (
     <div
       className={`w-full min-w-0 overflow-hidden rounded-lg border bg-background ${
-        result.agentDecision?.status === 'decided'
+        agentPending
+          ? 'border-l-4 border-l-sky-400'
+          : result.agentDecision?.status === 'decided'
           ? 'border-l-4 border-l-violet-500'
           : 'border-l-4 border-l-amber-500'
       }`}
     >
       <div className="flex min-w-0 items-start gap-2.5 border-b bg-muted/20 p-3">
-        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${agentNeedsReview ? 'bg-amber-100' : 'bg-violet-100'}`}>
-          {agentNeedsReview
+        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${agentPending ? 'bg-sky-100' : agentNeedsReview ? 'bg-amber-100' : 'bg-violet-100'}`}>
+          {agentPending
+            ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
+            : agentNeedsReview
             ? <AlertCircle className="h-4 w-4 text-amber-600" />
             : <Brain className="h-4 w-4 text-violet-600" />}
         </div>
@@ -702,7 +711,7 @@ function ClassifyResultItem({
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
             <span>·</span>
-            <span>Agent 置信度 {agentConfidence}%</span>
+            <span>{agentPending ? 'Agent 分析中' : `Agent 置信度 ${agentConfidence}%`}</span>
             <Badge variant="outline" className="border-violet-300 bg-violet-50 text-[10px] text-violet-700">
               Agent 主模式
             </Badge>
@@ -724,13 +733,15 @@ function ClassifyResultItem({
                   ? 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'
                   : 'border-green-300 bg-green-50 text-[10px] text-green-700'}
               >
-                {agentNeedsReview ? '需要复核' : '证据充分'}
+                {agentPending ? '分析中' : agentNeedsReview ? '需要复核' : '证据充分'}
               </Badge>
             </div>
             <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
               {agentFolder
                 ? agentFolder.folderPath.join(' / ')
-                : '暂未形成唯一分类建议'}
+                : agentPending
+                  ? '规则预判已返回，正在等待 Agent'
+                  : '暂未形成唯一分类建议'}
             </p>
             <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
               业务阶段：{PROJECT_STAGE_LABELS[
@@ -747,7 +758,9 @@ function ClassifyResultItem({
             </div>
             <p className="mt-2 break-words text-xs leading-5 text-violet-800">
               {result.agentDecision?.decision.reasoning ??
-                'Agent 未成功返回结果，请查看详情中的诊断信息。'}
+                (agentPending
+                  ? 'Agent 正在抽取结构化事实并结合项目 Context 判断。'
+                  : 'Agent 未成功返回结果，请查看详情中的诊断信息。')}
             </p>
             {(result.agentDecision?.decision.evidence.length ?? 0) > 0 && (
               <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-green-800">
@@ -767,7 +780,7 @@ function ClassifyResultItem({
                 </p>
                 {legacyClassification ? (
                   <Badge variant="outline" className="bg-white text-[10px]">
-                    {legacyClassification.confidence}%
+                    {result.rulePreliminary ? '快速预判' : `${legacyClassification.confidence}%`}
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="bg-white text-[10px] text-muted-foreground">
@@ -1958,7 +1971,7 @@ export default function Home() {
   const [results, setResults] = useState<ClassifyResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
-  const [showLegacyClassification, setShowLegacyClassification] = useState(false);
+  const [showLegacyClassification, setShowLegacyClassification] = useState(true);
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2382,6 +2395,49 @@ export default function Home() {
       } else {
         setContextRefreshKey(prev => prev + 1);
       }
+      if (data.contextRebuildPending) {
+        setProjectContextRebuilding(true);
+        setProjectContextError(null);
+        void fetch('/api/project-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: pendingResult.sourceProjectId }),
+        })
+          .then(async rebuildResponse => {
+            const rebuildData = await rebuildResponse.json().catch(() => null);
+            if (!rebuildResponse.ok) {
+              throw new Error(
+                rebuildData?.error || '归档成功，但后台 Context 更新失败'
+              );
+            }
+            const rebuiltContext = rebuildData?.projectContext ?? null;
+            setProjectContextState(rebuiltContext);
+            const rebuiltDecisions = new Map<string, AgentDecisionResult>(
+              (rebuiltContext?.reEvaluatedDocuments ?? []).map(
+                (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
+                  document.sourcePath,
+                  document.agentDecision,
+                ] as const
+              )
+            );
+            if (rebuiltDecisions.size > 0) {
+              setResults(current => current.map(item => {
+                const rebuilt = rebuiltDecisions.get(
+                  item.sourcePath || item.fileName
+                );
+                return rebuilt ? { ...item, agentDecision: rebuilt } : item;
+              }));
+            }
+          })
+          .catch(error => {
+            setProjectContextError(
+              error instanceof Error
+                ? error.message
+                : '归档成功，但后台 Context 更新失败'
+            );
+          })
+          .finally(() => setProjectContextRebuilding(false));
+      }
       fetch('/api/projects')
         .then(response => response.json())
         .then(data => setProjects(data.projects || []));
@@ -2442,6 +2498,48 @@ export default function Home() {
 
     for (const file of Array.from(files)) {
       const clientId = crypto.randomUUID();
+      const uploadedSourcePath = file.webkitRelativePath || file.name;
+      const quickRule = showLegacyClassification
+        ? inferBusinessStage({ sourcePath: uploadedSourcePath })
+        : null;
+      const quickRuleFolder = quickRule?.selectedStage
+        ? getFolderForBusinessStage(quickRule.selectedStage)
+        : null;
+      setResults(prev => [
+        ...prev,
+        {
+          clientId,
+          fileName: file.name,
+          sourcePath: uploadedSourcePath,
+          fileSize: file.size,
+          targetFolder: quickRuleFolder,
+          confidence: quickRule?.confidence ?? 0,
+          reasoning:
+            quickRule?.reasoning ?? '文件上传完成后将运行 Agent 分类。',
+          process: {
+            finalDecision: {
+              method: quickRuleFolder ? 'stage' : 'none',
+              explanation: quickRuleFolder
+                ? '文件名规则已形成快速预判，等待 Agent 使用正文和项目 Context 复核。'
+                : '文件名规则证据不足，等待 Agent 使用正文和项目 Context 判断。',
+            },
+          },
+          classificationMode: showLegacyClassification
+            ? 'comparison'
+            : 'agent',
+          businessStage: quickRule?.selectedStage,
+          legacyClassification: quickRule
+            ? {
+                targetFolder: quickRuleFolder,
+                confidence: quickRule.confidence,
+                reasoning: `快速预判仅使用文件名：${quickRule.reasoning}`,
+              }
+            : undefined,
+          requiresArchiveConfirmation: false,
+          agentPending: true,
+          rulePreliminary: Boolean(quickRule),
+        },
+      ]);
       let uploadedStorageKey = '';
       let chunkUploadId = '';
       try {
@@ -2574,11 +2672,10 @@ export default function Home() {
           throw new Error('服务器没有返回有效的分类结果');
         }
 
-        const uploadedSourcePath = file.webkitRelativePath || file.name;
         if (result.projectSessionMemory) {
           setProjectContextState(result.projectSessionMemory);
         }
-        const reEvaluatedByPath = new Map(
+        const reEvaluatedByPath = new Map<string, AgentDecisionResult>(
           (
             result.projectSessionMemory?.reEvaluatedDocuments ?? []
           ).map((document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
@@ -2586,16 +2683,8 @@ export default function Home() {
             document.agentDecision,
           ] as const)
         );
-        setResults(prev => [
-          ...prev.map(existing => {
-            const updatedAgent = reEvaluatedByPath.get(
-              existing.sourcePath || existing.fileName
-            );
-            return updatedAgent
-              ? { ...existing, agentDecision: updatedAgent }
-              : existing;
-          }),
-          {
+        setResults(prev => {
+          const completed: ClassifyResult = {
             ...result,
             clientId,
             sourcePath: uploadedSourcePath,
@@ -2612,8 +2701,19 @@ export default function Home() {
             sourceMimeType: file.type || 'application/octet-stream',
             sourceProjectId: selectedProjectId,
             archiveStatus: 'pending',
-          },
-        ]);
+            agentPending: false,
+            rulePreliminary: false,
+          };
+          return prev.map(existing => {
+            if (existing.clientId === clientId) return completed;
+            const updatedAgent = reEvaluatedByPath.get(
+              existing.sourcePath || existing.fileName
+            );
+            return updatedAgent
+              ? { ...existing, agentDecision: updatedAgent }
+              : existing;
+          });
+        });
       } catch (error) {
         if (chunkUploadId) {
           await fetch('/api/uploads/chunk', {
@@ -2637,13 +2737,24 @@ export default function Home() {
         const errorMessage = error instanceof Error
           ? error.message
           : '未知错误';
-        setResults(prev => [...prev, {
-          clientId,
-          fileName: file.name, fileSize: file.size, targetFolder: null, confidence: 0,
-          reasoning: `文件处理失败：${errorMessage}`,
-          classificationMode: showLegacyClassification ? 'comparison' : 'agent',
-          process: { finalDecision: { method: 'none' as const, explanation: `文件处理失败：${errorMessage}` } }
-        }]);
+        setResults(prev => prev.map(existing =>
+          existing.clientId === clientId
+            ? {
+                ...existing,
+                targetFolder: null,
+                confidence: 0,
+                reasoning: `文件处理失败：${errorMessage}`,
+                process: {
+                  finalDecision: {
+                    method: 'none' as const,
+                    explanation: `文件处理失败：${errorMessage}`,
+                  },
+                },
+                agentPending: false,
+                rulePreliminary: false,
+              }
+            : existing
+        ));
       }
       processedFiles++;
       setProcessingProgress(Math.round((processedFiles / totalFiles) * 100));
@@ -3053,7 +3164,7 @@ export default function Home() {
                     ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}`
                     : showLegacyClassification
                       ? '上传后并列显示 Agent 与规则阶段判断'
-                      : '规则对照默认关闭，上传后直接显示 Agent 建议'}
+                      : '规则对照已关闭，上传后直接显示 Agent 建议'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">

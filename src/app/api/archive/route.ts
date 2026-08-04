@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
       if (documentFacts) {
         const factsToCommit = documentFacts;
         const committed = await measurePhase(
-          "commit_and_rebuild_context",
+          "commit_context_pending",
           () => commitArchivedProjectDocument({
             projectId,
             projectName: project.name,
@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
             facts: factsToCommit,
             archivedFileId: archived.id,
             customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+            deferContextRebuild: true,
           })
         );
         const { currentDecision: _currentDecision, ...view } = committed;
@@ -187,6 +188,7 @@ export async function POST(request: NextRequest) {
         folderPath: archived.folderPath,
       },
       projectContext,
+      contextRebuildPending: Boolean(documentFacts && projectContext),
       performance: {
         totalDurationMs: Date.now() - requestStartedAt,
         phases: phaseTimings,

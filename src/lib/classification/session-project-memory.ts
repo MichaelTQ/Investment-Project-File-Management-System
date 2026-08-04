@@ -124,6 +124,7 @@ export interface RememberAndEvaluateParams {
 export interface CommitArchivedProjectDocumentParams
   extends RememberAndEvaluateParams {
   archivedFileId?: string;
+  deferContextRebuild?: boolean;
 }
 
 export interface ProjectMemoryMutationContext {
@@ -692,6 +693,29 @@ export async function commitArchivedProjectDocument(
         ]),
       ],
     };
+
+    if (params.deferContextRebuild) {
+      const availableDocuments = combinedRelatedDocuments(project, []).filter(
+        document => document.sourcePath !== sourcePath
+      );
+      const currentDecision = await runClassificationAgent({
+        sourcePath,
+        facts: currentRecord.facts,
+        projectContext: project.context,
+        availableRelatedDocuments: availableDocuments,
+      });
+      currentRecord.agentDecision = currentDecision;
+      await persistProjectSnapshot(loaded);
+      return {
+        ...memoryView({
+          loaded,
+          relatedDocumentCount: availableDocuments.length,
+          decisionContextVersion: project.contextState.version,
+        }),
+        currentDecision,
+      };
+    }
+
     await persistProjectSnapshot(loaded);
 
     const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(

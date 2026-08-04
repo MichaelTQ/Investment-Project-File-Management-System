@@ -6,6 +6,7 @@ import {
 import {
   createFallbackDocumentFacts,
   DocumentFactsSchema,
+  extractFirstJsonObject,
   parseDocumentFactsResponse,
   type DocumentFactsExtractionResult,
 } from './document-facts';
@@ -15,13 +16,13 @@ import {
   type ModelCallDiagnostics,
 } from './chat-completions';
 
-const DOCUMENT_FACTS_CONTENT_LIMIT = 6_000;
-export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 1_200;
+const DOCUMENT_FACTS_CONTENT_LIMIT = 5_000;
+export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 600;
 const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
 export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-lite-260215';
-export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v2';
+export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v3-compact';
 
 interface InvokeClient {
   invoke: LLMClient['invoke'];
@@ -102,6 +103,79 @@ export function clearDocumentFactsCacheForTests(): void {
   cache.inFlight.clear();
 }
 
+function compactTupleList(value: unknown, width: number): unknown[][] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is unknown[] => Array.isArray(item))
+    .map(item => item.slice(0, width));
+}
+
+/** 将模型使用的短字段协议还原为稳定的 DocumentFacts Schema。 */
+export function parseCompactDocumentFactsResponse(content: string) {
+  const json = extractFirstJsonObject(content);
+  if (!json) return parseDocumentFactsResponse(content);
+  const value: unknown = JSON.parse(json);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return parseDocumentFactsResponse(content);
+  }
+  const compact = value as Record<string, unknown>;
+  // 保持测试注入和旧缓存响应兼容。
+  if ('schemaVersion' in compact || 'documentType' in compact) {
+    return parseDocumentFactsResponse(content);
+  }
+  if (!('dt' in compact) || !('t' in compact) || !('q' in compact) || !('x' in compact)) {
+    return parseDocumentFactsResponse(content);
+  }
+  const signStatus = {
+    u: 'unsigned',
+    i: 'signed',
+    s: 'sealed',
+    b: 'signed_and_sealed',
+    x: 'unknown',
+  }[String(compact.s ?? 'x')] ?? 'unknown';
+  const sourceQuality = {
+    t: 'text',
+    v: 'visual_summary',
+    i: 'image',
+    f: 'filename_only',
+    m: 'mixed',
+  }[String(compact.q ?? 'f')] ?? 'filename_only';
+  const dates = compactTupleList(compact.d, 3).map(item => ({
+    date: item[0] ?? null,
+    meaning: item[1] ?? '',
+    evidence: item[2] ?? '',
+  }));
+  const parties = compactTupleList(compact.p, 2).map(item => ({
+    name: item[0] ?? '',
+    role: item[1] ?? '',
+  }));
+  const transactionChanges = compactTupleList(compact.c, 4).map(item => ({
+    field: item[0] ?? '',
+    before: item[1] ?? null,
+    after: item[2] ?? null,
+    evidence: item[3] ?? '',
+  }));
+  return parseDocumentFactsResponse(
+    JSON.stringify({
+      schemaVersion: 1,
+      documentType: compact.dt ?? 'unknown',
+      rawDocumentType: compact.r ?? '未知',
+      title: compact.t ?? '未知文件',
+      documentNumber: compact.n ?? null,
+      version: compact.v ?? null,
+      dates,
+      parties,
+      signStatus,
+      transactionChanges,
+      explicitStageClues: Array.isArray(compact.g) ? compact.g : [],
+      evidenceQuotes: Array.isArray(compact.e) ? compact.e : [],
+      warnings: Array.isArray(compact.w) ? compact.w : [],
+      sourceQuality,
+      extractionConfidence: compact.x ?? 0,
+    })
+  );
+}
+
 export function buildDocumentFactsPrompt(params: {
   fileName: string;
   contentText: string;
@@ -130,29 +204,22 @@ shareholder_register, other, unknown
 5. evidenceQuotes 只能包含当前输入中真实出现的短句或关键数据。
 6. 如果内容来自扫描 PDF 视觉摘要，应将 sourceQuality 设为 visual_summary 或 mixed，并在 warnings 中说明信息可能不完整。
 7. extractionConfidence 表示事实抽取完整度，不表示归档分类置信度。
-8. dates、parties、transactionChanges、explicitStageClues、evidenceQuotes、warnings 必须始终输出数组；没有内容时输出 []，不得省略字段。
-9. 只输出后续阶段判断真正需要的最小事实集合。最多输出 dates 4项、parties 8项、transactionChanges 6项、explicitStageClues 4项、evidenceQuotes 4项、warnings 3项。
+8. d、p、c、g、e、w 必须始终输出数组；没有内容时输出 []，不得省略字段。
+9. 只输出后续阶段判断真正需要的最小事实集合。最多输出 d 2项、p 4项、c 3项、g 2项、e 2项、w 2项。
 10. 同一事实只能出现一次：已写入 dates 或 transactionChanges 的内容不要再复制到 explicitStageClues 或 evidenceQuotes。只保留最有区分力的原文证据。
-11. transactionChanges 的 before 和 after 各不超过 100 字；其他证据和提示单项不超过 120 字。完整 JSON 目标不超过 1000 个汉字。
-12. 不要复述文档，不要输出分析过程或背景说明。输出无 Markdown、无缩进的紧凑 JSON。
+11. 变化前后值各不超过 60 字；证据和提示单项不超过 80 字。完整 JSON 必须紧凑，目标 250-450 tokens、700 个字符以内。
+12. 不要复述文档，不要输出分析过程或背景说明。必须使用下方短字段和数组元组，不得改成长字段对象。
 
-只输出一个 JSON 对象，不要输出 Markdown 或其他说明。JSON 必须严格符合：
+只输出一个 JSON 对象，不要输出 Markdown或其他说明。短字段协议严格如下：
 {
-  "schemaVersion": 1,
-  "documentType": "上述枚举值",
-  "rawDocumentType": "文件中的中文类型名称，无法判断填未知",
-  "title": "文件正式标题，无法识别时使用原文件名主体",
-  "documentNumber": "编号或null",
-  "version": "版本或null",
-  "dates": [{"date":"YYYY-MM-DD或null","meaning":"日期含义","evidence":"原文证据"}],
-  "parties": [{"name":"主体全称","role":"主体角色"}],
-  "signStatus": "unsigned|signed|sealed|signed_and_sealed|unknown",
-  "transactionChanges": [{"field":"变化字段","before":"变化前或null","after":"变化后或null","evidence":"证据"}],
-  "explicitStageClues": ["文件中明确出现的业务动作，不是最终分类"],
-  "evidenceQuotes": ["可核实的短句或关键数据"],
-  "warnings": ["缺失信息或识别风险"],
-  "sourceQuality": "text|visual_summary|image|filename_only|mixed",
-  "extractionConfidence": 0到100之间的整数
+  "dt":"documentType枚举值","r":"中文类型或未知","t":"标题",
+  "n":"编号或null","v":"版本或null",
+  "d":[["YYYY-MM-DD或null","含义","证据"]],
+  "p":[["主体全称","角色"]],
+  "s":"u未签|i已签|s已盖章|b签字盖章|x未知",
+  "c":[["变化字段","变化前或null","变化后或null","证据"]],
+  "g":["明确业务动作"],"e":["关键证据"],"w":["风险"],
+  "q":"t文字|v视觉摘要|i图片|f仅文件名|m混合","x":0到100整数
 }`;
 
   const userPrompt = `当前项目名称（仅用于识别相关主体，不得用于推断阶段）：
@@ -230,7 +297,7 @@ async function extractDocumentFactsUncached(
     }
     return {
       status: 'success',
-      facts: parseDocumentFactsResponse(content),
+      facts: parseCompactDocumentFactsResponse(content),
       modelCall,
     };
   } catch (error) {
