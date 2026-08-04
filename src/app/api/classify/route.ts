@@ -510,6 +510,15 @@ export async function POST(request: NextRequest) {
           : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
         contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}。请结合原始图片的场景、物体和可见文字进行分类。`;
       } else {
+        // 签名 URL 只依赖 storageKey，和读取文件内容互不依赖。提前并行发起，
+        // 这样扫描件回退到 Coze 解析时不必再串行等一次往返。带文字层的 PDF
+        // 用不到它，多出的一次签名调用不在关键路径上；附 catch 防止未处理拒绝。
+        let signedUrlPromise: Promise<string> | undefined;
+        if (storageKey) {
+          signedUrlPromise = getStoredFileUrl(storageKey);
+          void signedUrlPromise.catch(() => undefined);
+        }
+
         if (extension === 'pdf' && fileSize <= 25 * 1024 * 1024) {
           try {
             const localPdfBuffer = await ensureFileBuffer();
@@ -528,10 +537,11 @@ export async function POST(request: NextRequest) {
 
         if (contentText.trim().length < 30) {
           // 扫描 PDF、Office 文件和本地解析失败的 PDF 回退到 Coze 解析服务。
-          const sourceUrl = storageKey
+          const pendingSignedUrl = signedUrlPromise;
+          const sourceUrl = pendingSignedUrl
             ? await measurePhase(
                 'generate_signed_file_url',
-                () => getStoredFileUrl(storageKey),
+                () => pendingSignedUrl,
                 'read_and_parse_file'
               )
             : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
