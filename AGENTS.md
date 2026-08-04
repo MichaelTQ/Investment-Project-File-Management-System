@@ -94,7 +94,8 @@ src/
 2. **阶段判断**: 用文件自身证据、项目 Context 和关联文件判断 `businessStage`
 3. **文件夹映射**: 阶段一一映射为 `folderId`，不再选择细分文件类型
 4. **人工确认**: Agent 主模式确认目标阶段文件夹和 `archiveTitle` 后归档
-5. **后台 Context**: 归档先持久化文件与事实并立即返回；Context 保持 `dirty`，由页面后台请求独立重建
+5. **后台 Context**: 分类/归档先持久化文件与事实并立即返回（`deferContextRebuild: true`）；Context 保持 `dirty`，由页面后台请求独立重建。分类 API 与归档 API 均返回 `contextRebuildPending`，前端收到后异步 POST `/api/project-context`
+6. **增量重评估**: 加文件触发的 Context 重建只重评估受影响文档（被新 Context 引用、本轮变更、同文档类型或同当事方）；删除文件或手动重建时自动升级为全量重评估
 
 ## 文件夹结构（阶段文件夹）
 ```

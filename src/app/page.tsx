@@ -217,6 +217,7 @@ interface ClassifyResult {
   performance?: ProcessingPerformance;
   agentPending?: boolean;
   rulePreliminary?: boolean;
+  contextRebuildPending?: boolean;
 }
 
 const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
@@ -2714,6 +2715,52 @@ export default function Home() {
               : existing;
           });
         });
+
+        if (result.contextRebuildPending && selectedProjectId) {
+          setProjectContextRebuilding(true);
+          setProjectContextError(null);
+          void fetch('/api/project-context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: selectedProjectId }),
+          })
+            .then(async rebuildResponse => {
+              const rebuildData = await rebuildResponse.json().catch(() => null);
+              if (!rebuildResponse.ok) {
+                throw new Error(
+                  rebuildData?.error || '分类成功，但后台 Context 更新失败'
+                );
+              }
+              const rebuiltContext = rebuildData?.projectContext ?? null;
+              setProjectContextState(rebuiltContext);
+              const rebuiltDecisions = new Map<string, AgentDecisionResult>(
+                (rebuiltContext?.reEvaluatedDocuments ?? []).map(
+                  (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
+                    document.sourcePath,
+                    document.agentDecision,
+                  ] as const
+                )
+              );
+              if (rebuiltDecisions.size > 0) {
+                setResults(current =>
+                  current.map(item => {
+                    const rebuilt = rebuiltDecisions.get(
+                      item.sourcePath || item.fileName
+                    );
+                    return rebuilt ? { ...item, agentDecision: rebuilt } : item;
+                  })
+                );
+              }
+            })
+            .catch(error => {
+              setProjectContextError(
+                error instanceof Error
+                  ? error.message
+                  : '分类成功，但后台 Context 更新失败'
+              );
+            })
+            .finally(() => setProjectContextRebuilding(false));
+        }
       } catch (error) {
         if (chunkUploadId) {
           await fetch('/api/uploads/chunk', {

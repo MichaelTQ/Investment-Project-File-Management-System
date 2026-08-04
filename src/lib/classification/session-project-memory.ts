@@ -513,16 +513,26 @@ function memoryView(params: {
   };
 }
 
+type ReevaluationMode = 'incremental' | 'full';
+
 async function rebuildLoadedProject(
   loaded: LoadedProject,
   options: ProjectMemoryMutationContext = {},
-  skipPersistSourcePath?: string
+  skipPersistSourcePath?: string,
+  reevaluationMode: ReevaluationMode = 'full'
 ): Promise<{
   synthesis: ProjectContextSynthesisResult;
   reEvaluatedDocuments: ReEvaluatedDocument[];
 }> {
   const { project } = loaded;
   const pendingChanges = project.contextState.pendingChanges;
+  // 如果本轮变更包含删除文件，影响面较大，自动升级为全量重评估。
+  const effectiveReevaluationMode: ReevaluationMode =
+    reevaluationMode === 'incremental' &&
+    pendingChanges &&
+    pendingChanges.deleted.length > 0
+      ? 'full'
+      : reevaluationMode;
   const now = Math.max(
     Date.now(),
     (project.contextState.updatedAt ?? project.contextState.lastAttemptAt ?? 0) + 1
@@ -577,7 +587,72 @@ async function rebuildLoadedProject(
 
   const reEvaluatedDocuments: ReEvaluatedDocument[] = [];
   const availableDocuments = combinedRelatedDocuments(project, []);
-  for (const record of project.documents.values()) {
+
+  // 增量模式：只重评估受新 Context 影响的文档；
+  // 全量模式（删除/手动重建）：重评估所有文档。
+  const documentsToReevaluate = (() => {
+    if (effectiveReevaluationMode === 'full') return [...project.documents.values()];
+
+    // 增量模式：从新 Context 中提取被引用的 sourcePath
+    const contextReferencedPaths = new Set<string>();
+    for (const event of project.context?.timeline ?? []) {
+      for (const path of event.evidenceFiles) {
+        contextReferencedPaths.add(normalizeSourcePath(path));
+      }
+    }
+    for (const relation of project.context?.documentRelations ?? []) {
+      contextReferencedPaths.add(normalizeSourcePath(relation.fromSourcePath));
+      contextReferencedPaths.add(normalizeSourcePath(relation.toSourcePath));
+    }
+    for (const hypothesis of project.context?.stageHypotheses ?? []) {
+      for (const path of hypothesis.evidenceFiles) {
+        contextReferencedPaths.add(normalizeSourcePath(path));
+      }
+    }
+    for (const conflict of project.context?.conflicts ?? []) {
+      for (const path of conflict.evidenceFiles) {
+        contextReferencedPaths.add(normalizeSourcePath(path));
+      }
+    }
+
+    // 本轮新增/移动的文件
+    const changedPaths = new Set<string>([
+      ...(pendingChanges?.added ?? []).map(normalizeSourcePath),
+      ...(pendingChanges?.moved ?? []).map(normalizeSourcePath),
+    ]);
+
+    // 筛选受影响的文档：被新 Context 引用、本轮变更、或与新 Context
+    // 中被引用文件同 documentType / 同当事方的文档
+    const referencedTypes = new Set<string>();
+    const referencedParties = new Set<string>();
+    for (const record of project.documents.values()) {
+      if (
+        contextReferencedPaths.has(record.sourcePath) ||
+        changedPaths.has(record.sourcePath)
+      ) {
+        referencedTypes.add(record.facts.documentType);
+        for (const party of record.facts.parties) {
+          referencedParties.add(party.name);
+        }
+      }
+    }
+
+    return [...project.documents.values()].filter(record => {
+      // 被 Context 直接引用 → 重评估
+      if (contextReferencedPaths.has(record.sourcePath)) return true;
+      // 本轮变更的文件 → 重评估
+      if (changedPaths.has(record.sourcePath)) return true;
+      // 同文档类型 → 可能需要改判（如新旧章程）
+      if (referencedTypes.has(record.facts.documentType)) return true;
+      // 同当事方 → 可能受交易关系影响
+      if (record.facts.parties.some(party => referencedParties.has(party.name))) {
+        return true;
+      }
+      return false;
+    });
+  })();
+
+  for (const record of documentsToReevaluate) {
     const previousDecision = record.agentDecision;
     const decision = await runClassificationAgent({
       sourcePath: record.sourcePath,
@@ -627,7 +702,7 @@ export async function evaluateProjectDocumentCandidate(
       project.contextState.status === 'failed' ||
       (!project.context && project.documents.size > 0)
     ) {
-      rebuildResult = await rebuildLoadedProject(loaded, params);
+      rebuildResult = await rebuildLoadedProject(loaded, params, undefined, 'incremental');
     }
     const currentFacts = recoverDocumentType(sourcePath, params.facts);
     const availableDocuments = combinedRelatedDocuments(
@@ -721,7 +796,8 @@ export async function commitArchivedProjectDocument(
     const { synthesis, reEvaluatedDocuments } = await rebuildLoadedProject(
       loaded,
       params,
-      sourcePath
+      sourcePath,
+      'incremental'
     );
     const availableDocuments = combinedRelatedDocuments(project, []).filter(
       document => document.sourcePath !== sourcePath
