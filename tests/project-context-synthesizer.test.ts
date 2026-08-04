@@ -230,13 +230,14 @@ test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   assert.doesNotMatch(String(prompt[0]?.content), /"schemaVersion": 1/);
   assert.match(String(prompt[0]?.content), /这些是上限不是目标/);
   assert.match(String(prompt[0]?.content), /不是给人阅读的报告/);
-  assert.match(String(prompt[0]?.content), /每个 evidenceFiles 最多 4 个 sourcePath/);
+  assert.match(String(prompt[0]?.content), /每份输入文件都应至少出现在一个 timeline 事件/);
   assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 2560);
 });
 
-// 回归：evidenceFiles 曾无实际上限（每项 20 个路径），项目文档变多后输出随之膨胀，
-// 撞上 max_tokens 导致首轮作废并触发紧凑重试，总耗时反而翻倍。
-test('单个条目引用过多文件时在本地截断而不是让输出膨胀', async () => {
+// 回归：曾为压缩输出把 evidenceFiles 收到每项 4 个，导致多数文档在 Context 中
+// 不再被任何事件引用，decideWithProjectContext 的 evidenceFiles.includes(sourcePath)
+// 全部落空、得 0 分并转人工。evidenceFiles 是连接键，必须保证覆盖度。
+test('项目事件保留足够的 evidenceFiles 供下游按 sourcePath 检索', async () => {
   // 路径必须真实存在，否则会先被 validateEvidenceReferences 过滤掉，测不到截断本身。
   const manyDocuments = Array.from({ length: 15 }, (_, index) => ({
     sourcePath: `投资决策/证据${index}.pdf`,
@@ -276,7 +277,16 @@ test('单个条目引用过多文件时在本地截断而不是让输出膨胀',
   });
 
   assert.equal(result.llmCallCount, 1);
-  assert.equal(result.context.timeline[0]?.evidenceFiles.length, 4);
+  // 每份输入文档都必须仍能通过 evidenceFiles 被检索到，否则上下文决策会全部落空。
+  assert.equal(result.context.timeline[0]?.evidenceFiles.length, 15);
+  for (const document of manyDocuments) {
+    assert.ok(
+      result.context.timeline.some(event =>
+        event.evidenceFiles.includes(document.sourcePath)
+      ),
+      `${document.sourcePath} 未出现在任何项目事件的 evidenceFiles 中`
+    );
+  }
 });
 
 test('成功调用会保留输出体量与耗时诊断', async () => {

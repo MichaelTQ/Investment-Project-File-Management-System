@@ -30,10 +30,11 @@ export const GENERATED_CONTEXT_LIMITS = {
   titleCharacters: 30,
   explanationCharacters: 70,
   caveatCharacters: 100,
-  // 条目数固定不代表输出量固定：项目文档越多，模型越倾向在每个条目里引用更多
-  // sourcePath，而中文路径每条约 20 tokens。不限制这一项，输出会随项目规模
-  // 线性膨胀并撞上 max_tokens，触发整轮作废的紧凑重试。定位证据用不到全部文件。
-  evidenceFilesPerItem: 4,
+  // 不要为了省 token 收紧这一项。evidenceFiles 不是说明文字，而是文档与 Context
+  // 之间的连接键：decideWithProjectContext 靠 evidenceFiles.includes(sourcePath)
+  // 判断当前文件是否被项目事件关联。收窄它会让多数文档在 Context 中无法被引用，
+  // 上下文决策直接得 0 分并全部转人工。它的职责是覆盖度，不是简洁。
+  evidenceFilesPerItem: 20,
 } as const;
 
 export const ProjectTimelineEventSchema = z.object({
