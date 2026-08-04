@@ -21,7 +21,7 @@ export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 600;
 const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
-export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-lite-260215';
+export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-mini-260215';
 export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v3-compact';
 
 interface InvokeClient {

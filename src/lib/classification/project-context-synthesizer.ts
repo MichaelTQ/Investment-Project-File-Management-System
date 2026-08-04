@@ -17,7 +17,7 @@ import {
 
 export const PROJECT_CONTEXT_SYNTHESIZER_VERSION =
   'project-context-synthesizer-v5';
-export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-lite-260215';
+export const PROJECT_CONTEXT_MODEL = 'doubao-seed-2-0-mini-260215';
 
 const MAX_CONTEXT_DOCUMENTS = 100;
 const MAX_FACT_CARD_CHARACTERS = 32_000;
