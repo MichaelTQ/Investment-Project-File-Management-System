@@ -19,6 +19,7 @@ import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/do
 import {
   commitArchivedProjectDocument,
   forgetProjectDocumentByArchivedFileId,
+  forgetProjectDocumentsByFileName,
   markProjectContextDirty,
 } from "@/lib/classification/session-project-memory";
 
@@ -275,13 +276,22 @@ export async function DELETE(request: NextRequest) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
         try {
-          await forgetProjectDocumentByArchivedFileId(
+          const removed = await forgetProjectDocumentByArchivedFileId(
             deleted.projectId,
             deleted.archivedFileId,
             {
               customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
             }
           );
+          if (!removed && deleted.originalName) {
+            await forgetProjectDocumentsByFileName(
+              deleted.projectId,
+              deleted.originalName,
+              {
+                customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+              }
+            );
+          }
         } catch (memoryError) {
           console.error('Delete archive memory cleanup failed:', memoryError);
         }
