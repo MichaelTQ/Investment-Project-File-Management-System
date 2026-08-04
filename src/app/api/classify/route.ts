@@ -13,6 +13,7 @@ import {
   DOCUMENT_FACTS_EXTRACTOR_VERSION,
   DOCUMENT_FACTS_MODEL,
   extractDocumentFacts,
+  getCachedDocumentFacts,
 } from '@/lib/classification/fact-extractor';
 import {
   invokeChatCompletion,
@@ -35,6 +36,7 @@ import {
   runClassificationAgent,
   type ClassificationAgentResult,
 } from '@/lib/classification/classification-agent';
+import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
 import {
   commitArchivedProjectDocument,
   evaluateProjectDocumentCandidate,
@@ -42,6 +44,7 @@ import {
 } from '@/lib/classification/session-project-memory';
 import {
   createClassificationDecisionRecord,
+  createDocumentFingerprint,
   linkDocumentFactToArchivedFile,
   upsertDocumentFactsRecord,
 } from '@/lib/project-memory';
@@ -62,6 +65,7 @@ const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
 interface PhaseTiming {
   phase: string;
   durationMs: number;
+  parentPhase?: string;
 }
 
 interface ProcessingPerformance {
@@ -78,6 +82,7 @@ interface ClassifyProcess {
     status: 'success' | 'fallback';
     error?: string;
     modelCall?: ModelCallDiagnostics;
+    cacheHit?: boolean;
     persistence?: {
       requested: boolean;
       status: 'success' | 'skipped' | 'failed';
@@ -265,12 +270,20 @@ export async function POST(request: NextRequest) {
   const requestStartedAt = Date.now();
   const phaseTimings: PhaseTiming[] = [];
   const modelCalls: ModelCallDiagnostics[] = [];
-  const measurePhase = async <T>(phase: string, action: () => Promise<T>) => {
+  const measurePhase = async <T>(
+    phase: string,
+    action: () => Promise<T>,
+    parentPhase?: string
+  ) => {
     const startedAt = Date.now();
     try {
       return await action();
     } finally {
-      phaseTimings.push({ phase, durationMs: Date.now() - startedAt });
+      phaseTimings.push({
+        phase,
+        durationMs: Date.now() - startedAt,
+        parentPhase,
+      });
     }
   };
   try {
@@ -419,33 +432,68 @@ export async function POST(request: NextRequest) {
     let contentPreview = '';
     let imageDataUrl: string | undefined;
     let fileBuffer: Buffer | undefined;
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    const mimeType = suppliedMimeType || getMimeType(extension);
 
-    await measurePhase('read_and_parse_file', async () => {
-      try {
-      const extension = fileName.split('.').pop()?.toLowerCase() || '';
-      const mimeType = suppliedMimeType || getMimeType(extension);
+    if (file) {
+      fileBuffer = await measurePhase('prepare_file_buffer', async () =>
+        Buffer.from(await file!.arrayBuffer())
+      );
+    }
+    const fingerprint = createDocumentFingerprint({
+      fileBuffer,
+      storageKey: storageKey || undefined,
+      originalName: fileName,
+      fileSize,
+      mimeType,
+    });
+    const factCacheKey = `${projectId || 'unscoped'}:${fingerprint.kind}:${fingerprint.value}`;
+    const cachedExtraction = extractFacts
+      ? getCachedDocumentFacts(factCacheKey)
+      : null;
+    const canSkipContentParsing = Boolean(cachedExtraction && !runLegacyDecision);
 
+    if (canSkipContentParsing) {
+      contentText = '[相同文件事实已从进程缓存复用，跳过重复文件解析]';
+      contentPreview = contentText;
+      phaseTimings.push({ phase: 'read_and_parse_file', durationMs: 0 });
+      phaseTimings.push({
+        phase: 'reuse_document_facts_cache',
+        durationMs: 0,
+        parentPhase: 'read_and_parse_file',
+      });
+    } else {
+      await measurePhase('read_and_parse_file', async () => {
+        try {
       // 大文件（>5MB）的 multipart 上传：先上传 S3 临时目录，用签名 URL 替代 Base64 Data URL
       // 避免 Base64 膨胀（12MB → ~17MB 字符串）导致 FetchClient 超时 502
       const isLargeMultipart = !storageKey && file && fileSize > LARGE_FILE_THRESHOLD;
       if (isLargeMultipart && projectId) {
-        const tempBuffer = Buffer.from(await file!.arrayBuffer());
-        storageKey = await uploadTempFileFromBuffer({
-          buffer: tempBuffer,
-          fileName,
-          mimeType,
-          projectId,
-        });
-        fileBuffer = tempBuffer; // 缓存 buffer，后续归档时复用
+        storageKey = await measurePhase(
+          'upload_temporary_file',
+          () =>
+            uploadTempFileFromBuffer({
+              buffer: fileBuffer!,
+              fileName,
+              mimeType,
+              projectId,
+            }),
+          'read_and_parse_file'
+        );
       }
 
       const ensureFileBuffer = async () => {
         if (!fileBuffer) {
-          fileBuffer = storageKey
-            ? await readStoredFile(storageKey)
-            : Buffer.from(await file!.arrayBuffer());
+          fileBuffer = await measurePhase(
+            'read_file_buffer',
+            () =>
+              storageKey
+                ? readStoredFile(storageKey)
+                : file!.arrayBuffer().then(value => Buffer.from(value)),
+            'read_and_parse_file'
+          );
         }
-        return fileBuffer;
+        return fileBuffer!;
       };
 
       if (['txt', 'md', 'csv', 'json', 'xml'].includes(extension)) {
@@ -453,56 +501,93 @@ export async function POST(request: NextRequest) {
       } else if (isImageFile(extension)) {
         // S3 文件直接使用短期签名 URL，旧流程仍兼容 Data URL。
         imageDataUrl = storageKey
-          ? await getStoredFileUrl(storageKey)
+          ? await measurePhase(
+              'generate_signed_file_url',
+              () => getStoredFileUrl(storageKey),
+              'read_and_parse_file'
+            )
           : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
         contentText = `[图片文件] 格式: ${extension.toUpperCase()}, 文件名: ${fileName}。请结合原始图片的场景、物体和可见文字进行分类。`;
       } else {
-        // 已上传文件通过签名 URL 交给解析服务，避免把大文件扩展成 Base64。
-        const sourceUrl = storageKey
-          ? await getStoredFileUrl(storageKey)
-          : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
-
-        const fetchConfig = new Config({ timeout: 120_000, retryTimes: 1 });
-        const fetchClient = new FetchClient(fetchConfig, customHeaders);
-
-        try {
-          const fetchResponse = await fetchClient.fetch(sourceUrl);
-          const textItems = fetchResponse.content.filter(item => item.type === 'text');
-          contentText = textItems.map(item => item.text || '').join('\n');
-
-          if (extension === 'pdf' && contentText.trim().length < 30) {
-            const pageImageUrls = fetchResponse.content
-              .filter(item => item.type === 'image')
-              .map(item =>
-                item.image?.image_url ||
-                item.image?.display_url ||
-                item.image?.thumbnail_display_url ||
-                item.url ||
-                ''
-              )
-              .filter((url): url is string => Boolean(url));
-
-            const scanned = await extractScannedPdfText(
-              pageImageUrls,
-              fileName,
-              customHeaders
+        if (extension === 'pdf' && fileSize <= 25 * 1024 * 1024) {
+          try {
+            const localPdfBuffer = await ensureFileBuffer();
+            const localPdf = await measurePhase(
+              'extract_local_pdf_text',
+              () => extractLocalPdfText(localPdfBuffer),
+              'read_and_parse_file'
             );
-            modelCalls.push(...scanned.modelCalls);
-            contentText = scanned.text || fileName;
+            if (localPdf.text.trim().length >= 30) {
+              contentText = localPdf.text;
+            }
+          } catch (localPdfError) {
+            console.warn('Local PDF text extraction failed:', localPdfError);
           }
-        } catch (fetchError) {
-          console.error('FetchClient error:', fetchError);
-          contentText = fileName;
+        }
+
+        if (contentText.trim().length < 30) {
+          // 扫描 PDF、Office 文件和本地解析失败的 PDF 回退到 Coze 解析服务。
+          const sourceUrl = storageKey
+            ? await measurePhase(
+                'generate_signed_file_url',
+                () => getStoredFileUrl(storageKey),
+                'read_and_parse_file'
+              )
+            : `data:${mimeType};base64,${(await ensureFileBuffer()).toString('base64')}`;
+          const fetchConfig = new Config({ timeout: 120_000, retryTimes: 1 });
+          const fetchClient = new FetchClient(fetchConfig, customHeaders);
+
+          try {
+            const fetchResponse = await measurePhase(
+              'fetch_document_content',
+              () => fetchClient.fetch(sourceUrl),
+              'read_and_parse_file'
+            );
+            const textItems = fetchResponse.content.filter(
+              item => item.type === 'text'
+            );
+            contentText = textItems.map(item => item.text || '').join('\n');
+
+            if (extension === 'pdf' && contentText.trim().length < 30) {
+              const pageImageUrls = fetchResponse.content
+                .filter(item => item.type === 'image')
+                .map(item =>
+                  item.image?.image_url ||
+                  item.image?.display_url ||
+                  item.image?.thumbnail_display_url ||
+                  item.url ||
+                  ''
+                )
+                .filter((url): url is string => Boolean(url));
+
+              const scanned = await measurePhase(
+                'ocr_scanned_pdf',
+                () =>
+                  extractScannedPdfText(
+                    pageImageUrls,
+                    fileName,
+                    customHeaders
+                  ),
+                'read_and_parse_file'
+              );
+              modelCalls.push(...scanned.modelCalls);
+              contentText = scanned.text || fileName;
+            }
+          } catch (fetchError) {
+            console.error('FetchClient error:', fetchError);
+            contentText = fileName;
+          }
         }
       }
 
       contentPreview = contentText.slice(0, 500) + (contentText.length > 500 ? '...' : '');
 
-      } catch (readError) {
-        console.error('File read error:', readError);
-        contentText = fileName;
-      }
-    });
+        } catch (readError) {
+          console.error('File read error:', readError);
+          contentText = fileName;
+        }
+      });
+    }
 
     // Shadow mode：先抽取结构化事实，但暂不改变当前分类和自动归档结论。
     let documentFacts: DocumentFacts | undefined;
@@ -527,6 +612,7 @@ export async function POST(request: NextRequest) {
           projectName: project?.name || '',
           customHeaders,
           imageDataUrl,
+          cacheKey: factCacheKey,
         })
       );
       if (extraction.modelCall) modelCalls.push(extraction.modelCall);
@@ -536,6 +622,7 @@ export async function POST(request: NextRequest) {
         status: extraction.status,
         error: extraction.error,
         modelCall: extraction.modelCall,
+        cacheHit: extraction.cacheHit,
       };
 
       if (persistFacts) {

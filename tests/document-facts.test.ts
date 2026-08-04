@@ -9,6 +9,8 @@ import {
 } from '../src/lib/classification/document-facts';
 import {
   buildDocumentFactsPrompt,
+  clearDocumentFactsCacheForTests,
+  DOCUMENT_FACTS_MAX_OUTPUT_TOKENS,
   extractDocumentFacts,
 } from '../src/lib/classification/fact-extractor';
 
@@ -111,9 +113,9 @@ test('局部字段缺失或超长时保留其余事实而不是整份降级', ()
 
   assert.equal(facts.documentType, 'company_charter');
   assert.equal(facts.dates[1]?.date, null);
-  assert.equal(facts.transactionChanges[0]?.after?.length, 120);
+  assert.equal(facts.transactionChanges[0]?.after?.length, 100);
   assert.deepEqual(facts.explicitStageClues, []);
-  assert.match(facts.warnings.join('\n'), /过长的交易变化值已截断/);
+  assert.match(facts.warnings.join('\n'), /截断至 100/);
   assert.match(facts.warnings.join('\n'), /explicitStageClues/);
 });
 
@@ -138,7 +140,10 @@ test('事实抽取 Prompt 明确禁止执行归档分类并限制正文长度', 
   });
 
   assert.match(String(messages[0].content), /不要选择归档目录/);
-  assert.ok(String(messages[1].content).length < 9_000);
+  assert.match(String(messages[0].content), /最小事实集合/);
+  assert.match(String(messages[0].content), /同一事实只能出现一次/);
+  assert.ok(String(messages[1].content).length < 7_000);
+  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 1_200);
 });
 
 test('事实抽取器支持注入客户端并对非法响应安全降级', async () => {
@@ -170,4 +175,32 @@ test('事实抽取器支持注入客户端并对非法响应安全降级', async
   assert.equal(fallback.status, 'fallback');
   assert.equal(fallback.facts.extractionConfidence, 0);
   assert.match(fallback.error ?? '', /Schema/);
+});
+
+test('相同内容指纹复用成功事实且不会再次调用模型', async () => {
+  clearDocumentFactsCacheForTests();
+  let calls = 0;
+  const client = {
+    invoke: async () => {
+      calls += 1;
+      return { content: JSON.stringify(validFacts) };
+    },
+  };
+  const params = {
+    fileName: '公司章程.pdf',
+    contentText: '注册资本增加至人民币13.04027万元',
+    projectName: '君柔',
+    customHeaders: {},
+    cacheKey: 'project-a:content_sha256:same-file',
+    client,
+  };
+
+  const first = await extractDocumentFacts(params);
+  const second = await extractDocumentFacts(params);
+
+  assert.equal(first.cacheHit, undefined);
+  assert.equal(second.cacheHit, true);
+  assert.equal(second.modelCall, undefined);
+  assert.equal(second.facts.documentType, 'company_charter');
+  assert.equal(calls, 1);
 });

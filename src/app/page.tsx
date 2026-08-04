@@ -97,12 +97,17 @@ interface ModelCallDiagnostics {
   outputTokens: number | null;
   finishReason: string | null;
   maxOutputTokens: number;
+  responseHeadersDurationMs?: number;
   durationMs: number;
 }
 
 interface ProcessingPerformance {
   totalDurationMs: number;
-  phases: Array<{ phase: string; durationMs: number }>;
+  phases: Array<{
+    phase: string;
+    durationMs: number;
+    parentPhase?: string;
+  }>;
   modelCalls: ModelCallDiagnostics[];
 }
 
@@ -468,15 +473,31 @@ function AgentDecisionPanel({
           <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
             <p>
               {performance.phases
+                .filter(item => !item.parentPhase)
                 .map(item => `${item.phase} ${item.durationMs}ms`)
                 .join('；') || '暂无阶段数据'}
             </p>
+            {performance.phases.some(item => item.parentPhase) && (
+              <p>
+                子阶段：
+                {performance.phases
+                  .filter(item => item.parentPhase)
+                  .map(
+                    item =>
+                      `${item.parentPhase}.${item.phase} ${item.durationMs}ms`
+                  )
+                  .join('；')}
+              </p>
+            )}
             {performance.modelCalls.map((call, index) => (
               <p key={`${call.model}-${index}`} className="break-words">
                 LLM {index + 1}：{call.model}，输入 {call.inputCharacters} 字符，
                 输出 {call.outputCharacters} 字符/
                 {call.outputTokens ?? '未知'} tokens，结束原因{' '}
-                {call.finishReason ?? '未知'}，耗时 {call.durationMs}ms。
+                {call.finishReason ?? '未知'}，完整耗时 {call.durationMs}ms
+                {call.responseHeadersDurationMs === undefined
+                  ? '。'
+                  : `（响应头 ${call.responseHeadersDurationMs}ms，后续流式生成 ${Math.max(0, call.durationMs - call.responseHeadersDurationMs)}ms）。`}
               </p>
             ))}
           </div>
@@ -2321,9 +2342,16 @@ export default function Home() {
                     phases: [
                       ...(result.performance?.phases ?? []),
                       ...data.performance.phases.map(
-                        (item: { phase: string; durationMs: number }) => ({
+                        (item: {
+                          phase: string;
+                          durationMs: number;
+                          parentPhase?: string;
+                        }) => ({
                           ...item,
                           phase: `archive.${item.phase}`,
+                          parentPhase: item.parentPhase
+                            ? `archive.${item.parentPhase}`
+                            : undefined,
                         })
                       ),
                     ],

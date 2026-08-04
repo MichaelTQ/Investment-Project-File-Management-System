@@ -89,6 +89,7 @@ export interface DocumentFactsExtractionResult {
   facts: DocumentFacts;
   modelCall?: ModelCallDiagnostics;
   error?: string;
+  cacheHit?: boolean;
 }
 
 export function extractFirstJsonObject(value: string): string | null {
@@ -200,7 +201,7 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   const repairs = new Set<string>();
 
   const dates = (Array.isArray(value.dates) ? value.dates : [])
-    .slice(0, 8)
+    .slice(0, 4)
     .flatMap(item => {
       if (!isRecord(item)) {
         repairs.add('已忽略无法解析的日期项');
@@ -222,7 +223,7 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   if (!Array.isArray(value.dates)) repairs.add('缺失的 dates 已补为空数组');
 
   const parties = (Array.isArray(value.parties) ? value.parties : [])
-    .slice(0, 15)
+    .slice(0, 8)
     .flatMap(item => {
       if (!isRecord(item)) return [];
       const name = normalizedString(item.name, 200);
@@ -238,7 +239,7 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
   const transactionChanges = (
     Array.isArray(value.transactionChanges) ? value.transactionChanges : []
   )
-    .slice(0, 10)
+    .slice(0, 6)
     .flatMap(item => {
       if (!isRecord(item)) return [];
       const field = normalizedString(item.field, 100);
@@ -248,16 +249,16 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
         return [];
       }
       if (
-        (typeof item.before === 'string' && item.before.trim().length > 120) ||
-        (typeof item.after === 'string' && item.after.trim().length > 120)
+        (typeof item.before === 'string' && item.before.trim().length > 100) ||
+        (typeof item.after === 'string' && item.after.trim().length > 100)
       ) {
-        repairs.add('过长的交易变化值已截断至 120 字符');
+        repairs.add('过长的交易变化值已截断至 100 字符');
       }
       return [
         {
           field,
-            before: nullableString(item.before, 120),
-            after: nullableString(item.after, 120),
+            before: nullableString(item.before, 100),
+            after: nullableString(item.after, 100),
           evidence,
         },
       ];
@@ -285,15 +286,15 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
     repairs.add('事实完整度已校正到 0-100 的整数范围');
   }
 
-  const explicitStageClues = stringArray(value.explicitStageClues, 8, 160);
+  const explicitStageClues = stringArray(value.explicitStageClues, 4, 120);
   if (!Array.isArray(value.explicitStageClues)) {
     repairs.add('缺失的 explicitStageClues 已补为空数组');
   }
-  const evidenceQuotes = stringArray(value.evidenceQuotes, 8, 160);
+  const evidenceQuotes = stringArray(value.evidenceQuotes, 4, 120);
   if (!Array.isArray(value.evidenceQuotes)) {
     repairs.add('缺失的 evidenceQuotes 已补为空数组');
   }
-  const existingWarnings = stringArray(value.warnings, 5, 160);
+  const existingWarnings = stringArray(value.warnings, 3, 120);
   const repairWarnings = [...repairs].map(message => `结构化输出已校正：${message}`);
 
   return {
