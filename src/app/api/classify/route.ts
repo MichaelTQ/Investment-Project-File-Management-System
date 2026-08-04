@@ -119,9 +119,9 @@ interface ClassifyProcess {
     relatedDocumentCount?: number;
     reEvaluatedCount?: number;
     revision?: number;
-    contextStatus?: NonNullable<
-      ProjectSessionMemoryView['contextSynthesis']
-    >['status'];
+    contextStatus?:
+      | NonNullable<ProjectSessionMemoryView['contextSynthesis']>['status']
+      | ProjectSessionMemoryView['contextState']['status'];
     contextLlmCallCount?: number;
     contextEventCount?: number;
     contextRelationCount?: number;
@@ -166,6 +166,7 @@ interface ClassifyResult {
     folderPath: string[];
   };
   performance?: ProcessingPerformance;
+  contextRebuildPending?: boolean;
 }
 
 function parseOptionalJson(value: unknown): unknown {
@@ -917,7 +918,7 @@ export async function POST(request: NextRequest) {
           const factsToCommit = documentFacts;
           try {
             const committed = await measurePhase(
-              'commit_and_rebuild_context',
+              'commit_context_pending',
               () => commitArchivedProjectDocument({
                 projectId: project.id,
                 projectName: project.name,
@@ -925,6 +926,7 @@ export async function POST(request: NextRequest) {
                 facts: factsToCommit,
                 archivedFileId: archived.id,
                 customHeaders,
+                deferContextRebuild: true,
               })
             );
             const { currentDecision: _committedDecision, ...committedView } =
@@ -934,9 +936,6 @@ export async function POST(request: NextRequest) {
               projectSessionMemory?.decisionContextVersion;
             projectSessionMemory = committedView;
             result.projectSessionMemory = committedView;
-            modelCalls.push(
-              ...(committedView.contextSynthesis?.modelCalls ?? [])
-            );
             projectSessionMemoryStep = {
               enabled: true,
               status: 'success',
@@ -945,16 +944,16 @@ export async function POST(request: NextRequest) {
               persistenceWarning: committedView.persistenceWarning,
               documentCount: committedView.documentCount,
               relatedDocumentCount: committedView.relatedDocumentCount,
-              reEvaluatedCount: committedView.reEvaluatedDocuments.length,
+              reEvaluatedCount: 0,
               revision: committedView.revision,
-              contextStatus: committedView.contextSynthesis?.status,
-              contextLlmCallCount:
-                committedView.contextSynthesis?.llmCallCount,
-              contextEventCount: committedView.contextSynthesis?.eventCount,
+              contextStatus: committedView.contextState.status,
+              contextLlmCallCount: 0,
+              contextEventCount:
+                committedView.projectContext?.timeline.length ?? 0,
               contextRelationCount:
-                committedView.contextSynthesis?.relationCount,
+                committedView.projectContext?.documentRelations?.length ?? 0,
               latestEvidencedStage:
-                committedView.contextSynthesis?.latestEvidencedStage,
+                committedView.projectContext?.latestEvidencedStage,
             };
           } catch (contextCommitError) {
             console.error(
@@ -1027,6 +1026,9 @@ export async function POST(request: NextRequest) {
       phases: phaseTimings,
       modelCalls,
     };
+    result.contextRebuildPending = Boolean(
+      documentFacts && result.archived && result.projectSessionMemory
+    );
     return NextResponse.json(result);
 
   } catch (error) {
