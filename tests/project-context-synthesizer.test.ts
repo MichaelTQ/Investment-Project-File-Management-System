@@ -228,7 +228,9 @@ test('综合提示明确禁止使用上传顺序推断项目阶段', () => {
   assert.match(String(prompt[0]?.content), /不得逐份复述事实卡片/);
   assert.match(String(prompt[0]?.content), /无缩进的紧凑 JSON/);
   assert.doesNotMatch(String(prompt[0]?.content), /"schemaVersion": 1/);
-  assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 3072);
+  assert.match(String(prompt[0]?.content), /这些是上限不是目标/);
+  assert.match(String(prompt[0]?.content), /不是给人阅读的报告/);
+  assert.equal(PROJECT_CONTEXT_MAX_OUTPUT_TOKENS, 1536);
 });
 
 test('成功调用会保留输出体量与耗时诊断', async () => {
@@ -255,7 +257,7 @@ test('成功调用会保留输出体量与耗时诊断', async () => {
   assert.equal(result.modelCalls.length, 1);
   assert.equal(result.modelCalls[0]?.outputTokens, 120);
   assert.equal(result.modelCalls[0]?.finishReason, 'stop');
-  assert.equal(result.modelCalls[0]?.maxOutputTokens, 3072);
+  assert.equal(result.modelCalls[0]?.maxOutputTokens, 1536);
   assert.ok((result.modelCalls[0]?.outputCharacters ?? 0) > 0);
 });
 
@@ -298,12 +300,12 @@ test('模型返回过长字段时本地压缩且不产生第二次调用', async
 
   assert.equal(invocationCount, 1);
   assert.equal(result.llmCallCount, 1);
-  assert.equal(result.context.importantCaveat?.length, 200);
-  assert.equal(result.context.timeline[0]?.title.length, 60);
-  assert.equal(result.context.timeline[0]?.evidence.length, 160);
-  assert.equal(result.context.openQuestions?.length, 5);
+  assert.equal(result.context.importantCaveat?.length, 100);
+  assert.equal(result.context.timeline[0]?.title.length, 30);
+  assert.equal(result.context.timeline[0]?.evidence.length, 70);
+  assert.equal(result.context.openQuestions?.length, 3);
   assert.ok(
-    result.context.openQuestions?.every(question => question.length <= 160)
+    result.context.openQuestions?.every(question => question.length <= 70)
   );
   assert.match(
     result.context.synthesisWarnings?.join('\n') ?? '',
