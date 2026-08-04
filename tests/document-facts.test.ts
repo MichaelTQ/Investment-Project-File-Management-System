@@ -258,3 +258,62 @@ test('相同内容指纹复用成功事实且不会再次调用模型', async ()
   assert.equal(second.facts.documentType, 'company_charter');
   assert.equal(calls, 1);
 });
+
+test('写成文字的空值被还原为空，不会伪造出交易变化', () => {
+  // 模型在紧凑元组协议里常把空值写成字符串 "null"。若原样存下，
+  // "null → 11.73624万元" 会被下游读成"发生了一次增资"，把一份只是
+  // 陈述注册资本的交易前章程误判成交易后版本。这是实测发生过的误判。
+  const facts = parseCompactDocumentFactsResponse(
+    JSON.stringify({
+      dt: 'company_charter',
+      r: '公司章程',
+      t: '君柔科技公司章程',
+      n: 'N/A',
+      v: '无',
+      c: [['注册资本', 'null', '11.73624万元', '章程载明注册资本11.73624万元']],
+      q: 't',
+      x: 85,
+      d: [],
+      p: [],
+      g: [],
+      e: [],
+      w: [],
+    })
+  );
+
+  assert.equal(facts.transactionChanges[0].before, null);
+  assert.equal(facts.transactionChanges[0].after, '11.73624万元');
+  assert.equal(facts.documentNumber, null);
+  assert.equal(facts.version, null);
+  assert.equal(
+    facts.warnings.some(warning => warning.includes('写成文字的空值')),
+    true
+  );
+});
+
+test('真实的变更前后值不受空值还原影响', () => {
+  const facts = parseCompactDocumentFactsResponse(
+    JSON.stringify({
+      dt: 'company_charter',
+      r: '公司章程',
+      t: '君柔科技公司章程',
+      c: [
+        ['注册资本', '11.73624万元', '13.04027万元', '由11.73624万元增加至13.04027万元'],
+      ],
+      q: 't',
+      x: 90,
+      d: [],
+      p: [],
+      g: [],
+      e: [],
+      w: [],
+    })
+  );
+
+  assert.equal(facts.transactionChanges[0].before, '11.73624万元');
+  assert.equal(facts.transactionChanges[0].after, '13.04027万元');
+  assert.equal(
+    facts.warnings.some(warning => warning.includes('写成文字的空值')),
+    false
+  );
+});

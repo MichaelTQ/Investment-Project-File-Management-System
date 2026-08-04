@@ -1,7 +1,31 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseLlmStageDecisionResponse } from '../src/lib/classification/llm-stage-decision';
+import {
+  buildDecisionFromParsed as decisionFromParsedForTests,
+  parseLlmStageDecisionResponse,
+} from '../src/lib/classification/llm-stage-decision';
+import type { DocumentFacts } from '../src/lib/classification/document-facts';
+
+function healthyFacts(): DocumentFacts {
+  return {
+    schemaVersion: 1,
+    documentType: 'company_charter',
+    rawDocumentType: '公司章程',
+    title: '君柔科技公司章程',
+    documentNumber: null,
+    version: null,
+    dates: [],
+    parties: [],
+    signStatus: 'sealed',
+    transactionChanges: [],
+    explicitStageClues: [],
+    evidenceQuotes: [],
+    warnings: [],
+    sourceQuality: 'text',
+    extractionConfidence: 90,
+  };
+}
 
 test('解析模型返回的阶段判断', () => {
   const parsed = parseLlmStageDecisionResponse(
@@ -60,4 +84,52 @@ test('响应中没有 JSON 对象时报错', () => {
     () => parseLlmStageDecisionResponse('模型拒绝回答。'),
     /没有合法 JSON 对象/
   );
+});
+
+test('模型自报矛盾时强制转人工，高把握也不放行', () => {
+  // 实测出现过的失败形态：模型标注了与关联文件的金额矛盾，同时给 85 分并判错。
+  const decided = decisionFromParsedForTests(
+    {
+      stage: 'investment_execution',
+      confidence: 85,
+      review: false,
+      reasoning: '注册资本增至11.73624万元',
+      evidence: ['存在增资变化'],
+      contradictions: ['存在注册资本金额与关联文件矛盾的情况'],
+    },
+    healthyFacts()
+  );
+  assert.equal(decided.status, 'decided');
+  assert.equal(decided.selectedFolder?.businessStage, 'investment_execution');
+  assert.equal(decided.requiresHumanReview, true);
+});
+
+test('没有矛盾且事实健康时不会无故转人工', () => {
+  const decided = decisionFromParsedForTests(
+    {
+      stage: 'due_diligence',
+      confidence: 80,
+      review: false,
+      reasoning: '尽职调查报告',
+      evidence: ['标题为尽职调查报告'],
+      contradictions: [],
+    },
+    healthyFacts()
+  );
+  assert.equal(decided.requiresHumanReview, false);
+});
+
+test('事实仅来自文件名时强制转人工，模型给高分也不放行', () => {
+  const decided = decisionFromParsedForTests(
+    {
+      stage: 'initiation',
+      confidence: 95,
+      review: false,
+      reasoning: '文件名含立项',
+      evidence: [],
+      contradictions: [],
+    },
+    { ...healthyFacts(), sourceQuality: 'filename_only' }
+  );
+  assert.equal(decided.requiresHumanReview, true);
 });

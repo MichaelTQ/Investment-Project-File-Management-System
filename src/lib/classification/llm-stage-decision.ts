@@ -134,28 +134,45 @@ function projectContextBrief(
 }
 
 function relatedDocumentsBrief(
-  documents: RelatedDocumentFacts[] | undefined
+  documents: RelatedDocumentFacts[] | undefined,
+  currentType: DocumentFacts['documentType']
 ): string {
   if (!documents || documents.length === 0) {
     return '没有提供同项目关联文件。';
   }
-  return documents
+
+  const sameTypeCount = documents.filter(
+    item => item.facts.documentType === currentType
+  ).length;
+  const header =
+    sameTypeCount > 0
+      ? `注意：其中 ${sameTypeCount} 份与当前文件类型相同，必须逐一比对关键数字后才能下判断。\n`
+      : '';
+
+  const body = documents
     .map(item => {
+      const sameType = item.facts.documentType === currentType;
       const changes = item.facts.transactionChanges
         .map(
           change =>
-            `${change.field} ${change.before ?? '未知'} → ${change.after ?? '未知'}`
+            `${change.field} ${change.before ?? '未写明'} → ${change.after ?? '未写明'}`
         )
         .join('；');
+      const capitalQuotes = item.facts.evidenceQuotes.filter(quote =>
+        quote.includes('注册资本')
+      );
       return [
-        `- ${item.sourcePath}`,
+        `- ${item.sourcePath}${sameType ? '  ★与当前文件同类型' : ''}`,
         `  类型：${item.facts.documentType}，标题：${item.facts.title}`,
         changes ? `  交易变化：${changes}` : '',
+        capitalQuotes.length > 0 ? `  关键数字：${capitalQuotes.join('；')}` : '',
       ]
         .filter(Boolean)
         .join('\n');
     })
     .join('\n');
+
+  return `${header}${body}`;
 }
 
 function buildPrompt(params: LlmStageDecisionParams): Message[] {
@@ -168,9 +185,12 @@ ${STAGE_GUIDE}
 1. 以文档事实和项目时间线为准，不要只看文件名。文件名可能不含任何阶段信息。
 2. 同一类文件可能出现在不同阶段，必须结合交易前后状态判断。典型情况：公司章程、营业执照、财务报表既可能是上会附件（investment_decision），也可能是交易完成后的新版本（investment_execution）。注册资本或股东结构出现"由…增加至…"这类变化、或提到"增资后""新增股东"，指向 investment_execution；提到"交易前""增资前""投前""原股东""上会材料"，指向 investment_decision。
 3. 项目事件时间线中标记了 ★ 的事件直接引用了当前文件，是最强证据。
-4. 关联文件用于旁证，不要把关联文件自身的阶段直接套用到当前文件。
-5. 尽量给出最可能的阶段。只有在事实几乎为空、完全无法判断时才输出 unknown。判断有把握但证据不够扎实时，给出阶段并把 review 设为 true。
-6. evidence 必须来自上面提供的事实或时间线，不得编造原文。
+4. 【项目整体进度不是当前文件的证据】"项目最晚有证据的阶段"只说明这个项目已经走到了哪一步，不能用来推断当前文件属于哪一步。项目已进入投资实施，不代表项目里每份文件都属于投资实施——交易前形成的历史文件依然属于更早的阶段。**禁止把它写进 ev 作为支持理由。** 只有标记 ★ 的事件才是当前文件自身的直接证据。
+5. 【存在同类型关联文件时必须比对】如果"同项目关联文件"里有与当前文件类型相同的文件，必须逐一比对关键数字（注册资本金额、股东数量与名称、日期），并在 why 和 ev 中写明比对结果，例如"关联章程注册资本为 X，当前文件为 Y，因此当前文件是交易前/后版本"。**没有做这个比对，conf 不得超过 60。**
+6. 【变更前为空不等于发生了变更】交易变化里"变更前"为空时，只说明文件没写变更前的值，不能据此认定发生过一次增资或变更。一份只是陈述"注册资本为 X"的章程，不是"注册资本增至 X"。要判定发生了变更，必须有明确的变更前后两个值，或者原文出现"由…增加至…""本次增资"这类表述。
+7. 尽量给出最可能的阶段。只有在事实几乎为空、完全无法判断时才输出 unknown。判断有把握但证据不够扎实时，给出阶段并把 review 设为 true。
+8. evidence 必须来自上面提供的事实或时间线，不得编造原文。
+9. 一旦在 cx 中写下任何矛盾或存疑之处，conf 必须相应下调，并把 review 设为 true。不允许一边报矛盾一边给高把握。
 
 【输出格式】
 只输出一个 JSON 对象，不要输出 Markdown 或说明文字：
@@ -193,7 +213,7 @@ ${factsBrief(params.facts)}
 ${projectContextBrief(params.sourcePath, params.projectContext)}
 
 【同项目关联文件】
-${relatedDocumentsBrief(params.relatedDocuments)}`;
+${relatedDocumentsBrief(params.relatedDocuments, params.facts.documentType)}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -266,8 +286,12 @@ export function parseLlmStageDecisionResponse(value: string): ParsedModelStage {
  * 强制人工复核的三条业务规则与规则引擎保持一致：事实抽取完整度过低、
  * 事实仅来自文件名、以及投资合规性审查表一律人工过目。这些是归档合规要求，
  * 不随判断方式改变，因此模型不能通过给高分绕过它们。
+ *
+ * 第四条是护栏而非业务规则：模型自己写下了矛盾，就不允许它同时给出高把握直接
+ * 放行。实测出现过模型一边标注"与关联文件金额矛盾"、一边给 85 分并判错的情况，
+ * prompt 里虽然也要求了自降把握，但这条必须在代码里兜住，不能只靠模型听话。
  */
-function toDecision(
+export function buildDecisionFromParsed(
   parsed: ParsedModelStage,
   facts: DocumentFacts
 ): ContextClassificationDecision {
@@ -295,6 +319,7 @@ function toDecision(
 
   const folder = getFolderForBusinessStage(parsed.stage);
   const hasEnoughEvidence = parsed.confidence >= MIN_DECISION_SCORE;
+  const selfReportedConflict = parsed.contradictions.length > 0;
 
   return {
     status: hasEnoughEvidence ? 'decided' : 'insufficient',
@@ -313,7 +338,11 @@ function toDecision(
     ],
     evidence: parsed.evidence,
     contradictions: parsed.contradictions,
-    requiresHumanReview: !hasEnoughEvidence || parsed.review || policyReview,
+    requiresHumanReview:
+      !hasEnoughEvidence ||
+      parsed.review ||
+      policyReview ||
+      selfReportedConflict,
     reasoning: parsed.reasoning,
     policyVersion: LLM_STAGE_DECISION_VERSION,
   };
@@ -342,7 +371,7 @@ export async function decideStageWithModel(
     modelCall = response.diagnostics;
     return {
       status: 'success',
-      decision: toDecision(
+      decision: buildDecisionFromParsed(
         parseLlmStageDecisionResponse(response.content),
         params.facts
       ),

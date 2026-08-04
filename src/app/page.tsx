@@ -833,16 +833,26 @@ function ClassifyResultItem({
                   <Sparkles className="h-3.5 w-3.5" />
                   模型阶段判断（影子）
                 </p>
-                {modelAgreesWithAgent !== null && (
-                  <Badge
-                    variant="outline"
-                    className={modelAgreesWithAgent
-                      ? 'border-green-300 bg-green-50 text-[10px] text-green-700'
-                      : 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'}
-                  >
-                    {modelAgreesWithAgent ? '与规则一致' : '与规则分歧'}
-                  </Badge>
-                )}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {modelStage?.decision?.requiresHumanReview && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-50 text-[10px] text-amber-700"
+                    >
+                      需要复核
+                    </Badge>
+                  )}
+                  {modelAgreesWithAgent !== null && (
+                    <Badge
+                      variant="outline"
+                      className={modelAgreesWithAgent
+                        ? 'border-green-300 bg-green-50 text-[10px] text-green-700'
+                        : 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'}
+                    >
+                      {modelAgreesWithAgent ? '与规则一致' : '与规则分歧'}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <p className="mt-2 break-words text-sm font-medium leading-5 text-sky-950">
                 {modelFolder
