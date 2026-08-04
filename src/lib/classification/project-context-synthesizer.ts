@@ -411,7 +411,7 @@ export function buildProjectContextPrompt(params: {
 10. 不得逐份复述事实卡片；只有会改变阶段、事件、关系或冲突判断的信息才能进入输出，相同业务事件必须合并。
 11. timeline 最多 ${timelineLimit} 项；documentRelations 最多 ${relationLimit} 项；stageHypotheses 最多 ${GENERATED_CONTEXT_LIMITS.stageHypotheses} 项；conflicts 最多 ${GENERATED_CONTEXT_LIMITS.conflicts} 项；openQuestions 最多 ${GENERATED_CONTEXT_LIMITS.openQuestions} 项。
 12. title 最多 ${GENERATED_CONTEXT_LIMITS.titleCharacters} 个汉字；evidence、reasoning、description 和 openQuestions 单项最多 ${GENERATED_CONTEXT_LIMITS.explanationCharacters} 个汉字。这些是上限不是目标：说明字段只写能定位证据的关键信息（文件、日期、金额、主体、矛盾点），写满上限视为不合格。
-13. 每个 evidenceFiles 最多 ${GENERATED_CONTEXT_LIMITS.evidenceFilesPerItem} 个 sourcePath，只保留最能支撑该条结论的文件；不要罗列所有相关文件。
+13. evidenceFiles 是下游按 sourcePath 检索项目事件的索引：每份输入文件都应至少出现在一个 timeline 事件的 evidenceFiles 中，否则该文件将无法从项目上下文获得任何证据。宁可让事件多引用文件，也不要漏掉文件。
 14. 该输出由程序消费，不是给人阅读的报告。禁止铺垫、总结、评价和完整句式，可用名词短语和分号。
 15. 没有证据支撑的数组直接输出 []，不要为了凑数生成低置信度条目。
 16. 输出必须是无 Markdown、无解释、无缩进的紧凑 JSON；不要输出 schemaVersion、projectName、contextStatus、sourceDocumentCount、generatedAt、synthesizerVersion，这些字段由程序补充。${compactRule}
