@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { HeaderUtils } from "coze-coding-dev-sdk";
 import { deleteArchivedFile } from "@/lib/storage";
-import { forgetProjectDocumentByArchivedFileId } from "@/lib/classification/session-project-memory";
+import {
+  forgetProjectDocumentByArchivedFileId,
+  forgetProjectDocumentsByFileName,
+} from "@/lib/classification/session-project-memory";
 
 export const runtime = "nodejs";
 
@@ -28,13 +31,23 @@ export async function POST(request: NextRequest) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
         try {
-          await forgetProjectDocumentByArchivedFileId(
+          const removed = await forgetProjectDocumentByArchivedFileId(
             deleted.projectId,
             deleted.archivedFileId,
             {
               customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
             }
           );
+          // 旧数据可能缺少 archivedFileId 关联，降级按文件名匹配
+          if (!removed && deleted.originalName) {
+            await forgetProjectDocumentsByFileName(
+              deleted.projectId,
+              deleted.originalName,
+              {
+                customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+              }
+            );
+          }
         } catch (memoryError) {
           console.error('Batch delete memory cleanup failed:', memoryError);
         }
