@@ -145,8 +145,35 @@ function normalizedString(
     : fallback;
 }
 
+// 模型在紧凑元组协议里经常把空值写成字符串字面量而不是 JSON null。这些值一旦
+// 当作真实文本存下来，下游会把它读成一个具体的事实：交易变化里的 "null" → "11.7万"
+// 会被理解成"发生了一次增资"，凭空造出一笔不存在的交易。空值必须还原为空值。
+const NULLISH_LITERALS = new Set([
+  'null',
+  'none',
+  'nil',
+  'undefined',
+  'nan',
+  'n/a',
+  'na',
+  '无',
+  '未知',
+  '不适用',
+  '不详',
+  '-',
+  '--',
+  '—',
+  '/',
+]);
+
+export function isNullishLiteral(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return NULLISH_LITERALS.has(value.trim().toLowerCase());
+}
+
 function nullableString(value: unknown, maxLength: number): string | null {
   if (value === null || value === undefined) return null;
+  if (isNullishLiteral(value)) return null;
   const normalized = normalizedString(value, maxLength);
   return normalized || null;
 }
@@ -253,6 +280,11 @@ function normalizeDocumentFactsPayload(value: unknown): unknown {
         (typeof item.after === 'string' && item.after.trim().length > 100)
       ) {
         repairs.add('过长的交易变化值已截断至 100 字符');
+      }
+      if (isNullishLiteral(item.before) || isNullishLiteral(item.after)) {
+        repairs.add(
+          '交易变化中写成文字的空值已还原为空，避免被误读为真实的变更前后值'
+        );
       }
       return [
         {
