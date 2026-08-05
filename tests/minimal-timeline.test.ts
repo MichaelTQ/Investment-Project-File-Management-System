@@ -277,3 +277,25 @@ test('防误报的约束不靠业务词汇，换个行业照样成立', () => {
     );
   }
 });
+
+/**
+ * 上一版规则 3 只说"数值吻合是相互印证，不是冲突"，把这条信号连同噪音一起掐了：
+ * 实测两份章程错误地同处一个阶段，复核一声没吭。吻合本身确实不是矛盾，但吻合
+ * 指向的时点与文件当前归档的阶段对不上，就是矛盾。
+ */
+test('数值吻合指向的时点与归档阶段对不上时，规则要求报出来', () => {
+  const systemPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter, resolution],
+      timeline: buildTimeline([charter, resolution]),
+      stageDefinitions: '',
+    })[0].content
+  );
+
+  // 原有的防误报语义保留。
+  assert.match(systemPrompt, /相互印证，不是冲突/);
+  // 但必须接着往下推一步。
+  assert.match(systemPrompt, /不应归在变更之后的阶段/);
+  assert.match(systemPrompt, /与它当前归档的阶段对不上，才是矛盾/);
+  assert.match(systemPrompt, /必须报出来/);
+});
