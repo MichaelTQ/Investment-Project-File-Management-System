@@ -122,7 +122,7 @@ interface ClassifyResult {
  *
  * PDF_VISUAL_DETAIL：视觉精度。high 是每页上千视觉 token 的主要来源，扫描件
  * 小字靠它才读得准；low 能把 token 降一个量级，速度提升明显，但可能读错数字。
- * 默认保持 high，不静默牺牲识别率——要不要换由实测数据决定。
+ * 当前默认 low，正在实测识别率是否够用；金额小数位或日期一旦读错就改回 high。
  *
  * PDF_VISUAL_MAX_PAGES：最多读几页，从第一页开始截。超出的页数完全不会被模型
  * 看到——20 页的文件现在只读前 12 页，后 8 页等于不存在。
@@ -134,8 +134,10 @@ function envInt(name: string, fallback: number): number {
 
 const PDF_VISUAL_BATCH_SIZE = envInt('PDF_VISUAL_BATCH_SIZE', 4);
 const PDF_VISUAL_MAX_PAGES = envInt('PDF_VISUAL_MAX_PAGES', 12);
+// 默认 low：先按低精度实测一轮，看关键数字（金额小数位、日期）读不读得准。
+// 读错就把这里改回 'high'，或设环境变量 PDF_VISUAL_DETAIL=high。
 const PDF_VISUAL_DETAIL: 'high' | 'low' =
-  globalThis.process.env.PDF_VISUAL_DETAIL === 'low' ? 'low' : 'high';
+  globalThis.process.env.PDF_VISUAL_DETAIL === 'high' ? 'high' : 'low';
 
 // 启动时打印一次。环境变量是在模块加载时读的，服务不重启就不会生效——
 // 没有这行日志，改没改成只能靠猜 OCR 质量，很容易测了半天其实一直是旧值。
