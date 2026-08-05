@@ -113,8 +113,29 @@ interface ClassifyResult {
   contextRebuildPending?: boolean;
 }
 
-const PDF_VISUAL_BATCH_SIZE = 4;
-const PDF_VISUAL_MAX_PAGES = 12;
+/**
+ * 扫描件 OCR 的三个旋钮，都可以用环境变量调，方便直接 A/B 不用改代码。
+ *
+ * PDF_VISUAL_BATCH_SIZE：每次调用塞几页。**调小反而更快**——各批是并行的，
+ * 总耗时取决于最慢的一批，一批 6 页当然比一批 3 页慢。调大省的是调用次数
+ * （成本），不是等待时间。
+ *
+ * PDF_VISUAL_DETAIL：视觉精度。high 是每页上千视觉 token 的主要来源，扫描件
+ * 小字靠它才读得准；low 能把 token 降一个量级，速度提升明显，但可能读错数字。
+ * 默认保持 high，不静默牺牲识别率——要不要换由实测数据决定。
+ *
+ * PDF_VISUAL_MAX_PAGES：最多读几页，从第一页开始截。超出的页数完全不会被模型
+ * 看到——20 页的文件现在只读前 12 页，后 8 页等于不存在。
+ */
+function envInt(name: string, fallback: number): number {
+  const parsed = Number(globalThis.process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const PDF_VISUAL_BATCH_SIZE = envInt('PDF_VISUAL_BATCH_SIZE', 4);
+const PDF_VISUAL_MAX_PAGES = envInt('PDF_VISUAL_MAX_PAGES', 12);
+const PDF_VISUAL_DETAIL: 'high' | 'low' =
+  globalThis.process.env.PDF_VISUAL_DETAIL === 'low' ? 'low' : 'high';
 
 // 扫描 PDF 没有文字层时，将解析服务返回的页面图片分批交给多模态模型提取关键信息。
 async function extractScannedPdfText(
@@ -156,7 +177,7 @@ async function extractScannedPdfText(
           },
           {
             type: 'image_url',
-            image_url: { url, detail: 'high' },
+            image_url: { url, detail: PDF_VISUAL_DETAIL },
           }
         );
       });
