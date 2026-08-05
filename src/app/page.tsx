@@ -207,6 +207,26 @@ interface ProjectSessionMemoryResult {
   expiresAt?: string;
 }
 
+interface ConsistencyFinding {
+  kind:
+    | 'transaction_side_conflict'
+    | 'version_order_conflict'
+    | 'duplicate_stage_mismatch'
+    | 'missing_companion_document';
+  sourcePath: string;
+  currentStage: string | null;
+  constraint: string;
+  reason: string;
+  evidence: string[];
+  relatedSourcePaths: string[];
+}
+
+interface ConsistencyReport {
+  checkedCount: number;
+  skippedCount: number;
+  findings: ConsistencyFinding[];
+}
+
 interface ModelStageDecisionResult {
   status: 'success' | 'fallback';
   decision: AgentDecisionResult['decision'] | null;
@@ -668,6 +688,127 @@ function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ============ 归档一致性提示 ============
+const CONSISTENCY_KIND_LABELS: Record<ConsistencyFinding['kind'], string> = {
+  transaction_side_conflict: '与交易记录矛盾',
+  version_order_conflict: '版本先后矛盾',
+  duplicate_stage_mismatch: '重复文件归档不一致',
+  missing_companion_document: '档案可能缺件',
+};
+
+function ConsistencyPanel({
+  report,
+  dismissedKeys,
+  onDismiss,
+}: {
+  report: ConsistencyReport | null;
+  dismissedKeys: Set<string>;
+  onDismiss: (key: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const visible = (report?.findings ?? []).filter(
+    finding => !dismissedKeys.has(`${finding.kind}:${finding.sourcePath}`)
+  );
+  if (visible.length === 0) return null;
+
+  const misfiled = visible.filter(
+    finding => finding.kind !== 'missing_companion_document'
+  );
+  const gaps = visible.filter(
+    finding => finding.kind === 'missing_companion_document'
+  );
+
+  return (
+    <Card className="border-amber-300 bg-amber-50/60">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm text-amber-900">
+            <AlertCircle className="h-4 w-4" />
+            {misfiled.length > 0
+              ? `${misfiled.length} 份已归档文件的位置与项目证据不符`
+              : `${gaps.length} 条档案完整性提示`}
+          </CardTitle>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setExpanded(current => !current)}
+          >
+            {expanded ? '收起' : '查看详情'}
+          </Button>
+        </div>
+        <CardDescription className="text-xs">
+          本次共校验 {report?.checkedCount ?? 0} 份已归档文件
+          {(report?.skippedCount ?? 0) > 0
+            ? `，另有 ${report?.skippedCount} 份尚未归档已跳过`
+            : ''}
+          。校验只依据文件事实，不调用模型。
+        </CardDescription>
+      </CardHeader>
+
+      {expanded && (
+        <CardContent className="space-y-2 pt-0">
+          {visible.map(finding => {
+            const key = `${finding.kind}:${finding.sourcePath}`;
+            return (
+              <div
+                key={key}
+                className="min-w-0 rounded-lg border border-amber-200 bg-white/70 p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="break-all text-sm font-medium">
+                      {finding.sourcePath || '项目整体'}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {CONSISTENCY_KIND_LABELS[finding.kind]}
+                      {finding.currentStage
+                        ? ` · 当前归在「${PROJECT_STAGE_LABELS[finding.currentStage] ?? finding.currentStage}」`
+                        : ''}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 shrink-0 text-[11px] text-muted-foreground"
+                    onClick={() => onDismiss(key)}
+                  >
+                    忽略
+                  </Button>
+                </div>
+                <p className="mt-2 break-words text-xs leading-5 text-amber-900">
+                  {finding.reason}
+                </p>
+                {finding.evidence.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5 text-[11px] leading-4 text-muted-foreground">
+                    {finding.evidence.map(item => (
+                      <li key={item} className="break-words">
+                        依据：{item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {finding.relatedSourcePaths.length > 0 && (
+                  <p className="mt-1 break-all text-[11px] text-muted-foreground">
+                    相关文件：{finding.relatedSourcePaths.join('、')}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+          <p className="pt-1 text-[11px] leading-4 text-muted-foreground">
+            这些是确定性校验结果，不代表其余文件一定归对——校验器对没有数字或日期
+            关联的文件本来就无话可说。要调整位置请到下方档案区移动文件。
+          </p>
+        </CardContent>
+      )}
+    </Card>
   );
 }
 
@@ -2114,6 +2255,12 @@ export default function Home() {
   const [contextRefreshKey, setContextRefreshKey] = useState(0);
   const [projectContextState, setProjectContextState] =
     useState<ProjectSessionMemoryResult | null>(null);
+  const [consistencyReport, setConsistencyReport] =
+    useState<ConsistencyReport | null>(null);
+  // 用户忽略过的提示不再重复弹。切换项目时清空；持久化留待后续。
+  const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
+    () => new Set()
+  );
   const [projectContextLoading, setProjectContextLoading] = useState(false);
   const [projectContextRebuilding, setProjectContextRebuilding] = useState(false);
   const [projectContextError, setProjectContextError] = useState<string | null>(null);
@@ -2196,9 +2343,12 @@ export default function Home() {
   useEffect(() => {
     if (!selectedProjectId) {
       setProjectContextState(null);
+      setConsistencyReport(null);
       setProjectContextLoading(false);
       return;
     }
+    // 换项目时清掉忽略记录，避免不同项目之间互相压制提示。
+    setDismissedFindingKeys(new Set());
     const controller = new AbortController();
     setProjectContextLoading(true);
     setProjectContextError(null);
@@ -2212,6 +2362,7 @@ export default function Home() {
           throw new Error(data?.error || '读取项目Context失败');
         }
         setProjectContextState(data.projectContext ?? null);
+        setConsistencyReport(data.consistency ?? null);
       })
       .catch(error => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -2240,6 +2391,7 @@ export default function Home() {
         throw new Error(data?.error || '重建项目Context失败');
       }
       setProjectContextState(data.projectContext ?? null);
+      setConsistencyReport(data.consistency ?? null);
     } catch (error) {
       setProjectContextError(
         error instanceof Error ? error.message : '重建项目Context失败'
@@ -2546,6 +2698,7 @@ export default function Home() {
             }
             const rebuiltContext = rebuildData?.projectContext ?? null;
             setProjectContextState(rebuiltContext);
+            setConsistencyReport(rebuildData?.consistency ?? null);
             const rebuiltDecisions = new Map<string, AgentDecisionResult>(
               (rebuiltContext?.reEvaluatedDocuments ?? []).map(
                 (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
@@ -3430,6 +3583,19 @@ export default function Home() {
 
           {/* Right: Classification Results + Analysis History */}
           <div className="md:col-span-6 lg:col-span-5 flex min-w-0 flex-col gap-4">
+            {/* 归档一致性提示：每次归档后代码全量校验的结果 */}
+            <ConsistencyPanel
+              report={consistencyReport}
+              dismissedKeys={dismissedFindingKeys}
+              onDismiss={key =>
+                setDismissedFindingKeys(current => {
+                  const next = new Set(current);
+                  next.add(key);
+                  return next;
+                })
+              }
+            />
+
             {/* Classification Results */}
             <Card className="flex min-w-0 flex-col overflow-hidden">
               <CardHeader className="shrink-0 pb-3">
