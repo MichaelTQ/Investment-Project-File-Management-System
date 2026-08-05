@@ -324,6 +324,8 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
     let runMinimalPath =
       globalThis.process.env.ENABLE_MINIMAL_PATH === 'true';
+    // 'abstract' 版阶段说明不含文件类型清单，用于验证清单是否在替模型答题。
+    let stageGuideMode: 'examples' | 'abstract' = 'examples';
     let rawProjectContext: unknown;
     let rawRelatedDocumentFacts: unknown;
 
@@ -357,6 +359,9 @@ export async function POST(request: NextRequest) {
           : runAgentDecision;
       runMinimalPath =
         typeof body.minimalPath === 'boolean' ? body.minimalPath : runMinimalPath;
+      if (body.stageGuideMode === 'abstract' || body.stageGuideMode === 'examples') {
+        stageGuideMode = body.stageGuideMode;
+      }
       rawProjectContext = body.projectContext;
       rawRelatedDocumentFacts = body.relatedDocumentFacts;
 
@@ -403,6 +408,10 @@ export async function POST(request: NextRequest) {
         minimalPathValue === null
           ? runMinimalPath
           : minimalPathValue === 'true';
+      const guideValue = formData.get('stageGuideMode');
+      if (guideValue === 'abstract' || guideValue === 'examples') {
+        stageGuideMode = guideValue;
+      }
       rawProjectContext = parseOptionalJson(formData.get('projectContext'));
       rawRelatedDocumentFacts = parseOptionalJson(
         formData.get('relatedDocumentFacts')
@@ -822,6 +831,7 @@ export async function POST(request: NextRequest) {
             sourcePath: sourcePath || fileName,
             facts: factsForMinimal,
             fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+            stageGuideMode,
             customHeaders,
           })
         );

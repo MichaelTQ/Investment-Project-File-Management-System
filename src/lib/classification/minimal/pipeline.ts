@@ -12,7 +12,10 @@ import {
 } from '../archive-consistency';
 import type { ModelCallDiagnostics } from '../chat-completions';
 import type { DocumentFacts } from '../document-facts';
-import { decideStageWithModel } from '../llm-stage-decision';
+import {
+  decideStageWithModel,
+  type StageGuideMode,
+} from '../llm-stage-decision';
 import {
   buildTimeline,
   describeResolvedEvidence,
@@ -40,6 +43,8 @@ export interface MinimalClassifyParams {
   facts: DocumentFacts;
   fingerprint?: string;
   customHeaders?: Record<string, string>;
+  /** 阶段说明用哪一版，用于验证文件类型清单是否在替模型答题。 */
+  stageGuideMode?: StageGuideMode;
 }
 
 export interface MinimalClassifyResult {
@@ -61,6 +66,8 @@ export interface MinimalClassifyResult {
   status: 'success' | 'fallback';
   error?: string;
   modelCall?: ModelCallDiagnostics;
+  /** 本次实际使用的阶段说明版本，便于在界面上区分两次运行。 */
+  stageGuideMode: StageGuideMode;
 }
 
 export async function classifyWithMinimalPath(
@@ -89,6 +96,7 @@ export async function classifyWithMinimalPath(
       facts: document.facts,
     })),
     resolvedEvidence: describeResolvedEvidence(resolved),
+    stageGuideMode: params.stageGuideMode ?? 'examples',
     customHeaders: params.customHeaders,
   });
 
@@ -128,6 +136,7 @@ export async function classifyWithMinimalPath(
     status: decision.status,
     error: decision.error,
     modelCall: decision.modelCall,
+    stageGuideMode: params.stageGuideMode ?? 'examples',
   };
 }
 

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildDecisionFromParsed as decisionFromParsedForTests,
+  buildStageDecisionPrompt as buildStageDecisionPromptForTests,
   parseLlmStageDecisionResponse,
 } from '../src/lib/classification/llm-stage-decision';
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
@@ -132,4 +133,46 @@ test('事实仅来自文件名时强制转人工，模型给高分也不放行',
     { ...healthyFacts(), sourceQuality: 'filename_only' }
   );
   assert.equal(decided.requiresHumanReview, true);
+});
+
+test('abstract 版阶段说明不含任何文件类型清单', () => {
+  const abstractPrompt = JSON.stringify(
+    buildStageDecisionPromptForTests({
+      sourcePath: '公司章程.pdf',
+      facts: healthyFacts(),
+      stageGuideMode: 'abstract',
+    })
+  );
+  // 这些是 examples 版里逐一列出的文件类型，abstract 版不应出现在阶段说明里。
+  for (const listed of [
+    '立项会纪要',
+    '尽调报告',
+    '投资建议书',
+    '交割确认函',
+    '缴款通知书',
+    '出资证明书',
+    '银行回单',
+    'Teaser',
+  ]) {
+    assert.equal(
+      abstractPrompt.includes(listed),
+      false,
+      `abstract 版不应出现文件类型「${listed}」`
+    );
+  }
+  // 但判断依据必须保留——那是依据，不是答案。
+  assert.match(abstractPrompt, /交易发生之前/);
+  assert.match(abstractPrompt, /交易发生之后/);
+});
+
+test('examples 版保留文件类型清单，两版确实不同', () => {
+  const examplesPrompt = JSON.stringify(
+    buildStageDecisionPromptForTests({
+      sourcePath: '公司章程.pdf',
+      facts: healthyFacts(),
+      stageGuideMode: 'examples',
+    })
+  );
+  assert.match(examplesPrompt, /交割确认函/);
+  assert.match(examplesPrompt, /立项会纪要/);
 });

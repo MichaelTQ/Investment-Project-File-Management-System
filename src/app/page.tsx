@@ -257,6 +257,7 @@ interface MinimalDecisionResult {
   relatedSourcePaths: string[];
   status: 'success' | 'fallback';
   error?: string;
+  stageGuideMode?: 'examples' | 'abstract';
 }
 
 interface ClassifyResult {
@@ -998,6 +999,11 @@ function ClassifyResultItem({
                 <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
                   <Zap className="h-3.5 w-3.5" />
                   极简链路
+                  {minimal?.stageGuideMode === 'abstract' && (
+                    <span className="rounded bg-emerald-200 px-1 text-[10px] font-normal text-emerald-900">
+                      无文件清单
+                    </span>
+                  )}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {minimal?.requiresHumanReview && (
@@ -2274,6 +2280,8 @@ export default function Home() {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showLegacyClassification, setShowLegacyClassification] = useState(true);
   const [showMinimalPath, setShowMinimalPath] = useState(true);
+  // 'abstract' 版阶段说明不含文件类型清单，用来验证清单是否在替模型答题。
+  const [stageGuideMode, setStageGuideMode] = useState<'examples' | 'abstract'>('examples');
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2998,6 +3006,7 @@ export default function Home() {
             agentDecision: true,
             legacyDecision: showLegacyClassification,
             minimalPath: showMinimalPath,
+            stageGuideMode,
             sourcePath: file.webkitRelativePath || file.name,
           }),
         });
@@ -3165,6 +3174,7 @@ export default function Home() {
     results,
     showLegacyClassification,
     showMinimalPath,
+    stageGuideMode,
   ]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -3774,6 +3784,24 @@ export default function Home() {
                         aria-label="运行并显示极简链路结论"
                       />
                     </div>
+                    {showMinimalPath && (
+                      <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
+                        <Label
+                          htmlFor="stage-guide-mode-toggle"
+                          className="cursor-pointer text-xs font-normal text-muted-foreground"
+                        >
+                          阶段说明去掉文件清单
+                        </Label>
+                        <Switch
+                          id="stage-guide-mode-toggle"
+                          checked={stageGuideMode === 'abstract'}
+                          onCheckedChange={checked =>
+                            setStageGuideMode(checked ? 'abstract' : 'examples')
+                          }
+                          aria-label="改用只讲业务含义、不列文件类型的阶段说明"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
                 <CardDescription>
