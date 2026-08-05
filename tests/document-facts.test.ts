@@ -361,3 +361,61 @@ test('读到了内容时，文档类型正常保留', async () => {
   assert.equal(result.facts.documentType, 'company_charter');
   assert.equal(result.facts.rawDocumentType, '公司章程');
 });
+
+test('模型填了 unknown 但写了中文类型名时，按中文名对回枚举', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '7君柔科技-股东会决议.pdf',
+    contentText: '注册资本由11.73624万元增加至13.04027万元',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        // 实测样本：内容全抽对了，dt 却是 unknown，r 写着"股东会决议"。
+        content:
+          '{"dt":"unknown","r":"股东会决议","t":"股东会决议","n":null,"v":null,"d":[],"p":[],"s":"b","c":[["注册资本","11.73624万元","13.04027万元","注册资本由11.73624万元增加至13.04027万元"]],"g":[],"e":[],"w":[],"q":"v","x":80}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'shareholder_resolution');
+  // 原文表述保持不动，便于人工核对翻译是否正确。
+  assert.equal(result.facts.rawDocumentType, '股东会决议');
+});
+
+test('中文类型名对不上枚举时保持 unknown，不硬凑', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '某文件.pdf',
+    contentText: '内容若干',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        content:
+          '{"dt":"unknown","r":"情况说明","t":"情况说明","n":null,"v":null,"d":[],"p":[],"s":"x","c":[],"g":[],"e":[],"w":[],"q":"t","x":60}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'unknown');
+});
+
+test('读不到内容时不做类型恢复，那道闸不能被绕过', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '股东会决议.pdf',
+    contentText: '',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        // 只看到文件名，却照着文件名写了中文类型——不能靠恢复步骤救回来。
+        content:
+          '{"dt":"unknown","r":"股东会决议","t":"股东会决议","n":null,"v":null,"d":[],"p":[],"s":"x","c":[],"g":[],"e":[],"w":[],"q":"f","x":20}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'unknown');
+});

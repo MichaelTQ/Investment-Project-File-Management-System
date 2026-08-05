@@ -408,10 +408,11 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
   } else if (resolved.sameTypeSiblings.length > 0) {
     lines.push(
       `项目里有 ${resolved.sameTypeSiblings.length} 份同类型文件（${resolved.sameTypeSiblings.map(leafName).join('、')}），` +
-        '但没有找到记载资本变更前后值的交易文件，也读不到可比对的金额。'
+        '但没有一份写明了某字段的变更前后值，本文件也读不到可比对的数值。'
     );
     lines.push(
-      '此时不要凭空猜方向。若无法确定，请如实说明缺少一份记载资本变更的股东会决议或增资协议。'
+      '此时不要凭空猜方向。若无法确定，请如实说明是哪个数值读不到，' +
+        '不要断言项目里应当存在某份尚未见到的文件。'
     );
   } else {
     lines.push('项目里没有可用于比对的同类型文件或交易记录。');

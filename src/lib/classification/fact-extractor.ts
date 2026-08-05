@@ -11,6 +11,7 @@ import {
   type DocumentFacts,
   type DocumentFactsExtractionResult,
 } from './document-facts';
+import { documentTypeFromRawLabel } from './document-type-alias';
 import {
   invokeChatCompletion,
   messageCharacterCount,
@@ -209,6 +210,9 @@ credit_report, confidentiality_agreement, capital_contribution_certificate,
 shareholder_register, other, unknown
 
 【抽取要求】
+0. dt 必须从上面的枚举里选一个。只有连文件性质都看不出来时才用 unknown——
+   标题或正文能看出它是决议、协议、章程、报告中的哪一种，就选最接近的枚举值。
+   r 始终写文件自称的中文类型原文（如"股东会决议"），不要写"未知"。
 1. 日期统一输出 YYYY-MM-DD；只有年份或月份时不要猜测日期，date 使用 null，并在 meaning 和 evidence 中记录原文。
 1.1 日期名额有限，**必须优先保留文件形成时点**：签署日、签订日、批准日、通过日、决议日、修订日、生效日、出具日、会议召开日。缴款期限、认缴出资截止日、有效期届满日这类**未来日期**只在还有名额时才保留，且 meaning 必须写明它是期限而非文件形成时间。判断文件属于哪个业务阶段靠的是形成时点，用未来期限会得出错误结论。
 2. 主体名称尽量保留文件中的完整名称，并说明其在文件中的角色。
@@ -262,6 +266,24 @@ ${params.imageDataUrl
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userContent },
   ];
+}
+
+/**
+ * 模型把类型填成 unknown，但自己在"原文表述"里写了中文类型名时，按中文名对回枚举。
+ *
+ * 实测的失败样本：一份股东会决议，标题、签署日期、"注册资本由 11.73624 万元增加至
+ * 13.04027 万元"全都抽对了，documentType 却是 unknown。类型是 unknown 就当不了
+ * 交易锚点，同项目的两份章程只能靠倾向性推测排序，把握程度 45 而不是 85。
+ *
+ * 这里翻译的是模型已经写下的判断，不是新的推断，更不看文件名。
+ */
+function recoverDocumentTypeFromLabel(facts: DocumentFacts): DocumentFacts {
+  if (facts.documentType !== 'unknown') return facts;
+  // 内容都没读到时不做恢复，否则等于绕过下面那道闸。
+  if (facts.sourceQuality === 'filename_only') return facts;
+
+  const recovered = documentTypeFromRawLabel(facts.rawDocumentType);
+  return recovered ? { ...facts, documentType: recovered } : facts;
 }
 
 /**
@@ -336,7 +358,11 @@ async function extractDocumentFactsUncached(
     }
     return {
       status: 'success',
-      facts: enforceContentEvidence(parseCompactDocumentFactsResponse(content)),
+      // 顺序：先按中文名补回类型，再过"读不到内容"的闸。闸必须在最后，
+      // 否则文件名猜出来的类型会被恢复步骤救回去。
+      facts: enforceContentEvidence(
+        recoverDocumentTypeFromLabel(parseCompactDocumentFactsResponse(content))
+      ),
       modelCall,
     };
   } catch (error) {
