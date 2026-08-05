@@ -355,12 +355,10 @@ function ConsistencyPanel({
 // ============ 分类结果项 ============
 function ClassifyResultItem({
   result,
-  showMinimalPath,
   onConfirmArchive,
   onCancelArchive,
 }: {
   result: ClassifyResult;
-  showMinimalPath: boolean;
   onConfirmArchive: (
     clientId: string,
     archiveTitle: string,
@@ -368,13 +366,12 @@ function ClassifyResultItem({
   ) => void;
   onCancelArchive: (clientId: string) => void;
 }) {
-  const minimalFolder = result.minimalDecision?.folder ?? null;
   const minimal = result.minimalDecision;
-  const minimalPending = Boolean(result.minimalPending && !minimal);
-  const comparisonColumns = 1 + (showMinimalPath ? 1 : 0);
-  const minimalConfidence = result.minimalDecision?.confidence ?? 0;
-  const minimalRunning = Boolean(result.minimalPending && !result.minimalDecision);
-  const minimalNeedsReview = !minimalRunning && Boolean(result.minimalDecision?.requiresHumanReview);
+  const minimalFolder = minimal?.folder ?? null;
+  const minimalConfidence = minimal?.confidence ?? 0;
+  const minimalRunning = Boolean(result.minimalPending && !minimal);
+  const minimalNeedsReview =
+    !minimalRunning && Boolean(minimal?.requiresHumanReview);
   const minimalSelectionValue = minimalFolder
     ? minimalFolder.folderId
     : '';
@@ -422,150 +419,83 @@ function ClassifyResultItem({
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
             <span>·</span>
             <span>{minimalRunning ? '极简分类中' : `证据强度 ${minimalConfidence}%`}</span>
-            <Badge variant="outline" className="border-violet-300 bg-violet-50 text-[10px] text-violet-700">
-              极简链路
-            </Badge>
           </div>
         </div>
       </div>
 
       <div className="min-w-0 space-y-3 p-3">
-        <div
-          className={`grid gap-3 ${
-            comparisonColumns >= 4
-              ? 'lg:grid-cols-2 xl:grid-cols-4'
-              : comparisonColumns === 3
-                ? 'lg:grid-cols-3'
-                : comparisonColumns === 2
-                  ? 'lg:grid-cols-2'
-                  : ''
-          }`}
-        >
-          <div className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
-                <Brain className="h-3.5 w-3.5" />
-                极简分类结果
-              </p>
-              <Badge
-                variant="outline"
-                className={minimalNeedsReview
-                  ? 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'
-                  : 'border-green-300 bg-green-50 text-[10px] text-green-700'}
-              >
-                {minimalRunning ? '分析中' : minimalNeedsReview ? '需要复核' : '证据充分'}
-              </Badge>
-            </div>
-            <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
-              {minimalFolder
-                ? minimalFolder.folderPath.join(' / ')
-                : minimalRunning
-                  ? '正在抽取事实并判断'
-                  : '暂未形成唯一分类建议'}
-            </p>
-            <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
-              业务阶段：{PROJECT_STAGE_LABELS[
-                result.minimalDecision?.stage ??
-                  result.businessStage ??
-                  'unknown'
-              ] ?? '待确认'}
-              {' · '}
-              文件类型：{result.documentType ?? '待识别'}
-            </p>
-            <div className="mt-2 flex items-center gap-2">
-              <Progress value={minimalConfidence} className="h-1.5 flex-1" />
-              <span className="text-xs text-violet-800">{minimalConfidence}%</span>
-            </div>
-            <p className="mt-2 break-words text-xs leading-5 text-violet-800">
-              {result.minimalDecision?.reasoning ??
-                (minimalRunning
-                  ? '正在抽取结构化事实并比对关联文件。'
-                  : '未成功返回结果，请查看详情中的诊断信息。')}
-            </p>
-            {(result.minimalDecision?.evidence.length ?? 0) > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-green-800">
-                {result.minimalDecision?.evidence.slice(0, 2).map(evidence => (
-                  <li key={evidence} className="break-words">✓ {evidence}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-
-          {showMinimalPath && (
-            <div className="min-w-0 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
-                  <Zap className="h-3.5 w-3.5" />
-                  极简链路
-                  {minimal?.stageGuideMode === 'abstract' && (
-                    <span className="rounded bg-emerald-200 px-1 text-[10px] font-normal text-emerald-900">
-                      无文件清单
-                    </span>
-                  )}
-                </p>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {minimal?.requiresHumanReview && (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-300 bg-amber-50 text-[10px] text-amber-700"
-                    >
-                      需要复核
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <p className="mt-2 break-words text-sm font-medium leading-5 text-emerald-950">
-                {minimal?.folder
-                  ? minimal.folder.folderPath.join(' / ')
-                  : minimalPending
-                    ? '极简链路判断中'
-                    : minimal?.status === 'fallback'
-                      ? '模型调用失败'
-                      : '未能确定业务阶段'}
-              </p>
-              <p className="mt-1 break-words text-[11px] leading-4 text-emerald-700">
-                业务阶段：{PROJECT_STAGE_LABELS[minimal?.stage ?? 'unknown'] ?? '待确认'}
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <Progress value={minimal?.confidence ?? 0} className="h-1.5 flex-1" />
-                <span className="text-xs text-emerald-800">
-                  {minimal?.confidence ?? 0}%
+        <div className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
+              <Brain className="h-3.5 w-3.5" />
+              极简分类结果
+              {minimal?.stageGuideMode === 'abstract' && (
+                <span className="rounded bg-violet-200 px-1 text-[10px] font-normal text-violet-900">
+                  无文件清单
                 </span>
-              </div>
-              {minimal?.confidenceBasis && (
-                <p className="mt-1 break-words text-[10px] leading-4 text-emerald-600">
-                  把握依据：{minimal.confidenceBasis}
-                </p>
               )}
-              <p className="mt-2 break-words text-xs leading-5 text-emerald-800">
-                {minimal?.reasoning ??
-                  minimal?.error ??
-                  (minimalPending
-                    ? '代码正在解析确定性证据，随后交模型判断阶段。'
-                    : '暂无结论。')}
-              </p>
-              {(minimal?.evidence.length ?? 0) > 0 && (
-                <ul className="mt-2 space-y-1 border-t border-emerald-200 pt-2 text-[11px] leading-4 text-green-800">
-                  {minimal?.evidence.slice(0, 2).map(item => (
-                    <li key={item} className="break-words">✓ {item}</li>
-                  ))}
-                </ul>
-              )}
-              {(minimal?.contradictions.length ?? 0) > 0 && (
-                <ul className="mt-2 space-y-1 border-t border-emerald-200 pt-2 text-[11px] leading-4 text-amber-800">
-                  {minimal?.contradictions.slice(0, 2).map(item => (
-                    <li key={item} className="break-words">⚠ {item}</li>
-                  ))}
-                </ul>
-              )}
-              {minimal?.missingEvidence && (
-                <p className="mt-2 break-words border-t border-emerald-200 pt-2 text-[11px] leading-4 text-amber-800">
-                  缺什么：{minimal.missingEvidence}
-                </p>
-              )}
-            </div>
+            </p>
+            <Badge
+              variant="outline"
+              className={minimalNeedsReview
+                ? 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'
+                : 'border-green-300 bg-green-50 text-[10px] text-green-700'}
+            >
+              {minimalRunning ? '分析中' : minimalNeedsReview ? '需要复核' : '证据充分'}
+            </Badge>
+          </div>
+          <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
+            {minimalFolder
+              ? minimalFolder.folderPath.join(' / ')
+              : minimalRunning
+                ? '正在抽取事实并判断'
+                : minimal?.status === 'fallback'
+                  ? '模型调用失败'
+                  : '暂未形成唯一分类建议'}
+          </p>
+          <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
+            业务阶段：{PROJECT_STAGE_LABELS[
+              minimal?.stage ?? result.businessStage ?? 'unknown'
+            ] ?? '待确认'}
+            {' · '}
+            文件类型：{result.documentType ?? '待识别'}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <Progress value={minimalConfidence} className="h-1.5 flex-1" />
+            <span className="text-xs text-violet-800">{minimalConfidence}%</span>
+          </div>
+          {/* 把握程度由证据强度推导，不是模型自报，所以必须说清是怎么来的。 */}
+          {minimal?.confidenceBasis && (
+            <p className="mt-1 break-words text-[10px] leading-4 text-violet-600">
+              把握依据：{minimal.confidenceBasis}
+            </p>
           )}
-
+          <p className="mt-2 break-words text-xs leading-5 text-violet-800">
+            {minimal?.reasoning ??
+              minimal?.error ??
+              (minimalRunning
+                ? '代码正在解析确定性证据，随后交模型判断阶段。'
+                : '未成功返回结果，请查看详情中的诊断信息。')}
+          </p>
+          {(minimal?.evidence.length ?? 0) > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-green-800">
+              {minimal?.evidence.slice(0, 2).map(item => (
+                <li key={item} className="break-words">✓ {item}</li>
+              ))}
+            </ul>
+          )}
+          {(minimal?.contradictions.length ?? 0) > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-amber-800">
+              {minimal?.contradictions.slice(0, 2).map(item => (
+                <li key={item} className="break-words">⚠ {item}</li>
+              ))}
+            </ul>
+          )}
+          {minimal?.missingEvidence && (
+            <p className="mt-2 break-words border-t border-violet-200 pt-2 text-[11px] leading-4 text-amber-800">
+              缺什么：{minimal.missingEvidence}
+            </p>
+          )}
         </div>
 
         {result.archived && (
@@ -1702,7 +1632,6 @@ export default function Home() {
   const [results, setResults] = useState<ClassifyResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
-  const [showMinimalPath, setShowMinimalPath] = useState(true);
   // 'abstract' 版阶段说明不含文件类型清单，用来验证清单是否在替模型答题。
   const [stageGuideMode, setStageGuideMode] = useState<'examples' | 'abstract'>('examples');
 
@@ -2774,36 +2703,20 @@ export default function Home() {
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
                       <Label
-                        htmlFor="minimal-path-toggle"
+                        htmlFor="stage-guide-mode-toggle"
                         className="cursor-pointer text-xs font-normal text-muted-foreground"
                       >
-                        显示极简链路
+                        阶段说明去掉文件清单
                       </Label>
                       <Switch
-                        id="minimal-path-toggle"
-                        checked={showMinimalPath}
-                        onCheckedChange={setShowMinimalPath}
-                        aria-label="运行并显示极简链路结论"
+                        id="stage-guide-mode-toggle"
+                        checked={stageGuideMode === 'abstract'}
+                        onCheckedChange={checked =>
+                          setStageGuideMode(checked ? 'abstract' : 'examples')
+                        }
+                        aria-label="改用只讲业务含义、不列文件类型的阶段说明"
                       />
                     </div>
-                    {showMinimalPath && (
-                      <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
-                        <Label
-                          htmlFor="stage-guide-mode-toggle"
-                          className="cursor-pointer text-xs font-normal text-muted-foreground"
-                        >
-                          阶段说明去掉文件清单
-                        </Label>
-                        <Switch
-                          id="stage-guide-mode-toggle"
-                          checked={stageGuideMode === 'abstract'}
-                          onCheckedChange={checked =>
-                            setStageGuideMode(checked ? 'abstract' : 'examples')
-                          }
-                          aria-label="改用只讲业务含义、不列文件类型的阶段说明"
-                        />
-                      </div>
-                    )}
                   </div>
                 </div>
                 <CardDescription>
@@ -2820,7 +2733,6 @@ export default function Home() {
                         <ClassifyResultItem
                           key={result.clientId}
                           result={result}
-                          showMinimalPath={showMinimalPath}
                           onConfirmArchive={handleConfirmArchive}
                           onCancelArchive={handleCancelArchive}
                         />
