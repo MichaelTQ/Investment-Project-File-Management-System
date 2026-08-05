@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HeaderUtils } from 'coze-coding-dev-sdk';
 
+import { rebuildMinimalArchive } from '@/lib/classification/minimal/pipeline';
 import { checkProjectConsistency } from '@/lib/classification/project-consistency';
 import {
   getProjectContextMemoryView,
@@ -19,11 +20,12 @@ export async function GET(request: NextRequest) {
     if (!(await getProject(projectId))) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
-    const [projectContext, consistency] = await Promise.all([
+    const [projectContext, consistency, minimal] = await Promise.all([
       getProjectContextMemoryView(projectId),
       checkProjectConsistency(projectId),
+      rebuildMinimalArchive(projectId).catch(() => null),
     ]);
-    return NextResponse.json({ projectContext, consistency });
+    return NextResponse.json({ projectContext, consistency, minimal });
   } catch (error) {
     return NextResponse.json(
       {
@@ -51,8 +53,16 @@ export async function POST(request: NextRequest) {
     });
     // 重建之后立刻全量校验：新文件带来的交易记录可能回头推翻先前判过的文件。
     // 纯计算，不影响这次请求的耗时预算。
-    const consistency = await checkProjectConsistency(projectId);
-    return NextResponse.json({ success: true, projectContext, consistency });
+    const [consistency, minimal] = await Promise.all([
+      checkProjectConsistency(projectId),
+      rebuildMinimalArchive(projectId).catch(() => null),
+    ]);
+    return NextResponse.json({
+      success: true,
+      projectContext,
+      consistency,
+      minimal,
+    });
   } catch (error) {
     return NextResponse.json(
       {

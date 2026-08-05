@@ -48,6 +48,11 @@ export interface LlmStageDecisionParams {
   projectContext?: ProjectContextSnapshot | null;
   relatedDocuments?: RelatedDocumentFacts[];
   customHeaders?: Record<string, string>;
+  /**
+   * 代码已经算好的确定性结论（例如"本文件形成于该笔交易之前"）。
+   * 极简链路用它把方向判断从模型手里收回来——实测模型会把金额先后解释反。
+   */
+  resolvedEvidence?: string;
 }
 
 export interface LlmStageDecisionResult {
@@ -213,7 +218,12 @@ ${factsBrief(params.facts)}
 ${projectContextBrief(params.sourcePath, params.projectContext)}
 
 【同项目关联文件】
-${relatedDocumentsBrief(params.relatedDocuments, params.facts.documentType)}`;
+${relatedDocumentsBrief(params.relatedDocuments, params.facts.documentType)}
+${
+  params.resolvedEvidence
+    ? `\n【代码已确定的结论——优先于你自己的推断】\n${params.resolvedEvidence}`
+    : ''
+}`;
 
   return [
     { role: 'system', content: systemPrompt },

@@ -227,6 +227,23 @@ interface ConsistencyReport {
   findings: ConsistencyFinding[];
 }
 
+interface MinimalDecisionResult {
+  sourcePath: string;
+  stage: string | null;
+  folder: ArchiveFolder | null;
+  confidence: number;
+  strength: 'high' | 'medium' | 'low' | 'none';
+  confidenceBasis: string;
+  reasoning: string;
+  evidence: string[];
+  contradictions: string[];
+  requiresHumanReview: boolean;
+  missingEvidence?: string;
+  relatedSourcePaths: string[];
+  status: 'success' | 'fallback';
+  error?: string;
+}
+
 interface ModelStageDecisionResult {
   status: 'success' | 'fallback';
   decision: AgentDecisionResult['decision'] | null;
@@ -254,6 +271,8 @@ interface ClassifyResult {
   agentDecision?: AgentDecisionResult;
   modelStageDecision?: ModelStageDecisionResult;
   modelStagePending?: boolean;
+  minimalDecision?: MinimalDecisionResult;
+  minimalPending?: boolean;
   projectSessionMemory?: ProjectSessionMemoryResult;
   documentFacts?: unknown;
   suggestedArchiveTitle?: string;
@@ -817,12 +836,14 @@ function ClassifyResultItem({
   result,
   showLegacyClassification,
   showModelStageDecision,
+  showMinimalPath,
   onConfirmArchive,
   onCancelArchive,
 }: {
   result: ClassifyResult;
   showLegacyClassification: boolean;
   showModelStageDecision: boolean;
+  showMinimalPath: boolean;
   onConfirmArchive: (
     clientId: string,
     archiveTitle: string,
@@ -841,10 +862,17 @@ function ClassifyResultItem({
       ? modelStage.decision.businessStage ===
         result.agentDecision.decision.businessStage
       : null;
+  const minimal = result.minimalDecision;
+  const minimalPending = Boolean(result.minimalPending && !minimal);
+  const minimalAgreesWithAgent =
+    minimal?.stage && result.agentDecision
+      ? minimal.stage === result.agentDecision.decision.businessStage
+      : null;
   const comparisonColumns =
     1 +
     (showLegacyClassification ? 1 : 0) +
-    (showModelStageDecision ? 1 : 0);
+    (showModelStageDecision ? 1 : 0) +
+    (showMinimalPath ? 1 : 0);
   const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
   const agentPending = Boolean(result.agentPending && !result.agentDecision);
   const agentNeedsReview = !agentPending && result.agentDecision?.status !== 'decided';
@@ -910,11 +938,13 @@ function ClassifyResultItem({
       <div className="min-w-0 space-y-3 p-3">
         <div
           className={`grid gap-3 ${
-            comparisonColumns === 3
-              ? 'lg:grid-cols-3'
-              : comparisonColumns === 2
-                ? 'lg:grid-cols-2'
-                : ''
+            comparisonColumns >= 4
+              ? 'lg:grid-cols-2 xl:grid-cols-4'
+              : comparisonColumns === 3
+                ? 'lg:grid-cols-3'
+                : comparisonColumns === 2
+                  ? 'lg:grid-cols-2'
+                  : ''
           }`}
         >
           <div className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
@@ -966,6 +996,86 @@ function ClassifyResultItem({
               </ul>
             )}
           </div>
+
+          {showMinimalPath && (
+            <div className="min-w-0 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
+                  <Zap className="h-3.5 w-3.5" />
+                  极简链路
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {minimal?.requiresHumanReview && (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-50 text-[10px] text-amber-700"
+                    >
+                      需要复核
+                    </Badge>
+                  )}
+                  {minimalAgreesWithAgent !== null && (
+                    <Badge
+                      variant="outline"
+                      className={minimalAgreesWithAgent
+                        ? 'border-green-300 bg-green-50 text-[10px] text-green-700'
+                        : 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'}
+                    >
+                      {minimalAgreesWithAgent ? '与 Agent 一致' : '与 Agent 分歧'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <p className="mt-2 break-words text-sm font-medium leading-5 text-emerald-950">
+                {minimal?.folder
+                  ? minimal.folder.folderPath.join(' / ')
+                  : minimalPending
+                    ? '极简链路判断中'
+                    : minimal?.status === 'fallback'
+                      ? '模型调用失败'
+                      : '未能确定业务阶段'}
+              </p>
+              <p className="mt-1 break-words text-[11px] leading-4 text-emerald-700">
+                业务阶段：{PROJECT_STAGE_LABELS[minimal?.stage ?? 'unknown'] ?? '待确认'}
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <Progress value={minimal?.confidence ?? 0} className="h-1.5 flex-1" />
+                <span className="text-xs text-emerald-800">
+                  {minimal?.confidence ?? 0}%
+                </span>
+              </div>
+              {minimal?.confidenceBasis && (
+                <p className="mt-1 break-words text-[10px] leading-4 text-emerald-600">
+                  把握依据：{minimal.confidenceBasis}
+                </p>
+              )}
+              <p className="mt-2 break-words text-xs leading-5 text-emerald-800">
+                {minimal?.reasoning ??
+                  minimal?.error ??
+                  (minimalPending
+                    ? '代码正在解析确定性证据，随后交模型判断阶段。'
+                    : '暂无结论。')}
+              </p>
+              {(minimal?.evidence.length ?? 0) > 0 && (
+                <ul className="mt-2 space-y-1 border-t border-emerald-200 pt-2 text-[11px] leading-4 text-green-800">
+                  {minimal?.evidence.slice(0, 2).map(item => (
+                    <li key={item} className="break-words">✓ {item}</li>
+                  ))}
+                </ul>
+              )}
+              {(minimal?.contradictions.length ?? 0) > 0 && (
+                <ul className="mt-2 space-y-1 border-t border-emerald-200 pt-2 text-[11px] leading-4 text-amber-800">
+                  {minimal?.contradictions.slice(0, 2).map(item => (
+                    <li key={item} className="break-words">⚠ {item}</li>
+                  ))}
+                </ul>
+              )}
+              {minimal?.missingEvidence && (
+                <p className="mt-2 break-words border-t border-emerald-200 pt-2 text-[11px] leading-4 text-amber-800">
+                  缺什么：{minimal.missingEvidence}
+                </p>
+              )}
+            </div>
+          )}
 
           {showModelStageDecision && (
             <div className="min-w-0 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
@@ -2247,6 +2357,7 @@ export default function Home() {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showLegacyClassification, setShowLegacyClassification] = useState(true);
   const [showModelStageDecision, setShowModelStageDecision] = useState(true);
+  const [showMinimalPath, setShowMinimalPath] = useState(true);
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2825,6 +2936,7 @@ export default function Home() {
           requiresArchiveConfirmation: false,
           agentPending: true,
           modelStagePending: showModelStageDecision,
+          minimalPending: showMinimalPath,
           rulePreliminary: Boolean(quickRule),
         },
       ]);
@@ -2942,6 +3054,7 @@ export default function Home() {
             agentDecision: true,
             legacyDecision: showLegacyClassification,
             modelStageDecision: showModelStageDecision,
+            minimalPath: showMinimalPath,
             sourcePath: file.webkitRelativePath || file.name,
           }),
         });
@@ -2992,6 +3105,7 @@ export default function Home() {
             archiveStatus: 'pending',
             agentPending: false,
             modelStagePending: false,
+            minimalPending: false,
             rulePreliminary: false,
           };
           return prev.map(existing => {
@@ -3107,6 +3221,7 @@ export default function Home() {
     results,
     showLegacyClassification,
     showModelStageDecision,
+    showMinimalPath,
   ]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -3633,6 +3748,20 @@ export default function Home() {
                         aria-label="运行并显示模型阶段判断影子结果"
                       />
                     </div>
+                    <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
+                      <Label
+                        htmlFor="minimal-path-toggle"
+                        className="cursor-pointer text-xs font-normal text-muted-foreground"
+                      >
+                        显示极简链路
+                      </Label>
+                      <Switch
+                        id="minimal-path-toggle"
+                        checked={showMinimalPath}
+                        onCheckedChange={setShowMinimalPath}
+                        aria-label="运行并显示极简链路结论"
+                      />
+                    </div>
                   </div>
                 </div>
                 <CardDescription>
@@ -3653,6 +3782,7 @@ export default function Home() {
                           result={result}
                           showLegacyClassification={showLegacyClassification}
                           showModelStageDecision={showModelStageDecision}
+                          showMinimalPath={showMinimalPath}
                           onConfirmArchive={handleConfirmArchive}
                           onCancelArchive={handleCancelArchive}
                         />
