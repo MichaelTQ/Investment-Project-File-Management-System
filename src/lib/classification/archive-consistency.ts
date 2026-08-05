@@ -35,15 +35,40 @@ function stageRank(stage: ArchiveBusinessStage | null): number | null {
 }
 
 /**
- * 记载了交易的文件类型。只有这些文件里的"由 X 变为 Y"才被当作交易锚点——
- * 普通文件顺带提到的前后值不足以定义一次交易。
+ * 不能充当交易锚点的文件类型。**全项目唯一的一份清单**，上传时判方向和事后校验
+ * 都用它，不允许各处再抄一份。
+ *
+ * 这里用排除法而不是白名单。原先只认四种决议/协议，导致交割确认函、缴款通知书、
+ * 出资证明书、变更后的营业执照这些白纸黑字写了前后值的文件全被挡在门外，锚点大量
+ * 漏掉，然后静默退回"金额低者形成较早"的先验——这正是要避免的猜测。
+ *
+ * 需要挡住的其实只有一类：**转述别人交易的文件**。尽调报告、商业计划书、财务报表、
+ * 信用报告、立项与投决材料都会引用标的历史上的增资记录，那些交易可能与本项目无关，
+ * 拿它们当锚点会把文件钉到错误的时点上。
+ *
+ * 另一道门槛在 extractFieldTransitions：必须真的写出了变更前后两个值。所以这里
+ * 放宽的只是"文件身份"，不是"证据标准"。
  */
-const TRANSACTION_RECORD_TYPES: DocumentType[] = [
-  'shareholder_resolution',
-  'capital_increase_agreement',
-  'board_resolution',
-  'investment_committee_resolution',
+const NON_ANCHOR_DOCUMENT_TYPES: DocumentType[] = [
+  'due_diligence_report',
+  'business_plan',
+  'project_initiation_report',
+  'project_initiation_application',
+  'investment_recommendation',
+  'investment_compliance_review',
+  'financial_statement',
+  'credit_report',
+  'confidentiality_agreement',
+  'meeting_minutes',
+  'voting_result',
+  'other',
+  'unknown',
 ];
+
+/** 这份文件写明的"由 X 变为 Y"是否可以用来给别的文件定位交易前后侧。 */
+export function canAnchorTransaction(documentType: DocumentType): boolean {
+  return !NON_ANCHOR_DOCUMENT_TYPES.includes(documentType);
+}
 
 /**
  * 档案完整性提示：出现了左边的文件，通常意味着右边的文件也应该在档。
@@ -304,9 +329,7 @@ export function collectAnchorTransitions(
 ): AnchorTransition[] {
   const anchors: AnchorTransition[] = [];
   for (const document of documents) {
-    if (!TRANSACTION_RECORD_TYPES.includes(document.facts.documentType)) {
-      continue;
-    }
+    if (!canAnchorTransaction(document.facts.documentType)) continue;
     if (!document.currentStage) continue;
     for (const transition of extractFieldTransitions(document.facts)) {
       anchors.push({

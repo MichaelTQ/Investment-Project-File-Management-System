@@ -222,3 +222,130 @@ test('没有日期的文件不进时间线', () => {
   );
   assert.deepEqual(buildTimeline([undated]), []);
 });
+
+/**
+ * 锚点召回率：以前只有四种决议/协议能当锚点，交割确认函、缴款通知书、变更后的
+ * 营业执照这些同样写明了前后值的文件全被挡掉，然后静默退回先验推测。
+ */
+
+test('交割确认函写明前后值时可以作为锚点', () => {
+  const closing = document(
+    '交割确认函.pdf',
+    'investment_execution',
+    facts({
+      documentType: 'closing_confirmation',
+      title: '交割确认函',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '交割后注册资本由11.73624万元变更为13.04027万元',
+        },
+      ],
+    })
+  );
+
+  const resolved = resolveEvidence(preCharter, [closing]);
+  assert.equal(resolved.transactionSide?.side, 'before');
+  assert.equal(resolved.strength, 'high');
+  assert.equal(resolved.anchorDiagnostic, null);
+});
+
+test('尽调报告转述的历史增资不能当锚点', () => {
+  const dueDiligence = document(
+    '尽职调查报告.pdf',
+    'due_diligence',
+    facts({
+      documentType: 'due_diligence_report',
+      title: '尽职调查报告',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '标的公司历史上注册资本由11.73624万元增加至13.04027万元',
+        },
+      ],
+    })
+  );
+
+  const resolved = resolveEvidence(preCharter, [dueDiligence]);
+  assert.equal(resolved.transactionSide, null);
+  assert.equal(resolved.anchorDiagnostic?.reason, 'no_transaction_records');
+});
+
+/** 失败可见性：三种"没找到锚点"必须能区分开，处置方式完全不同。 */
+
+test('数值对不上号时明确报异常，而不是退回先验推测', () => {
+  const orphanCharter = document(
+    '章程.pdf',
+    null,
+    facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      evidenceQuotes: ['注册资本为人民币12.5万元'],
+    })
+  );
+  const resolution = document(
+    '股东会决议.pdf',
+    'investment_execution',
+    facts({
+      documentType: 'shareholder_resolution',
+      title: '股东会决议',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '注册资本由11.73624万元增加至13.04027万元',
+        },
+      ],
+    })
+  );
+
+  const resolved = resolveEvidence(orphanCharter, [resolution]);
+  assert.equal(resolved.transactionSide, null);
+  assert.equal(resolved.anchorDiagnostic?.reason, 'value_mismatch');
+  assert.match(resolved.anchorDiagnostic?.detail ?? '', /12\.5/);
+  assert.match(resolved.basis, /对不上/);
+
+  // 对不上号时不能再拿"金额低者形成较早"糊过去，那个先验的前提已被证伪。
+  const described = describeResolvedEvidence(resolved);
+  assert.match(described, /结果异常/);
+  assert.equal(described.includes('倾向性推测'), false);
+});
+
+test('有锚点但本文件没写该字段时，说清缺的是哪个字段', () => {
+  const silentCharter = document(
+    '章程.pdf',
+    null,
+    facts({ documentType: 'company_charter', title: '公司章程' })
+  );
+  const resolution = document(
+    '股东会决议.pdf',
+    'investment_execution',
+    facts({
+      documentType: 'shareholder_resolution',
+      title: '股东会决议',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '注册资本由11.73624万元增加至13.04027万元',
+        },
+      ],
+    })
+  );
+
+  const resolved = resolveEvidence(silentCharter, [resolution]);
+  assert.equal(resolved.anchorDiagnostic?.reason, 'field_not_stated');
+  assert.deepEqual(resolved.anchorDiagnostic?.fields, ['注册资本']);
+  assert.match(describeResolvedEvidence(resolved), /注册资本/);
+});
+
+test('项目里只有这一份文件时如实说明，不报成缺少交易记录', () => {
+  const resolved = resolveEvidence(preCharter, []);
+  assert.equal(resolved.anchorDiagnostic?.reason, 'no_other_documents');
+});
