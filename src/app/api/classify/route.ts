@@ -42,6 +42,10 @@ import {
   LLM_STAGE_DECISION_VERSION,
   type LlmStageDecisionResult,
 } from '@/lib/classification/llm-stage-decision';
+import {
+  classifyWithMinimalPath,
+  type MinimalClassifyResult,
+} from '@/lib/classification/minimal/pipeline';
 import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
 import {
   commitArchivedProjectDocument,
@@ -115,6 +119,13 @@ interface ClassifyProcess {
     error?: string;
     inputWarnings?: string[];
   };
+  step0_minimalPath?: {
+    enabled: boolean;
+    status: MinimalClassifyResult['status'];
+    strength: MinimalClassifyResult['strength'];
+    error?: string;
+    modelCall?: ModelCallDiagnostics;
+  };
   step0_modelStageDecision?: {
     enabled: boolean;
     status: LlmStageDecisionResult['status'];
@@ -174,6 +185,8 @@ interface ClassifyResult {
   agentDecision?: ClassificationAgentResult;
   /** 影子模式：模型给出的阶段判断，仅供对照，不影响 targetFolder。 */
   modelStageDecision?: LlmStageDecisionResult;
+  /** 极简链路的结论，与 Agent 链路并行运行、互不影响，用于 A/B 对照。 */
+  minimalDecision?: MinimalClassifyResult;
   projectSessionMemory?: ProjectSessionMemoryView;
   requiresArchiveConfirmation?: boolean;
   archived?: {
@@ -328,6 +341,8 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
     let runModelStageDecision =
       globalThis.process.env.ENABLE_LLM_STAGE_DECISION_SHADOW === 'true';
+    let runMinimalPath =
+      globalThis.process.env.ENABLE_MINIMAL_PATH === 'true';
     let rawProjectContext: unknown;
     let rawRelatedDocumentFacts: unknown;
 
@@ -363,6 +378,8 @@ export async function POST(request: NextRequest) {
         typeof body.modelStageDecision === 'boolean'
           ? body.modelStageDecision
           : runModelStageDecision;
+      runMinimalPath =
+        typeof body.minimalPath === 'boolean' ? body.minimalPath : runMinimalPath;
       rawProjectContext = body.projectContext;
       rawRelatedDocumentFacts = body.relatedDocumentFacts;
 
@@ -409,6 +426,11 @@ export async function POST(request: NextRequest) {
         modelStageDecisionValue === null
           ? runModelStageDecision
           : modelStageDecisionValue === 'true';
+      const minimalPathValue = formData.get('minimalPath');
+      runMinimalPath =
+        minimalPathValue === null
+          ? runMinimalPath
+          : minimalPathValue === 'true';
       rawProjectContext = parseOptionalJson(formData.get('projectContext'));
       rawRelatedDocumentFacts = parseOptionalJson(
         formData.get('relatedDocumentFacts')
@@ -437,7 +459,8 @@ export async function POST(request: NextRequest) {
       persistFacts ||
       runContextDecision ||
       runAgentDecision ||
-      runModelStageDecision;
+      runModelStageDecision ||
+      runMinimalPath;
 
     const projectContext: ProjectContextSnapshot | null =
       parseProjectContextSnapshot(rawProjectContext);
@@ -651,6 +674,8 @@ export async function POST(request: NextRequest) {
     let modelStageDecisionStep:
       | ClassifyProcess['step0_modelStageDecision']
       | undefined;
+    let minimalDecision: MinimalClassifyResult | undefined;
+    let minimalPathStep: ClassifyProcess['step0_minimalPath'] | undefined;
     if (extractFacts) {
       const extraction = await measurePhase('extract_document_facts', () =>
         extractDocumentFacts({
@@ -854,6 +879,41 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    // 极简链路：与 Agent 链路并行，用同一份事实，判断者不同。两条路互不读写对方
+    // 的状态，因此可以直接 A/B；将来极简版胜出时删掉 Agent 一整块即可。
+    if (runMinimalPath && documentFacts && projectId) {
+      const factsForMinimal = documentFacts;
+      try {
+        minimalDecision = await measurePhase('minimal_path', () =>
+          classifyWithMinimalPath({
+            projectId,
+            projectName: project?.name,
+            sourcePath: sourcePath || fileName,
+            facts: factsForMinimal,
+            fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+            customHeaders,
+          })
+        );
+        if (minimalDecision.modelCall) modelCalls.push(minimalDecision.modelCall);
+        minimalPathStep = {
+          enabled: true,
+          status: minimalDecision.status,
+          strength: minimalDecision.strength,
+          error: minimalDecision.error,
+          modelCall: minimalDecision.modelCall,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误';
+        console.error('Minimal path error:', error);
+        minimalPathStep = {
+          enabled: true,
+          status: 'fallback',
+          strength: 'none',
+          error: message,
+        };
+      }
+    }
+
     // 最终只判断业务阶段；阶段文件夹本身就是归档目标。
     const legacyStageDecision = inferBusinessStage({
       sourcePath: sourcePath || fileName,
@@ -880,6 +940,7 @@ export async function POST(request: NextRequest) {
           }
         : undefined,
       step0_agentOrchestration: agentOrchestrationStep,
+      step0_minimalPath: minimalPathStep,
       step0_modelStageDecision: modelStageDecisionStep,
       step0_projectSessionMemory: projectSessionMemoryStep,
       finalDecision: { method: 'none', explanation: '' },
@@ -936,6 +997,9 @@ export async function POST(request: NextRequest) {
     }
     if (modelStageDecision) {
       result.modelStageDecision = modelStageDecision;
+    }
+    if (minimalDecision) {
+      result.minimalDecision = minimalDecision;
     }
     if (projectSessionMemory) {
       result.projectSessionMemory = projectSessionMemory;
