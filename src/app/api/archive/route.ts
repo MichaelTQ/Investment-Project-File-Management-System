@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { HeaderUtils } from "coze-coding-dev-sdk";
 import {
   listArchivedFiles,
   deleteArchivedFile,
@@ -17,12 +16,9 @@ import {
 import { getArchiveFolder } from "@/lib/folder-structure";
 import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/document-facts";
 import {
-  commitArchivedProjectDocument,
-  forgetProjectDocumentByArchivedFileId,
-  forgetProjectDocumentsByFileName,
-  markProjectContextDirty,
-} from "@/lib/classification/session-project-memory";
-import { forgetMinimalDocumentsByArchivedFile } from "@/lib/classification/minimal/store";
+  forgetMinimalDocumentsByArchivedFile,
+  upsertMinimalDocument,
+} from "@/lib/classification/minimal/store";
 
 export const runtime = "nodejs";
 
@@ -152,33 +148,14 @@ export async function POST(request: NextRequest) {
         })
     );
 
-    let projectContext;
-    try {
-      if (documentFacts) {
-        const factsToCommit = documentFacts;
-        const committed = await measurePhase(
-          "commit_context_pending",
-          () => commitArchivedProjectDocument({
-            projectId,
-            projectName: project.name,
-            sourcePath: sourcePath || originalName,
-            facts: factsToCommit,
-            archivedFileId: archived.id,
-            customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
-            deferContextRebuild: true,
-          })
-        );
-        const { currentDecision: _currentDecision, ...view } = committed;
-        void _currentDecision;
-        projectContext = view;
-      } else {
-        projectContext = await markProjectContextDirty(
-          projectId,
-          `文件“${originalName}”已归档，但缺少可提交的结构化事实`
-        );
-      }
-    } catch (contextError) {
-      console.error('Archive Context commit failed:', contextError);
+    if (documentFacts) {
+      await upsertMinimalDocument({
+        projectId,
+        sourcePath: sourcePath || originalName,
+        facts: documentFacts,
+        stage: targetFolder.businessStage,
+        archivedFileId: archived.id,
+      });
     }
 
     return NextResponse.json({
@@ -189,12 +166,11 @@ export async function POST(request: NextRequest) {
         projectName: archived.projectName,
         folderPath: archived.folderPath,
       },
-      projectContext,
-      contextRebuildPending: Boolean(documentFacts && projectContext),
+      contextRebuildPending: Boolean(documentFacts),
       performance: {
         totalDurationMs: Date.now() - requestStartedAt,
         phases: phaseTimings,
-        modelCalls: projectContext?.contextSynthesis?.modelCalls ?? [],
+        modelCalls: [],
       },
     });
   } catch (error) {
@@ -276,26 +252,6 @@ export async function DELETE(request: NextRequest) {
     for (const fileId of [...new Set(ids)]) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
-        try {
-          const removed = await forgetProjectDocumentByArchivedFileId(
-            deleted.projectId,
-            deleted.archivedFileId,
-            {
-              customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
-            }
-          );
-          if (!removed && deleted.originalName) {
-            await forgetProjectDocumentsByFileName(
-              deleted.projectId,
-              deleted.originalName,
-              {
-                customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
-              }
-            );
-          }
-        } catch (memoryError) {
-          console.error('Delete archive memory cleanup failed:', memoryError);
-        }
         try {
           // 极简链路有自己的事实表，删除必须同步，否则事实会继续参与后续判断。
           await forgetMinimalDocumentsByArchivedFile(deleted.projectId, {
@@ -398,23 +354,10 @@ export async function PATCH(request: NextRequest) {
         }
         movedFiles.push(moved);
       }
-      const projectContexts = await Promise.all(
-        [...new Set(movedFiles.map(file => file.projectId))].map(projectId =>
-          markProjectContextDirty(
-            projectId,
-            `人工移动了 ${movedFiles.filter(file => file.projectId === projectId).length} 份归档文件`
-          ).catch(error => {
-            console.error('Mark moved files Context dirty failed:', error);
-            return null;
-          })
-        )
-      );
-
       return NextResponse.json({
         success: true,
         movedCount: movedFiles.length,
         files: movedFiles,
-        projectContexts: projectContexts.filter(Boolean),
       });
     }
 
@@ -429,15 +372,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "文件不存在" }, { status: 404 });
     }
 
-    const projectContext = await markProjectContextDirty(
-      result.projectId,
-      `人工移动了归档文件“${result.originalName}”`
-    ).catch(error => {
-      console.error('Mark moved file Context dirty failed:', error);
-      return null;
-    });
-
-    return NextResponse.json({ success: true, file: result, projectContext });
+    return NextResponse.json({ success: true, file: result });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "移动文件失败" },

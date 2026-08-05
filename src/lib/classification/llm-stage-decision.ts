@@ -13,7 +13,7 @@ import type {
   ContextClassificationDecision,
   ProjectContextSnapshot,
   RelatedDocumentFacts,
-} from './context-decision';
+} from './minimal/types';
 
 export const LLM_STAGE_DECISION_MODEL = 'doubao-seed-2-0-mini-260215';
 export const LLM_STAGE_DECISION_VERSION = 'llm-stage-decision-v1';
