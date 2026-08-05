@@ -227,6 +227,21 @@ interface ConsistencyReport {
   findings: ConsistencyFinding[];
 }
 
+interface MinimalRebuildReport {
+  documentCount: number;
+  checkedCount: number;
+  skippedCount: number;
+  timeline: Array<{
+    date: string;
+    sourcePath: string;
+    stage: string | null;
+    meaning: string;
+    evidence: string;
+  }>;
+  findings: ConsistencyFinding[];
+  dismissedCount: number;
+}
+
 interface MinimalDecisionResult {
   sourcePath: string;
   stage: string | null;
@@ -2368,6 +2383,8 @@ export default function Home() {
     useState<ProjectSessionMemoryResult | null>(null);
   const [consistencyReport, setConsistencyReport] =
     useState<ConsistencyReport | null>(null);
+  const [minimalReport, setMinimalReport] =
+    useState<MinimalRebuildReport | null>(null);
   // 用户忽略过的提示不再重复弹。切换项目时清空；持久化留待后续。
   const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
     () => new Set()
@@ -2455,6 +2472,7 @@ export default function Home() {
     if (!selectedProjectId) {
       setProjectContextState(null);
       setConsistencyReport(null);
+      setMinimalReport(null);
       setProjectContextLoading(false);
       return;
     }
@@ -2474,6 +2492,7 @@ export default function Home() {
         }
         setProjectContextState(data.projectContext ?? null);
         setConsistencyReport(data.consistency ?? null);
+        setMinimalReport(data.minimal ?? null);
       })
       .catch(error => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -2503,6 +2522,7 @@ export default function Home() {
       }
       setProjectContextState(data.projectContext ?? null);
       setConsistencyReport(data.consistency ?? null);
+      setMinimalReport(data.minimal ?? null);
     } catch (error) {
       setProjectContextError(
         error instanceof Error ? error.message : '重建项目Context失败'
@@ -2810,6 +2830,7 @@ export default function Home() {
             const rebuiltContext = rebuildData?.projectContext ?? null;
             setProjectContextState(rebuiltContext);
             setConsistencyReport(rebuildData?.consistency ?? null);
+            setMinimalReport(rebuildData?.minimal ?? null);
             const rebuiltDecisions = new Map<string, AgentDecisionResult>(
               (rebuiltContext?.reEvaluatedDocuments ?? []).map(
                 (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
@@ -3136,6 +3157,8 @@ export default function Home() {
               }
               const rebuiltContext = rebuildData?.projectContext ?? null;
               setProjectContextState(rebuiltContext);
+              setConsistencyReport(rebuildData?.consistency ?? null);
+              setMinimalReport(rebuildData?.minimal ?? null);
               const rebuiltDecisions = new Map<string, AgentDecisionResult>(
                 (rebuiltContext?.reEvaluatedDocuments ?? []).map(
                   (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
@@ -3599,6 +3622,74 @@ export default function Home() {
                   <p className="text-muted-foreground">
                     选择项目后显示正式Context。
                   </p>
+                )}
+
+                {/* 极简链路的时间线：代码按日期排序拼出，不调用模型 */}
+                {minimalReport && (
+                  <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
+                        <Zap className="h-3.5 w-3.5" />
+                        极简链路 Context
+                      </p>
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-300 bg-white text-[10px] text-emerald-700"
+                      >
+                        0 次模型调用
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] leading-4 text-emerald-800">
+                      依据 {minimalReport.documentCount} 份文件的事实；已校验{' '}
+                      {minimalReport.checkedCount} 份
+                      {minimalReport.skippedCount > 0
+                        ? `，${minimalReport.skippedCount} 份尚未归档已跳过`
+                        : ''}
+                      ；事件 {minimalReport.timeline.length} 个
+                      {minimalReport.findings.length > 0
+                        ? `；发现 ${minimalReport.findings.length} 处矛盾`
+                        : '；未发现矛盾'}
+                    </p>
+
+                    {minimalReport.timeline.length > 0 ? (
+                      <details className="group">
+                        <summary className="cursor-pointer text-[11px] text-emerald-700 hover:underline">
+                          查看时间线（{minimalReport.timeline.length}）
+                        </summary>
+                        <ol className="mt-1.5 space-y-1.5 border-l border-emerald-200 pl-2.5">
+                          {minimalReport.timeline.map((entry, index) => (
+                            <li
+                              key={`${entry.sourcePath}-${entry.date}-${index}`}
+                              className="text-[11px] leading-4"
+                            >
+                              <span className="font-medium text-emerald-900">
+                                {entry.date}
+                              </span>
+                              <span className="text-emerald-800">
+                                {' '}
+                                · {entry.meaning}
+                              </span>
+                              <p className="break-all text-muted-foreground">
+                                {entry.sourcePath}
+                                {entry.stage
+                                  ? ` · ${PROJECT_STAGE_LABELS[entry.stage] ?? entry.stage}`
+                                  : ' · 尚未归档'}
+                              </p>
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    ) : (
+                      <p className="text-[11px] leading-4 text-muted-foreground">
+                        还没有带日期的文件事实，时间线为空。
+                      </p>
+                    )}
+
+                    <p className="border-t border-emerald-200 pt-1.5 text-[10px] leading-4 text-emerald-700">
+                      时间线由代码按日期排序拼出，不需要模型综合，因此每次归档后都能
+                      免费全量重建。
+                    </p>
+                  </div>
                 )}
                 {projectContextError && (
                   <p className="break-words text-destructive">
