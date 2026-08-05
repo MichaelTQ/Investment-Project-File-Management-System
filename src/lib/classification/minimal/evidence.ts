@@ -72,6 +72,7 @@ export type EvidenceStrength = 'high' | 'medium' | 'low' | 'none';
 export type AnchorMissReason =
   | 'no_other_documents'
   | 'no_transaction_records'
+  | 'anchor_type_rejected'
   | 'field_not_stated'
   | 'value_mismatch';
 
@@ -155,6 +156,7 @@ function buildAnchorDiagnostic(input: {
   anchorSourcePaths: string[];
   fieldsNotStated: string[];
   mismatches: string[];
+  rejectedAnchors: string[];
 }): AnchorDiagnostic {
   const anchorNames = input.anchorSourcePaths.map(leafName);
 
@@ -177,6 +179,18 @@ function buildAnchorDiagnostic(input: {
         '但本文件没有写明这些字段的数值，因此无法定位它在交易的哪一侧。',
       anchorSourcePaths: anchorNames,
       fields: input.fieldsNotStated,
+    };
+  }
+
+  if (input.rejectedAnchors.length > 0) {
+    return {
+      reason: 'anchor_type_rejected',
+      detail:
+        `项目里有文件写明了变更前后值（${input.rejectedAnchors.join('、')}），` +
+        '但它的文件类型未能识别或属于转述性文件，因此没有被采信为交易锚点。' +
+        '若它确实是股东会决议、增资协议一类的交易文件，请先修正其文件类型再重跑。',
+      anchorSourcePaths: input.rejectedAnchors,
+      fields: [],
     };
   }
 
@@ -223,9 +237,20 @@ export function resolveEvidence(
   const fieldsNotStated: string[] = [];
   const mismatches: string[] = [];
 
+  // 因文件类型被挡下、但确实写明了前后值的候选锚点。必须单独记账：类型识别失败
+  // （unknown）时决议会被静默挡掉，界面上却显示"缺少交易文件"，与事实不符。
+  const rejectedAnchors: string[] = [];
+
   for (const document of others) {
     if (document.sourcePath === current.sourcePath) continue;
-    if (!canAnchorTransaction(document.facts.documentType)) continue;
+    if (!canAnchorTransaction(document.facts.documentType)) {
+      if (extractFieldTransitions(document.facts).length > 0) {
+        rejectedAnchors.push(
+          `${leafName(document.sourcePath)}（类型 ${document.facts.documentType}）`
+        );
+      }
+      continue;
+    }
 
     for (const transition of extractFieldTransitions(document.facts)) {
       if (!anchorSourcePaths.includes(document.sourcePath)) {
@@ -272,6 +297,7 @@ export function resolveEvidence(
         anchorSourcePaths,
         fieldsNotStated,
         mismatches,
+        rejectedAnchors,
       });
 
   // 没有交易锚点时，同类文件之间的数值差异只能形成倾向，不能形成结论。
@@ -364,6 +390,11 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
         `据此本文件**倾向于**是交易${side === 'before' ? '前' : '后'}版本。` +
         '请据此给出默认建议，但必须在理由中写明这是缺少交易文件时的推测，并把 review 设为 true。' +
         '若本文件有明确的减资、回购或退出表述，则不适用此倾向，应据实判断。'
+    );
+  } else if (resolved.anchorDiagnostic?.reason === 'anchor_type_rejected') {
+    lines.push(`【代码未采信】${resolved.anchorDiagnostic.detail}`);
+    lines.push(
+      '你可以参考该文件写明的数值，但要在理由中写明其文件类型未确认，并把 review 设为 true。'
     );
   } else if (resolved.anchorDiagnostic?.reason === 'field_not_stated') {
     // 有锚点、只是这份文件没写那个字段：说清缺的是哪个字段，比笼统说"证据不足"有用。

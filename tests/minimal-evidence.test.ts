@@ -272,7 +272,12 @@ test('尽调报告转述的历史增资不能当锚点', () => {
 
   const resolved = resolveEvidence(preCharter, [dueDiligence]);
   assert.equal(resolved.transactionSide, null);
-  assert.equal(resolved.anchorDiagnostic?.reason, 'no_transaction_records');
+  // 挡掉了，但要说清是"挡掉的"，不能说成项目里没有这份文件。
+  assert.equal(resolved.anchorDiagnostic?.reason, 'anchor_type_rejected');
+  assert.match(
+    resolved.anchorDiagnostic?.detail ?? '',
+    /尽职调查报告\.pdf/
+  );
 });
 
 /** 失败可见性：三种"没找到锚点"必须能区分开，处置方式完全不同。 */
@@ -348,4 +353,33 @@ test('有锚点但本文件没写该字段时，说清缺的是哪个字段', ()
 test('项目里只有这一份文件时如实说明，不报成缺少交易记录', () => {
   const resolved = resolveEvidence(preCharter, []);
   assert.equal(resolved.anchorDiagnostic?.reason, 'no_other_documents');
+});
+
+test('交易文件因类型未识别被挡掉时，如实说明而不是报"缺少交易文件"', () => {
+  // 类型抽取失败（unknown）的股东会决议：内容里明明写了前后值。
+  const untypedResolution = document(
+    '股东会决议.pdf',
+    'investment_execution',
+    facts({
+      documentType: 'unknown',
+      title: '股东会决议',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '注册资本由11.73624万元增加至13.04027万元',
+        },
+      ],
+    })
+  );
+
+  const resolved = resolveEvidence(postCharter, [untypedResolution]);
+  assert.equal(resolved.transactionSide, null);
+  assert.equal(resolved.anchorDiagnostic?.reason, 'anchor_type_rejected');
+  assert.match(resolved.anchorDiagnostic?.detail ?? '', /股东会决议\.pdf/);
+  assert.match(resolved.anchorDiagnostic?.detail ?? '', /unknown/);
+  // 上面的 reason 断言已经排除了"项目里没有交易记录"这种说法——
+  // 文件就在项目里，只是被类型挡掉了，两者对用户的含义完全不同。
+  assert.match(describeResolvedEvidence(resolved), /未采信/);
 });

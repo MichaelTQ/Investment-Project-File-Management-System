@@ -117,10 +117,10 @@ export async function classifyWithMinimalPath(
 
   // 缺什么直接用代码算出的诊断，不再套那句写死的"缺少股东会决议"——
   // 实际缺的可能是本文件自己的数值，也可能是数值对不上号，处置方式完全不同。
-  const missingEvidence =
-    !stage && resolved.anchorDiagnostic
-      ? resolved.anchorDiagnostic.detail
-      : undefined;
+  //
+  // 判出了阶段也照样显示。判得出来不等于判得准：靠先验推测得到的结论恰恰最需要
+  // 让用户看见缺口，否则界面上只有一个"投资实施 45%"，看不出它是猜的还是算的。
+  const missingEvidence = resolved.anchorDiagnostic?.detail;
 
   // 数值对不上号说明两份文件之间还有没归档的变更，或者数字读错了。
   // 这是必须有人看的信号，不能让模型用高把握直接放行。
