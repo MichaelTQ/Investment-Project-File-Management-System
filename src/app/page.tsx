@@ -92,6 +92,8 @@ interface ConsistencyReport {
   checkedCount: number;
   skippedCount: number;
   findings: ConflictFinding[];
+  /** 冲突复核本身失败了（模型 ID 配错、超时等）。必须显示，否则会被误读成"没有矛盾"。 */
+  reviewError?: string;
 }
 
 interface MinimalRebuildReport {
@@ -242,6 +244,24 @@ function ConsistencyPanel({
   const visible = (report?.findings ?? []).filter(
     finding => !dismissedKeys.has(conflictKey(finding))
   );
+
+  // 复核失败时必须出声：面板整个不渲染，看起来和"查过了，没问题"一模一样。
+  if (report?.reviewError) {
+    return (
+      <Card className="border-red-300 bg-red-50/60">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm text-red-900">
+            <AlertCircle className="h-4 w-4" />
+            冲突复核没有跑成功，本次未做任何比对
+          </CardTitle>
+          <CardDescription className="break-words text-xs">
+            {report.reviewError}
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   if (visible.length === 0) return null;
 
   return (
