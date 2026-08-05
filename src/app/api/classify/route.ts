@@ -755,6 +755,19 @@ export async function POST(request: NextRequest) {
       phases: phaseTimings,
       modelCalls,
     };
+
+    // 慢在哪一步必须能一眼看到，否则调 OCR 精度、页数这些旋钮都是盲调。
+    // 子阶段耗时包含在父阶段内，所以只打顶层，按耗时从大到小。
+    console.log(
+      `[classify] ${fileName} 合计 ${(
+        result.performance.totalDurationMs / 1000
+      ).toFixed(1)}s ｜ ` +
+        phaseTimings
+          .filter(item => !item.parentPhase)
+          .sort((left, right) => right.durationMs - left.durationMs)
+          .map(item => `${item.phase} ${(item.durationMs / 1000).toFixed(1)}s`)
+          .join('  ')
+    );
     result.contextRebuildPending = Boolean(documentFacts && result.archived);
     return NextResponse.json(result);
 
