@@ -27,9 +27,9 @@ const candidates =
   process.argv.slice(2).length > 0
     ? process.argv.slice(2)
     : [
-        // 分类在用的
+        // 抽事实在用的（照抄原文，不需要推理）
         'doubao-seed-2-0-mini-260215',
-        // 冲突复核在用的（实测可用，比 mini 慢约 3 秒）
+        // 判阶段与冲突复核在用的（需要推理，实测比 mini 慢约 3 秒）
         'doubao-seed-2-0-pro-260215',
         // 实测本环境不存在，留着是为了记住"同代非 mini 版并不存在"这件事
         'doubao-seed-2-0-260215',

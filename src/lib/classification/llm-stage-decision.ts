@@ -16,7 +16,20 @@ import {
 import type { ContextClassificationDecision } from './minimal/types';
 import { leafName } from './source-path';
 
-export const LLM_STAGE_DECISION_MODEL = 'doubao-seed-2-0-mini-260215';
+/**
+ * 判阶段用的模型，可用 STAGE_DECISION_MODEL 环境变量覆盖。
+ *
+ * 实测 mini 不是信息不够而是推理不行：决议写着"由 11.73624 变更为 13.04027"、
+ * 本文件记的是 11.73624，两个数都在提示词里、模型也把它写进了证据，却仍然判成
+ * 变更之后的阶段，理由是"同名文件已归入该阶段"和"两个日期一致"。提示词里已经
+ * 明确要求数值对照优先于其他线索，它照样绕过去。同一批事实交给 pro（冲突复核
+ * 那一步）则一次推对。
+ *
+ * 抽事实那一步仍用 mini：那是照抄原文，不需要推理。
+ * 换之前先跑 `node scripts/probe-model.mjs` 确认网关支持。
+ */
+export const LLM_STAGE_DECISION_MODEL =
+  process.env.STAGE_DECISION_MODEL?.trim() || 'doubao-seed-2-0-pro-260215';
 export const LLM_STAGE_DECISION_VERSION = 'llm-stage-decision-v2';
 const LLM_STAGE_DECISION_MAX_OUTPUT_TOKENS = 500;
 const LLM_STAGE_DECISION_TIMEOUT_MS = 90_000;
