@@ -8,6 +8,7 @@ import {
   DocumentFactsSchema,
   extractFirstJsonObject,
   parseDocumentFactsResponse,
+  type DocumentFacts,
   type DocumentFactsExtractionResult,
 } from './document-facts';
 import {
@@ -263,6 +264,32 @@ ${params.imageDataUrl
   ];
 }
 
+/**
+ * 读不到内容时，不允许保留一个"看起来像样"的文件类型。
+ *
+ * 扫描件 OCR 失败、格式不支持、转图失败时，提示词里只剩文件名，模型仍会照着
+ * 文件名给出 documentType。这种类型是猜的，但下游看不出来：它会照常参与同类型
+ * 文件比对、交易锚点资格判断和阶段推断，只是额外挂一个人工复核标记——而复核标记
+ * 不阻止归档建议产出。
+ *
+ * 所以在这里就地降级为 unknown，让它走"读不到内容"的分支，而不是走"读到了、
+ * 类型是X"的分支。文件名本身仍保留在 title 里，人工复核时看得到。
+ */
+function enforceContentEvidence(facts: DocumentFacts): DocumentFacts {
+  if (facts.sourceQuality !== 'filename_only') return facts;
+  if (facts.documentType === 'unknown') return facts;
+
+  return {
+    ...facts,
+    documentType: 'unknown',
+    rawDocumentType: '未知',
+    warnings: [
+      ...facts.warnings,
+      `未能读取文件内容，模型仅凭文件名给出的类型“${facts.rawDocumentType}”已作废，需人工确认。`,
+    ].slice(0, 3),
+  };
+}
+
 async function extractDocumentFactsUncached(
   params: ExtractDocumentFactsParams
 ): Promise<DocumentFactsExtractionResult> {
@@ -309,7 +336,7 @@ async function extractDocumentFactsUncached(
     }
     return {
       status: 'success',
-      facts: parseCompactDocumentFactsResponse(content),
+      facts: enforceContentEvidence(parseCompactDocumentFactsResponse(content)),
       modelCall,
     };
   } catch (error) {

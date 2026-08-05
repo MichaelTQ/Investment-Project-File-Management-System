@@ -20,6 +20,7 @@ import {
   buildTimeline,
   describeResolvedEvidence,
   resolveEvidence,
+  type AnchorDiagnostic,
   type EvidenceStrength,
   type TimelineEntry,
 } from './evidence';
@@ -62,6 +63,8 @@ export interface MinimalClassifyResult {
   requiresHumanReview: boolean;
   /** 判不出来时说清缺什么，而不是只说"证据不足"。 */
   missingEvidence?: string;
+  /** 锚点没找到时的具体原因，界面据此提示用户下一步该补什么。 */
+  anchorDiagnostic?: AnchorDiagnostic;
   relatedSourcePaths: string[];
   status: 'success' | 'fallback';
   error?: string;
@@ -112,10 +115,17 @@ export async function classifyWithMinimalPath(
     fingerprint: params.fingerprint,
   });
 
+  // 缺什么直接用代码算出的诊断，不再套那句写死的"缺少股东会决议"——
+  // 实际缺的可能是本文件自己的数值，也可能是数值对不上号，处置方式完全不同。
   const missingEvidence =
-    !stage && resolved.sameTypeSiblings.length > 0 && !resolved.transactionSide
-      ? '项目里缺少一份记载注册资本变更前后值的股东会决议或增资协议，补上后即可确定本文件在交易的哪一侧。'
+    !stage && resolved.anchorDiagnostic
+      ? resolved.anchorDiagnostic.detail
       : undefined;
+
+  // 数值对不上号说明两份文件之间还有没归档的变更，或者数字读错了。
+  // 这是必须有人看的信号，不能让模型用高把握直接放行。
+  const anchorConflict =
+    resolved.anchorDiagnostic?.reason === 'value_mismatch';
 
   return {
     sourcePath: params.sourcePath,
@@ -128,8 +138,9 @@ export async function classifyWithMinimalPath(
     evidence: decision.decision?.evidence ?? [],
     contradictions: decision.decision?.contradictions ?? [],
     requiresHumanReview:
-      decision.decision?.requiresHumanReview ?? true,
+      anchorConflict || (decision.decision?.requiresHumanReview ?? true),
     missingEvidence,
+    anchorDiagnostic: resolved.anchorDiagnostic ?? undefined,
     relatedSourcePaths: resolved.transactionSide
       ? [resolved.transactionSide.anchorSourcePath]
       : resolved.sameTypeSiblings,

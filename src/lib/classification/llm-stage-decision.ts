@@ -9,6 +9,7 @@ import {
   type ModelCallDiagnostics,
 } from './chat-completions';
 import { extractFirstJsonObject, type DocumentFacts } from './document-facts';
+import { leafName } from './source-path';
 import type {
   ContextClassificationDecision,
   ProjectContextSnapshot,
@@ -193,7 +194,7 @@ function relatedDocumentsBrief(
         quote.includes('注册资本')
       );
       return [
-        `- ${item.sourcePath}${sameType ? '  ★与当前文件同类型' : ''}`,
+        `- ${leafName(item.sourcePath)}${sameType ? '  ★与当前文件同类型' : ''}`,
         `  类型：${item.facts.documentType}，标题：${item.facts.title}`,
         changes ? `  交易变化：${changes}` : '',
         capitalQuotes.length > 0 ? `  关键数字：${capitalQuotes.join('；')}` : '',
@@ -236,8 +237,9 @@ ${stageGuide(params.stageGuideMode ?? 'examples')}
   "cx": ["与该阶段矛盾或存疑之处，每条不超过60字，最多2条，没有则输出 []"]
 }`;
 
-  const userPrompt = `【待归档文件路径】
-${params.sourcePath}
+  // 只给文件名，不给路径：路径里的目录名往往就是人工归档结果（见 source-path.ts）。
+  const userPrompt = `【待归档文件名】
+${leafName(params.sourcePath)}
 
 【该文件的文档事实】
 ${factsBrief(params.facts)}

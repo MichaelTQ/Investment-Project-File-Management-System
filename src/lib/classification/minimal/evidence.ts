@@ -1,10 +1,12 @@
 import type { ArchiveBusinessStage } from '../../folder-structure';
 import {
+  canAnchorTransaction,
   extractFieldTransitions,
   extractFormationDate,
   extractStatedValue,
   valuesMatch,
 } from '../archive-consistency';
+import { leafName } from '../source-path';
 import type { MinimalDocument } from './store';
 
 /**
@@ -58,6 +60,31 @@ export interface TransactionSide {
 
 export type EvidenceStrength = 'high' | 'medium' | 'low' | 'none';
 
+/**
+ * 锚点没找到时，说清是哪一种没找到。
+ *
+ * 原先这一步是静音的：匹配不上就直接退回"金额低者形成较早"的先验，界面上只显示
+ * 一句"缺少交易文件佐证"。于是三种完全不同的情况被混成一句话——项目里根本没有
+ * 交易文件、有交易文件但本文件没写那个字段、本文件写了却对不上号。第三种尤其
+ * 要紧：它往往意味着中间还有一次没归档的变更，或者 OCR 把数字读错了，属于需要
+ * 人工介入的信号，而不是可以用先验糊过去的情况。
+ */
+export type AnchorMissReason =
+  | 'no_other_documents'
+  | 'no_transaction_records'
+  | 'field_not_stated'
+  | 'value_mismatch';
+
+export interface AnchorDiagnostic {
+  reason: AnchorMissReason;
+  /** 一句业务语言，可直接展示给用户，也会注入模型提示。 */
+  detail: string;
+  /** 参与比对的交易文件。 */
+  anchorSourcePaths: string[];
+  /** 涉及的字段名。 */
+  fields: string[];
+}
+
 export interface CapitalTendency {
   side: 'before' | 'after';
   siblingSourcePath: string;
@@ -76,6 +103,8 @@ export interface ResolvedEvidence {
   tendency: CapitalTendency | null;
   /** 同项目里与本文件同类型的文件，存在时说明可能有版本歧义。 */
   sameTypeSiblings: string[];
+  /** 锚点为什么没找到。找到时为 null。 */
+  anchorDiagnostic: AnchorDiagnostic | null;
   strength: EvidenceStrength;
   /** 由证据强度推导的把握程度，不由模型自报。 */
   confidence: number;
@@ -118,6 +147,57 @@ function comparableFields(document: MinimalDocument): string[] {
 }
 
 /**
+ * 把匹配失败的细节归成一条可读的结论。四种情况的处置完全不同，不能混为
+ * "证据不足"：数值对不上要人去查，字段没写要补文件，项目里没交易文件则只能等。
+ */
+function buildAnchorDiagnostic(input: {
+  hasOtherDocuments: boolean;
+  anchorSourcePaths: string[];
+  fieldsNotStated: string[];
+  mismatches: string[];
+}): AnchorDiagnostic {
+  const anchorNames = input.anchorSourcePaths.map(leafName);
+
+  if (input.mismatches.length > 0) {
+    return {
+      reason: 'value_mismatch',
+      detail:
+        `本文件写明的数值与交易记录的变更前后值都对不上（${input.mismatches.join('；')}）。` +
+        '通常意味着这两份文件之间还有一次没有归档的变更，或者数字识别有误，建议人工核对。',
+      anchorSourcePaths: anchorNames,
+      fields: input.fieldsNotStated,
+    };
+  }
+
+  if (input.anchorSourcePaths.length > 0) {
+    return {
+      reason: 'field_not_stated',
+      detail:
+        `项目里有交易记录（${anchorNames.join('、')}）写明了${input.fieldsNotStated.join('、')}的变更前后值，` +
+        '但本文件没有写明这些字段的数值，因此无法定位它在交易的哪一侧。',
+      anchorSourcePaths: anchorNames,
+      fields: input.fieldsNotStated,
+    };
+  }
+
+  return input.hasOtherDocuments
+    ? {
+        reason: 'no_transaction_records',
+        detail:
+          '项目里已有其他文件，但没有任何一份写明了"某字段由 X 变为 Y"，' +
+          '缺少可用作锚点的交易记录（如记载注册资本变更前后值的股东会决议或增资协议）。',
+        anchorSourcePaths: [],
+        fields: [],
+      }
+    : {
+        reason: 'no_other_documents',
+        detail: '项目里目前只有这一份文件，没有可比对的对象。',
+        anchorSourcePaths: [],
+        fields: [],
+      };
+}
+
+/**
  * 给当前文件解析出可用的确定性证据。
  *
  * 刻意不做的事：不比大小。注册资本并非单调递增（减资、回购、对赌退出都会让它
@@ -138,16 +218,39 @@ export function resolveEvidence(
   // 遍历项目里所有交易文件写明的字段变更，不限于注册资本——实缴出资额、
   // 持股比例、股东人数，任何有前后值的字段都能定位当前文件在交易的哪一侧。
   let transactionSide: TransactionSide | null = null;
+  // 匹配失败的细节：用来在找不到锚点时说清差在哪，而不是静默退回先验。
+  const anchorSourcePaths: string[] = [];
+  const fieldsNotStated: string[] = [];
+  const mismatches: string[] = [];
+
   for (const document of others) {
     if (document.sourcePath === current.sourcePath) continue;
-    if (!TRANSACTION_RECORD_TYPES.has(document.facts.documentType)) continue;
+    if (!canAnchorTransaction(document.facts.documentType)) continue;
 
     for (const transition of extractFieldTransitions(document.facts)) {
+      if (!anchorSourcePaths.includes(document.sourcePath)) {
+        anchorSourcePaths.push(document.sourcePath);
+      }
       const stated = extractStatedValue(current.facts, transition.field);
-      if (!stated) continue;
+      if (!stated) {
+        if (!fieldsNotStated.includes(transition.field)) {
+          fieldsNotStated.push(transition.field);
+        }
+        continue;
+      }
       const matchesBefore = valuesMatch(stated, transition.before);
       const matchesAfter = valuesMatch(stated, transition.after);
-      if (!matchesBefore && !matchesAfter) continue;
+      if (!matchesBefore && !matchesAfter) {
+        // 写了这个字段却与前后值都对不上——通常意味着中间还有一次没归档的变更，
+        // 或者数字读错了。这是需要人看的信号，不能当作"没证据"糊过去。
+        mismatches.push(
+          `${transition.field}：本文件为 ${stated.amount}${stated.unit}，` +
+            `“${leafName(document.sourcePath)}”记载的是 ` +
+            `${transition.before.amount}${transition.before.unit} → ` +
+            `${transition.after.amount}${transition.after.unit}`
+        );
+        continue;
+      }
 
       transactionSide = {
         side: matchesBefore ? 'before' : 'after',
@@ -161,6 +264,15 @@ export function resolveEvidence(
     }
     if (transactionSide) break;
   }
+
+  const anchorDiagnostic = transactionSide
+    ? null
+    : buildAnchorDiagnostic({
+        hasOtherDocuments: others.length > 0,
+        anchorSourcePaths,
+        fieldsNotStated,
+        mismatches,
+      });
 
   // 没有交易锚点时，同类文件之间的数值差异只能形成倾向，不能形成结论。
   let tendency: CapitalTendency | null = null;
@@ -196,8 +308,11 @@ export function resolveEvidence(
         : 'none';
 
   const basis = transactionSide
-    ? `${transactionSide.field} ${transactionSide.valueText} 与“${transactionSide.anchorSourcePath}”记载的变更${transactionSide.side === 'before' ? '前' : '后'}值一致`
-    : tendency
+    ? `${transactionSide.field} ${transactionSide.valueText} 与“${leafName(transactionSide.anchorSourcePath)}”记载的变更${transactionSide.side === 'before' ? '前' : '后'}值一致`
+    : // 数值对不上是比"没有证据"更强的信号，优先说这个，别让先验盖住它。
+      anchorDiagnostic?.reason === 'value_mismatch'
+      ? anchorDiagnostic.detail
+      : tendency
       ? `缺少交易文件佐证，仅按"投资项目多为增资、数值较低者形成较早"作倾向性推测（本文件${tendency.field} ${tendency.currentText}，同类文件 ${tendency.siblingText}）`
       : strength === 'medium'
         ? '只有文件形成日期可用，缺少可比对的交易记录'
@@ -209,6 +324,7 @@ export function resolveEvidence(
     transactionSide,
     tendency,
     sameTypeSiblings,
+    anchorDiagnostic,
     strength,
     confidence: CONFIDENCE_BY_STRENGTH[strength],
     basis,
@@ -223,18 +339,25 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
     const { side, anchorSourcePath, field, valueText, evidence } =
       resolved.transactionSide;
     lines.push(
-      `【已由代码确定】本文件记载的${field} ${valueText}，与“${anchorSourcePath}”记载的变更${side === 'before' ? '前' : '后'}值一致，` +
+      `【已由代码确定】本文件记载的${field} ${valueText}，与“${leafName(anchorSourcePath)}”记载的变更${side === 'before' ? '前' : '后'}值一致，` +
         `因此本文件形成于该笔交易${side === 'before' ? '之前' : '之后'}。原文依据：${evidence}`
     );
     lines.push(
       '这条结论已经过确定性计算，请直接采用，不要再自行比较数值大小推断先后。'
+    );
+  } else if (resolved.anchorDiagnostic?.reason === 'value_mismatch') {
+    // 对不上号时优先报这个，且不给倾向性推测——先验的前提（只发生过一次变更）
+    // 在这里已经被证伪了，再按"金额低者在先"猜很可能猜反。
+    lines.push(`【代码已比对，结果异常】${resolved.anchorDiagnostic.detail}`);
+    lines.push(
+      '请不要凭数值大小推断先后，在理由中写明存在对不上的数值，并把 review 设为 true。'
     );
   } else if (resolved.tendency) {
     const { side, siblingSourcePath, field, currentText, siblingText } =
       resolved.tendency;
     lines.push(
       `项目里没有记载该字段变更前后值的交易文件，无法确定先后。` +
-        `本文件${field} ${currentText}，同类型文件“${siblingSourcePath}”为 ${siblingText}。`
+        `本文件${field} ${currentText}，同类型文件“${leafName(siblingSourcePath)}”为 ${siblingText}。`
     );
     lines.push(
       `【倾向性推测，不是证据】投资项目中增资多于减资，数值较低者通常形成较早，` +
@@ -242,9 +365,15 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
         '请据此给出默认建议，但必须在理由中写明这是缺少交易文件时的推测，并把 review 设为 true。' +
         '若本文件有明确的减资、回购或退出表述，则不适用此倾向，应据实判断。'
     );
+  } else if (resolved.anchorDiagnostic?.reason === 'field_not_stated') {
+    // 有锚点、只是这份文件没写那个字段：说清缺的是哪个字段，比笼统说"证据不足"有用。
+    lines.push(`【代码已比对】${resolved.anchorDiagnostic.detail}`);
+    lines.push(
+      '不要凭空猜方向。若无法从其他事实判断，请如实说明缺少哪个数值，并把 review 设为 true。'
+    );
   } else if (resolved.sameTypeSiblings.length > 0) {
     lines.push(
-      `项目里有 ${resolved.sameTypeSiblings.length} 份同类型文件（${resolved.sameTypeSiblings.join('、')}），` +
+      `项目里有 ${resolved.sameTypeSiblings.length} 份同类型文件（${resolved.sameTypeSiblings.map(leafName).join('、')}），` +
         '但没有找到记载资本变更前后值的交易文件，也读不到可比对的金额。'
     );
     lines.push(

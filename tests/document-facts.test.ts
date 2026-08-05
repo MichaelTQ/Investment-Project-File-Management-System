@@ -317,3 +317,47 @@ test('真实的变更前后值不受空值还原影响', () => {
     false
   );
 });
+
+test('读不到内容时，仅凭文件名猜出的文档类型作废', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '君柔科技公司章程.pdf',
+    contentText: '',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        // 模型自报 q:'f'（仅文件名），却仍给出了一个像模像样的类型。
+        content:
+          '{"dt":"company_charter","r":"公司章程","t":"君柔科技公司章程","n":null,"v":null,"d":[],"p":[],"s":"x","c":[],"g":[],"e":[],"w":[],"q":"f","x":30}',
+      }),
+    },
+  });
+
+  assert.equal(result.status, 'success');
+  // 类型必须降级，否则它会照常参与同类型比对、锚点资格判断和阶段推断。
+  assert.equal(result.facts.documentType, 'unknown');
+  assert.equal(result.facts.rawDocumentType, '未知');
+  // 文件名本身保留在标题里，人工复核时仍看得到。
+  assert.equal(result.facts.title, '君柔科技公司章程');
+  assert.match(result.facts.warnings.join(''), /仅凭文件名/);
+});
+
+test('读到了内容时，文档类型正常保留', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '君柔科技公司章程.pdf',
+    contentText: '注册资本为人民币1000万元',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        content:
+          '{"dt":"company_charter","r":"公司章程","t":"君柔科技公司章程","n":null,"v":null,"d":[],"p":[],"s":"x","c":[],"g":[],"e":[],"w":[],"q":"t","x":85}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'company_charter');
+  assert.equal(result.facts.rawDocumentType, '公司章程');
+});
