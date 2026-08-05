@@ -5,10 +5,7 @@ import {
   HeaderUtils,
   type ContentPart,
 } from 'coze-coding-dev-sdk';
-import {
-  getFolderForBusinessStage,
-  type ArchiveFolder,
-} from '@/lib/folder-structure';
+import type { ArchiveFolder } from '@/lib/folder-structure';
 import {
   DOCUMENT_FACTS_EXTRACTOR_VERSION,
   DOCUMENT_FACTS_MODEL,
@@ -22,10 +19,8 @@ import {
 import type { DocumentFacts } from '@/lib/classification/document-facts';
 import {
   classifyWithMinimalPath,
-  rebuildMinimalArchive,
   type MinimalClassifyResult,
 } from '@/lib/classification/minimal/pipeline';
-import { upsertMinimalDocument } from '@/lib/classification/minimal/store';
 import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
 import {
   createClassificationDecisionRecord,
@@ -118,17 +113,6 @@ interface ClassifyResult {
   };
   performance?: ProcessingPerformance;
   contextRebuildPending?: boolean;
-}
-
-function parseOptionalJson(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return undefined;
-  }
 }
 
 const PDF_VISUAL_BATCH_SIZE = 4;
@@ -581,110 +565,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    /* Retired Agent / synthesized-Context path.
-    if (runContextDecision && documentFacts) {
-      contextClassificationDecision = decideWithProjectContext({
-        sourcePath: sourcePath || fileName,
-        facts: documentFacts,
-        projectContext,
-        relatedDocuments: relatedDocumentFacts,
-      });
-    }
-
-    if (runAgentDecision && documentFacts) {
-      const factsForAgent = documentFacts;
-      try {
-        if (project) {
-          try {
-            const memoryEvaluation = await measurePhase(
-              'evaluate_project_memory',
-              () => evaluateProjectDocumentCandidate({
-                projectId: project.id,
-                projectName: project.name,
-                sourcePath: sourcePath || fileName,
-                facts: factsForAgent,
-                projectContext,
-                suppliedRelatedDocuments: relatedDocumentFacts,
-                customHeaders,
-              })
-            );
-            const { currentDecision, ...memoryView } = memoryEvaluation;
-            agentClassificationResult = currentDecision;
-            projectSessionMemory = memoryView;
-            modelCalls.push(
-              ...(memoryView.contextSynthesis?.modelCalls ?? [])
-            );
-            projectSessionMemoryStep = {
-              enabled: true,
-              status: 'success',
-              mode: memoryView.mode,
-              persistent: memoryView.persistent,
-              persistenceWarning: memoryView.persistenceWarning,
-              documentCount: memoryView.documentCount,
-              relatedDocumentCount: memoryView.relatedDocumentCount,
-              reEvaluatedCount: memoryView.reEvaluatedDocuments.length,
-              revision: memoryView.revision,
-              contextStatus: memoryView.contextSynthesis?.status,
-              contextLlmCallCount: memoryView.contextSynthesis?.llmCallCount,
-              contextEventCount: memoryView.contextSynthesis?.eventCount,
-              contextRelationCount: memoryView.contextSynthesis?.relationCount,
-              latestEvidencedStage:
-                memoryView.contextSynthesis?.latestEvidencedStage,
-            };
-          } catch (memoryError) {
-            const message =
-              memoryError instanceof Error
-                ? memoryError.message
-                : '未知错误';
-            console.error('Project session memory error:', memoryError);
-            projectSessionMemoryStep = {
-              enabled: true,
-              status: 'failed',
-              error: message,
-            };
-          }
-        } else {
-          projectSessionMemoryStep = {
-            enabled: true,
-            status: 'skipped',
-            error: '会话项目记忆需要有效的 projectId',
-          };
-        }
-        agentClassificationResult ??= await runClassificationAgent({
-          sourcePath: sourcePath || fileName,
-          facts: documentFacts,
-          projectContext,
-          availableRelatedDocuments: relatedDocumentFacts,
-        });
-        agentOrchestrationStep = {
-          enabled: true,
-          status: 'success',
-          graphVersion: agentClassificationResult.graphVersion,
-          finalStatus: agentClassificationResult.status,
-          rounds: agentClassificationResult.rounds,
-          toolSteps: agentClassificationResult.trace.length,
-          llmCallCount: agentClassificationResult.llmCallCount,
-          inputWarnings:
-            contextInputWarnings.length > 0
-              ? contextInputWarnings
-              : undefined,
-        };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '未知错误';
-        console.error('Classification agent error:', error);
-        agentOrchestrationStep = {
-          enabled: true,
-          status: 'failed',
-          error: message,
-          inputWarnings:
-            contextInputWarnings.length > 0
-              ? contextInputWarnings
-              : undefined,
-        };
-      }
-    }
-
-    */
     // 极简链路是唯一的分类建议来源。
     // 的状态，因此可以直接 A/B；将来极简版胜出时删掉 Agent 一整块即可。
     if (runMinimalPath && documentFacts && projectId) {
@@ -721,95 +601,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    /* Retired keyword/Agent final-decision path.
-    // 最终只判断业务阶段；阶段文件夹本身就是归档目标。
-    const legacyStageDecision = inferBusinessStage({
-      sourcePath: sourcePath || fileName,
-      text: contentText,
-      facts: documentFacts,
-      projectContext,
-      relatedDocuments: relatedDocumentFacts,
-    });
-
-    const process: ClassifyProcess = {
-      step0_businessStage: legacyStageDecision,
-      step0_factExtraction: factExtractionStep,
-      step0_contextDecision: contextClassificationDecision
-        ? {
-            enabled: true,
-            status: contextClassificationDecision.status,
-            policyVersion: contextClassificationDecision.policyVersion,
-            requiresHumanReview:
-              contextClassificationDecision.requiresHumanReview,
-            inputWarnings:
-              contextInputWarnings.length > 0
-                ? contextInputWarnings
-                : undefined,
-          }
-        : undefined,
-      step0_agentOrchestration: agentOrchestrationStep,
-      step0_minimalPath: minimalPathStep,
-      step0_projectSessionMemory: projectSessionMemoryStep,
-      finalDecision: { method: 'none', explanation: '' },
-    };
-
-    const agentDecision = agentClassificationResult?.decision;
-    const targetFolder = !runLegacyDecision
-      ? agentDecision?.selectedFolder ?? null
-      : legacyStageDecision.selectedStage
-        ? getFolderForBusinessStage(legacyStageDecision.selectedStage)
-        : null;
-
-    if (targetFolder) {
-      process.finalDecision = {
-        method: !runLegacyDecision ? 'agent' : 'stage',
-        explanation: !runLegacyDecision
-          ? `Agent 建议归入“${targetFolder.folderPath.slice(1).join(' / ')}”；正式归档前由用户确认`
-          : `业务阶段已确定，直接归入“${targetFolder.folderPath.slice(1).join(' / ')}”`,
-      };
-    } else {
-      process.finalDecision = {
-        method: 'none',
-        explanation: '业务阶段无法唯一确定，需要人工选择阶段文件夹',
-      };
-    }
-
-    const result: ClassifyResult = {
-      fileName,
-      fileSize,
-      targetFolder,
-      confidence: !runLegacyDecision
-        ? agentDecision?.confidence ?? 0
-        : legacyStageDecision.confidence,
-      reasoning: !runLegacyDecision
-        ? agentDecision?.reasoning ?? 'Agent 未能确定业务阶段。'
-        : legacyStageDecision.reasoning,
-      contentPreview,
-      process,
-      classificationMode: !runLegacyDecision ? 'agent' : 'comparison',
-      suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
-      requiresArchiveConfirmation: !runLegacyDecision || !targetFolder,
-    };
-    if (documentFacts) result.documentFacts = documentFacts;
-    result.documentType = documentFacts?.documentType;
-    result.businessStage =
-      agentClassificationResult?.decision.businessStage ??
-      contextClassificationDecision?.businessStage ??
-      legacyStageDecision.selectedStage;
-    if (contextClassificationDecision) {
-      result.contextDecision = contextClassificationDecision;
-    }
-    if (agentClassificationResult) {
-      result.agentDecision = agentClassificationResult;
-    }
-    if (minimalDecision) {
-      result.minimalDecision = minimalDecision;
-    }
-    if (projectSessionMemory) {
-      result.projectSessionMemory = projectSessionMemory;
-    }
-
-    */
     const targetFolder = minimalDecision?.folder ?? null;
     const process: ClassifyProcess = {
       step0_factExtraction: factExtractionStep,
@@ -900,64 +691,6 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        /* Retired project-memory commit.
-        if (documentFacts) {
-          const factsToCommit = documentFacts;
-          try {
-            const committed = await measurePhase(
-              'commit_context_pending',
-              () => commitArchivedProjectDocument({
-                projectId: project.id,
-                projectName: project.name,
-                sourcePath: sourcePath || fileName,
-                facts: factsToCommit,
-                archivedFileId: archived.id,
-                customHeaders,
-                deferContextRebuild: true,
-              })
-            );
-            const { currentDecision: _committedDecision, ...committedView } =
-              committed;
-            void _committedDecision;
-            committedView.decisionContextVersion =
-              projectSessionMemory?.decisionContextVersion;
-            projectSessionMemory = committedView;
-            result.projectSessionMemory = committedView;
-            projectSessionMemoryStep = {
-              enabled: true,
-              status: 'success',
-              mode: committedView.mode,
-              persistent: committedView.persistent,
-              persistenceWarning: committedView.persistenceWarning,
-              documentCount: committedView.documentCount,
-              relatedDocumentCount: committedView.relatedDocumentCount,
-              reEvaluatedCount: 0,
-              revision: committedView.revision,
-              contextStatus: committedView.contextState.status,
-              contextLlmCallCount: 0,
-              contextEventCount:
-                committedView.projectContext?.timeline.length ?? 0,
-              contextRelationCount:
-                committedView.projectContext?.documentRelations?.length ?? 0,
-              latestEvidencedStage:
-                committedView.projectContext?.latestEvidencedStage,
-            };
-          } catch (contextCommitError) {
-            console.error(
-              'Archived document Context commit failed:',
-              contextCommitError
-            );
-            projectSessionMemoryStep = {
-              enabled: true,
-              status: 'failed',
-              error:
-                contextCommitError instanceof Error
-                  ? contextCommitError.message
-                  : '归档成功，但项目Context提交失败',
-            };
-          }
-        }
-        */
       }
     }
 
