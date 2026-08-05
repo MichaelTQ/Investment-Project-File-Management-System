@@ -750,6 +750,37 @@ function ClassifyResultItem({
           <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
             <div className="space-y-4 pb-4">
 
+              {/* 各阶段耗时：数据一直在采集，之前从没渲染过，排查慢在哪只能靠猜 */}
+              {(result.performance?.phases?.length ?? 0) > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-medium">
+                    各阶段耗时（合计{' '}
+                    {((result.performance?.totalDurationMs ?? 0) / 1000).toFixed(1)} 秒）
+                  </h4>
+                  <div className="space-y-1 rounded-lg border p-3">
+                    {[...(result.performance?.phases ?? [])]
+                      .sort((left, right) => right.durationMs - left.durationMs)
+                      .map(phase => (
+                        <div
+                          key={`${phase.parentPhase ?? ''}-${phase.phase}`}
+                          className="flex items-baseline justify-between gap-3 text-xs"
+                        >
+                          <span className="min-w-0 break-all font-mono text-muted-foreground">
+                            {phase.parentPhase ? `${phase.parentPhase} / ` : ''}
+                            {phase.phase}
+                          </span>
+                          <span className="shrink-0 tabular-nums">
+                            {(phase.durationMs / 1000).toFixed(1)} 秒
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  <p className="text-[11px] leading-4 text-muted-foreground">
+                    子阶段耗时已包含在父阶段内，直接相加会重复计算。
+                  </p>
+                </div>
+              )}
+
               {result.contentPreview && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium">文件内容摘要</h4>
