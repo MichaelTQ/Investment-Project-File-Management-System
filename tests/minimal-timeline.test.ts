@@ -228,3 +228,52 @@ test('尚未归档的文件如实标注，不留空让模型猜', () => {
     /尚未归档/
   );
 });
+
+/**
+ * 冲突复核的约束是**逻辑规则**，不是业务知识。
+ *
+ * 实测第一版报了 4 条矛盾，全是误报：两份章程数值不同被当成矛盾（其实是交易前后
+ * 的正常差异）、决议与章程数值吻合被当成矛盾（其实是相互印证）、同一个未来期限
+ * 被同时用来否定两个方向相反的归档位置（逻辑上不可能同时成立）。
+ */
+test('冲突复核提示包含防误报的逻辑约束', () => {
+  const systemPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter, resolution],
+      timeline: buildTimeline([charter, resolution]),
+      stageDefinitions: '',
+    })[0].content
+  );
+
+  assert.match(systemPrompt, /数值不同不等于矛盾/);
+  assert.match(systemPrompt, /同一时点/);
+  assert.match(systemPrompt, /相互印证/);
+  assert.match(systemPrompt, /同一条依据不能同时否定两种相反的归档/);
+  assert.match(systemPrompt, /宁可一条都不报/);
+});
+
+test('防误报的约束不靠业务词汇，换个行业照样成立', () => {
+  const systemPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter, resolution],
+      timeline: buildTimeline([charter, resolution]),
+      stageDefinitions: '',
+    })[0].content
+  );
+
+  // 这些是投资业务里的具体说法，写进规则就等于又焊死了一套预设。
+  for (const domainWord of [
+    '缴款截止日',
+    '认缴期限',
+    '注册资本',
+    '增资',
+    '股东会',
+    '交割',
+  ]) {
+    assert.equal(
+      systemPrompt.includes(domainWord),
+      false,
+      `冲突复核规则里出现了业务词汇“${domainWord}”`
+    );
+  }
+});
