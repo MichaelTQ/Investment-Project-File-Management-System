@@ -267,3 +267,35 @@ test('确实什么都没抽到时才按读不到处理，强制复核', () => {
   );
   assert.equal(decision.requiresHumanReview, true);
 });
+
+/**
+ * 数值对照规则。
+ *
+ * 实测失败样本：先传交易后的章程和决议，再传交易前的章程，后者被归进了
+ * investment_execution，理由是"同名章程已被人工归入该阶段"和"缴款截止日为
+ * 2030-03-30"——两条都不成立。而决定性事实就在提示词里：决议记载注册资本
+ * 由 A 变为 B，这份章程记的正是 A。模型有这个信息但没去对照。
+ */
+test('提示词要求优先做数值对照，且措辞不含业务词汇', () => {
+  const systemPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '公司章程.pdf',
+      facts: healthyFacts(),
+    })[0].content
+  );
+
+  assert.match(systemPrompt, /数值对照是判断先后最直接的依据/);
+  assert.match(systemPrompt, /等于 X，说明本文件形成于这次变更之前/);
+  assert.match(systemPrompt, /优先于其他一切线索/);
+
+  // 只查【判断要求】那一段。阶段定义里出现"交割""签署"是合法的阶段描述，
+  // 不是判断规则——归档目录本来就按这套阶段划分，不描述它模型无从判断。
+  const rules = systemPrompt.slice(systemPrompt.indexOf('【判断要求】'));
+  for (const domainWord of ['注册资本', '增资', '股东会', '交割', '缴款']) {
+    assert.equal(
+      rules.includes(domainWord),
+      false,
+      `判断规则里出现了业务词汇“${domainWord}”`
+    );
+  }
+});
