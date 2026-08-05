@@ -73,7 +73,6 @@ interface ClassifyProcess {
   step0_minimalPath?: {
     enabled: boolean;
     status: MinimalClassifyResult['status'];
-    strength: MinimalClassifyResult['strength'];
     error?: string;
     modelCall?: ModelCallDiagnostics;
   };
@@ -93,7 +92,6 @@ interface ClassifyResult {
   fileName: string;
   fileSize: number;
   targetFolder: ArchiveFolder | null;
-  confidence: number;
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
@@ -240,8 +238,6 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.PERSIST_PROJECT_MEMORY_SHADOW === 'true' ||
       globalThis.process.env.PERSIST_DOCUMENT_FACTS_SHADOW === 'true';
     const runMinimalPath = true;
-    // 'abstract' 版阶段说明不含文件类型清单，用于验证清单是否在替模型答题。
-    let stageGuideMode: 'examples' | 'abstract' = 'examples';
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -262,9 +258,6 @@ export async function POST(request: NextRequest) {
         typeof body.persistFacts === 'boolean'
           ? body.persistFacts
           : persistFacts;
-      if (body.stageGuideMode === 'abstract' || body.stageGuideMode === 'examples') {
-        stageGuideMode = body.stageGuideMode;
-      }
 
       if (
         !storageKey ||
@@ -293,10 +286,6 @@ export async function POST(request: NextRequest) {
         persistFactsValue === null
           ? persistFacts
           : persistFactsValue === 'true';
-      const guideValue = formData.get('stageGuideMode');
-      if (guideValue === 'abstract' || guideValue === 'examples') {
-        stageGuideMode = guideValue;
-      }
       fileName = file?.name || '';
       fileSize = file?.size || 0;
       suppliedMimeType = file?.type || '';
@@ -577,7 +566,6 @@ export async function POST(request: NextRequest) {
             sourcePath: sourcePath || fileName,
             facts: factsForMinimal,
             fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
-            stageGuideMode,
             customHeaders,
           })
         );
@@ -585,7 +573,6 @@ export async function POST(request: NextRequest) {
         minimalPathStep = {
           enabled: true,
           status: minimalDecision.status,
-          strength: minimalDecision.strength,
           error: minimalDecision.error,
           modelCall: minimalDecision.modelCall,
         };
@@ -595,7 +582,6 @@ export async function POST(request: NextRequest) {
         minimalPathStep = {
           enabled: true,
           status: 'fallback',
-          strength: 'none',
           error: message,
         };
       }
@@ -619,7 +605,6 @@ export async function POST(request: NextRequest) {
       fileName,
       fileSize,
       targetFolder,
-      confidence: minimalDecision?.confidence ?? 0,
       reasoning: minimalDecision?.reasoning ?? minimalDecision?.error ?? '未能形成分类建议。',
       contentPreview,
       process,
@@ -654,7 +639,8 @@ export async function POST(request: NextRequest) {
               folderId: targetFolderForArchive.folderId,
               folderPath: targetFolderForArchive.folderPath,
               mimeType,
-              confidence: result.confidence,
+              // 把握程度已从链路中删除（那套档位是代码预设）。数据库列暂时保留，填 0。
+              confidence: 0,
               reasoning: result.reasoning,
             })
           : archiveFile({
@@ -666,7 +652,8 @@ export async function POST(request: NextRequest) {
               folderId: targetFolderForArchive.folderId,
               folderPath: targetFolderForArchive.folderPath,
               mimeType,
-              confidence: result.confidence,
+              // 把握程度已从链路中删除（那套档位是代码预设）。数据库列暂时保留，填 0。
+              confidence: 0,
               reasoning: result.reasoning,
             })
         );
@@ -708,12 +695,12 @@ export async function POST(request: NextRequest) {
             ? [{
                 folderId: result.targetFolder.folderId,
                 folderPath: result.targetFolder.folderPath,
-                score: result.confidence,
+                score: 0,
               }]
             : [],
           evidence: documentFacts?.evidenceQuotes ?? [],
           contradictions: [],
-          decisionScore: result.confidence,
+          decisionScore: 0,
           decisionSource: 'none',
           reasoning: result.reasoning,
           policyVersion: 'minimal-v1',

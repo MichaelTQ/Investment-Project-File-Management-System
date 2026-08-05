@@ -73,24 +73,25 @@ interface ProcessingPerformance {
   modelCalls: ModelCallDiagnostics[];
 }
 
-interface ConsistencyFinding {
-  kind:
-    | 'transaction_side_conflict'
-    | 'version_order_conflict'
-    | 'duplicate_stage_mismatch'
-    | 'missing_companion_document';
-  sourcePath: string;
-  currentStage: string | null;
-  constraint: string;
-  reason: string;
+// 冲突由模型比对时间线后给出，代码不再预设"什么算矛盾"，因此没有 kind 分类。
+interface ConflictFinding {
+  sourcePaths: string[];
+  description: string;
   evidence: string[];
-  relatedSourcePaths: string[];
+}
+
+/**
+ * 忽略某条冲突时用的键。**必须与服务端 minimal/pipeline.ts 的 conflictKey 一致**，
+ * 否则前端标记为忽略的条目在后端过滤不掉，重建后又会冒出来。
+ */
+function conflictKey(finding: ConflictFinding): string {
+  return `${[...finding.sourcePaths].sort().join('|')}::${finding.description}`;
 }
 
 interface ConsistencyReport {
   checkedCount: number;
   skippedCount: number;
-  findings: ConsistencyFinding[];
+  findings: ConflictFinding[];
 }
 
 interface MinimalRebuildReport {
@@ -104,26 +105,21 @@ interface MinimalRebuildReport {
     meaning: string;
     evidence: string;
   }>;
-  findings: ConsistencyFinding[];
+  findings: ConflictFinding[];
   dismissedCount: number;
+  reviewError?: string;
 }
 
 interface MinimalDecisionResult {
   sourcePath: string;
   stage: string | null;
   folder: ArchiveFolder | null;
-  confidence: number;
-  strength: 'high' | 'medium' | 'low' | 'none';
-  confidenceBasis: string;
   reasoning: string;
   evidence: string[];
   contradictions: string[];
   requiresHumanReview: boolean;
-  missingEvidence?: string;
-  relatedSourcePaths: string[];
   status: 'success' | 'fallback';
   error?: string;
-  stageGuideMode?: 'examples' | 'abstract';
 }
 
 interface ClassifyResult {
@@ -132,7 +128,6 @@ interface ClassifyResult {
   sourcePath?: string;
   fileSize: number;
   targetFolder: ArchiveFolder | null;
-  confidence: number;
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
@@ -231,14 +226,7 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
   );
 }
 
-// ============ 归档一致性提示 ============
-const CONSISTENCY_KIND_LABELS: Record<ConsistencyFinding['kind'], string> = {
-  transaction_side_conflict: '与交易记录矛盾',
-  version_order_conflict: '版本先后矛盾',
-  duplicate_stage_mismatch: '重复文件归档不一致',
-  missing_companion_document: '档案可能缺件',
-};
-
+// ============ 冲突提示 ============
 function ConsistencyPanel({
   report,
   dismissedKeys,
@@ -251,16 +239,9 @@ function ConsistencyPanel({
   const [expanded, setExpanded] = useState(false);
 
   const visible = (report?.findings ?? []).filter(
-    finding => !dismissedKeys.has(`${finding.kind}:${finding.sourcePath}`)
+    finding => !dismissedKeys.has(conflictKey(finding))
   );
   if (visible.length === 0) return null;
-
-  const misfiled = visible.filter(
-    finding => finding.kind !== 'missing_companion_document'
-  );
-  const gaps = visible.filter(
-    finding => finding.kind === 'missing_companion_document'
-  );
 
   return (
     <Card className="border-amber-300 bg-amber-50/60">
@@ -268,9 +249,7 @@ function ConsistencyPanel({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle className="flex items-center gap-2 text-sm text-amber-900">
             <AlertCircle className="h-4 w-4" />
-            {misfiled.length > 0
-              ? `${misfiled.length} 份已归档文件的位置与项目证据不符`
-              : `${gaps.length} 条档案完整性提示`}
+            发现 {visible.length} 处可能的矛盾
           </CardTitle>
           <Button
             type="button"
@@ -283,35 +262,29 @@ function ConsistencyPanel({
           </Button>
         </div>
         <CardDescription className="text-xs">
-          本次共校验 {report?.checkedCount ?? 0} 份已归档文件
+          本次比对了 {report?.checkedCount ?? 0} 份已归档文件
           {(report?.skippedCount ?? 0) > 0
             ? `，另有 ${report?.skippedCount} 份尚未归档已跳过`
             : ''}
-          。校验只依据文件事实，不调用模型。
+          。以下由模型比对项目时间线后给出，仅供参考，不会自动改动归档结果。
         </CardDescription>
       </CardHeader>
 
       {expanded && (
         <CardContent className="space-y-2 pt-0">
           {visible.map(finding => {
-            const key = `${finding.kind}:${finding.sourcePath}`;
+            const key = conflictKey(finding);
             return (
               <div
                 key={key}
                 className="min-w-0 rounded-lg border border-amber-200 bg-white/70 p-3"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="break-all text-sm font-medium">
-                      {finding.sourcePath || '项目整体'}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {CONSISTENCY_KIND_LABELS[finding.kind]}
-                      {finding.currentStage
-                        ? ` · 当前归在「${PROJECT_STAGE_LABELS[finding.currentStage] ?? finding.currentStage}」`
-                        : ''}
-                    </p>
-                  </div>
+                  <p className="min-w-0 break-all text-sm font-medium">
+                    {finding.sourcePaths.length > 0
+                      ? finding.sourcePaths.join('、')
+                      : '项目整体'}
+                  </p>
                   <Button
                     type="button"
                     variant="ghost"
@@ -323,7 +296,7 @@ function ConsistencyPanel({
                   </Button>
                 </div>
                 <p className="mt-2 break-words text-xs leading-5 text-amber-900">
-                  {finding.reason}
+                  {finding.description}
                 </p>
                 {finding.evidence.length > 0 && (
                   <ul className="mt-1.5 space-y-0.5 text-[11px] leading-4 text-muted-foreground">
@@ -334,17 +307,12 @@ function ConsistencyPanel({
                     ))}
                   </ul>
                 )}
-                {finding.relatedSourcePaths.length > 0 && (
-                  <p className="mt-1 break-all text-[11px] text-muted-foreground">
-                    相关文件：{finding.relatedSourcePaths.join('、')}
-                  </p>
-                )}
               </div>
             );
           })}
           <p className="pt-1 text-[11px] leading-4 text-muted-foreground">
-            这些是确定性校验结果，不代表其余文件一定归对——校验器对没有数字或日期
-            关联的文件本来就无话可说。要调整位置请到下方档案区移动文件。
+            这一步由模型完成，因此既可能漏报也可能误报。没有提示不代表其余文件一定
+            归对。要调整位置请到下方档案区移动文件。
           </p>
         </CardContent>
       )}
@@ -368,7 +336,6 @@ function ClassifyResultItem({
 }) {
   const minimal = result.minimalDecision;
   const minimalFolder = minimal?.folder ?? null;
-  const minimalConfidence = minimal?.confidence ?? 0;
   const minimalRunning = Boolean(result.minimalPending && !minimal);
   const minimalNeedsReview =
     !minimalRunning && Boolean(minimal?.requiresHumanReview);
@@ -417,8 +384,12 @@ function ClassifyResultItem({
           <p className="break-all text-sm font-medium leading-5">{result.fileName}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
-            <span>·</span>
-            <span>{minimalRunning ? '极简分类中' : `证据强度 ${minimalConfidence}%`}</span>
+            {minimalRunning && (
+              <>
+                <span>·</span>
+                <span>极简分类中</span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -429,11 +400,6 @@ function ClassifyResultItem({
             <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
               <Brain className="h-3.5 w-3.5" />
               极简分类结果
-              {minimal?.stageGuideMode === 'abstract' && (
-                <span className="rounded bg-violet-200 px-1 text-[10px] font-normal text-violet-900">
-                  无文件清单
-                </span>
-              )}
             </p>
             <Badge
               variant="outline"
@@ -460,21 +426,11 @@ function ClassifyResultItem({
             {' · '}
             文件类型：{result.documentType ?? '待识别'}
           </p>
-          <div className="mt-2 flex items-center gap-2">
-            <Progress value={minimalConfidence} className="h-1.5 flex-1" />
-            <span className="text-xs text-violet-800">{minimalConfidence}%</span>
-          </div>
-          {/* 把握程度由证据强度推导，不是模型自报，所以必须说清是怎么来的。 */}
-          {minimal?.confidenceBasis && (
-            <p className="mt-1 break-words text-[10px] leading-4 text-violet-600">
-              把握依据：{minimal.confidenceBasis}
-            </p>
-          )}
           <p className="mt-2 break-words text-xs leading-5 text-violet-800">
             {minimal?.reasoning ??
               minimal?.error ??
               (minimalRunning
-                ? '代码正在解析确定性证据，随后交模型判断阶段。'
+                ? '正在抽取事实并交模型判断阶段。'
                 : '未成功返回结果，请查看详情中的诊断信息。')}
           </p>
           {(minimal?.evidence.length ?? 0) > 0 && (
@@ -490,11 +446,6 @@ function ClassifyResultItem({
                 <li key={item} className="break-words">⚠ {item}</li>
               ))}
             </ul>
-          )}
-          {minimal?.missingEvidence && (
-            <p className="mt-2 break-words border-t border-violet-200 pt-2 text-[11px] leading-4 text-amber-800">
-              缺什么：{minimal.missingEvidence}
-            </p>
           )}
         </div>
 
@@ -1633,7 +1584,6 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   // 'abstract' 版阶段说明不含文件类型清单，用来验证清单是否在替模型答题。
-  const [stageGuideMode, setStageGuideMode] = useState<'examples' | 'abstract'>('examples');
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1943,8 +1893,6 @@ export default function Home() {
     ));
 
     try {
-      const archiveConfidence =
-        pendingResult.minimalDecision?.confidence ?? pendingResult.confidence;
       const archiveReasoning =
         pendingResult.minimalDecision?.reasoning ?? pendingResult.reasoning;
       const response = pendingResult.sourceStorageKey
@@ -1959,7 +1907,7 @@ export default function Home() {
               projectId: pendingResult.sourceProjectId,
               folderId: selectedFolder.folderId,
               archiveTitle,
-              confidence: archiveConfidence,
+              confidence: 0,
               reasoning: archiveReasoning,
               sourcePath: pendingResult.sourcePath || pendingResult.fileName,
               documentFacts: pendingResult.documentFacts,
@@ -1971,7 +1919,7 @@ export default function Home() {
             formData.append('projectId', pendingResult.sourceProjectId!);
             formData.append('folderId', selectedFolder.folderId);
             formData.append('archiveTitle', archiveTitle);
-            formData.append('confidence', String(archiveConfidence));
+            formData.append('confidence', '0');
             formData.append('reasoning', archiveReasoning);
             formData.append(
               'sourcePath',
@@ -2253,7 +2201,6 @@ export default function Home() {
             projectId: selectedProjectId,
             autoArchive: false,
             minimalPath: true,
-            stageGuideMode,
             sourcePath: file.webkitRelativePath || file.name,
           }),
         });
@@ -2366,11 +2313,7 @@ export default function Home() {
     fetch('/api/projects')
       .then(r => r.json())
       .then(data => setProjects(data.projects || []));
-  }, [
-    selectedProjectId,
-    results,
-    stageGuideMode,
-  ]);
+  }, [selectedProjectId, results]);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const archiveDataMatchesSelection =
@@ -2700,24 +2643,6 @@ export default function Home() {
                     <Brain className="h-5 w-5 text-violet-600" />
                     极简分类结果
                   </CardTitle>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
-                      <Label
-                        htmlFor="stage-guide-mode-toggle"
-                        className="cursor-pointer text-xs font-normal text-muted-foreground"
-                      >
-                        阶段说明去掉文件清单
-                      </Label>
-                      <Switch
-                        id="stage-guide-mode-toggle"
-                        checked={stageGuideMode === 'abstract'}
-                        onCheckedChange={checked =>
-                          setStageGuideMode(checked ? 'abstract' : 'examples')
-                        }
-                        aria-label="改用只讲业务含义、不列文件类型的阶段说明"
-                      />
-                    </div>
-                  </div>
                 </div>
                 <CardDescription>
                   {results.length > 0

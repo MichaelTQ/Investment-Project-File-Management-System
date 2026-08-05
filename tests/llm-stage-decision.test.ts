@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
-  buildDecisionFromParsed as decisionFromParsedForTests,
-  buildStageDecisionPrompt as buildStageDecisionPromptForTests,
+  buildDecisionFromParsed,
+  buildStageDecisionPrompt,
   parseLlmStageDecisionResponse,
 } from '../src/lib/classification/llm-stage-decision';
-import type { DocumentFacts } from '../src/lib/classification/document-facts';
 
-function healthyFacts(): DocumentFacts {
+function healthyFacts(overrides: Partial<DocumentFacts> = {}): DocumentFacts {
   return {
     schemaVersion: 1,
     documentType: 'company_charter',
@@ -25,154 +25,201 @@ function healthyFacts(): DocumentFacts {
     warnings: [],
     sourceQuality: 'text',
     extractionConfidence: 90,
+    ...overrides,
   };
 }
 
 test('解析模型返回的阶段判断', () => {
   const parsed = parseLlmStageDecisionResponse(
-    `{"stage":"investment_execution","conf":82,"review":false,"why":"注册资本由1000万增加至1500万，属于交易完成后的新版章程","ev":["注册资本 1000万 → 1500万"],"cx":[]}`
+    `{"stage":"investment_execution","review":false,"why":"文件记载注册资本已变更为新值","ev":["注册资本 1000万 → 1500万"],"cx":[]}`
   );
   assert.equal(parsed.stage, 'investment_execution');
-  assert.equal(parsed.confidence, 82);
   assert.equal(parsed.review, false);
   assert.deepEqual(parsed.evidence, ['注册资本 1000万 → 1500万']);
   assert.deepEqual(parsed.contradictions, []);
 });
 
-test('模型输出被 Markdown 包裹时仍能解析', () => {
-  const parsed = parseLlmStageDecisionResponse(
-    '```json\n{"stage":"due_diligence","conf":70,"review":true,"why":"尽调报告","ev":[],"cx":[]}\n```'
-  );
-  assert.equal(parsed.stage, 'due_diligence');
-  assert.equal(parsed.review, true);
-});
-
-test('模型给出 unknown 时阶段为 null，不视为解析失败', () => {
-  const parsed = parseLlmStageDecisionResponse(
-    `{"stage":"unknown","conf":10,"review":true,"why":"事实为空","ev":[],"cx":[]}`
-  );
-  assert.equal(parsed.stage, null);
-  assert.equal(parsed.confidence, 10);
-});
-
-test('模型编造不存在的阶段时报错，不会静默落到 unknown', () => {
+test('阶段值非法时报错，不静默降级', () => {
   assert.throws(
-    () =>
-      parseLlmStageDecisionResponse(
-        `{"stage":"投资实施","conf":90,"review":false,"why":"x","ev":[],"cx":[]}`
-      ),
+    () => parseLlmStageDecisionResponse('{"stage":"随便写的阶段","review":false}'),
     /未知阶段/
   );
 });
 
-test('置信度超出范围或缺失时被夹到 0-100', () => {
-  assert.equal(
-    parseLlmStageDecisionResponse(
-      `{"stage":"initiation","conf":180,"review":false,"why":"x","ev":[],"cx":[]}`
-    ).confidence,
-    100
+test('unknown 表示判不出来，转人工', () => {
+  const parsed = parseLlmStageDecisionResponse(
+    '{"stage":"unknown","review":false,"why":"读不到有效内容","ev":[],"cx":[]}'
   );
-  assert.equal(
-    parseLlmStageDecisionResponse(
-      `{"stage":"initiation","review":false,"why":"x","ev":[],"cx":[]}`
-    ).confidence,
-    0
-  );
+  assert.equal(parsed.stage, null);
+
+  const decision = buildDecisionFromParsed(parsed, healthyFacts());
+  assert.equal(decision.status, 'insufficient');
+  assert.equal(decision.selectedFolder, null);
+  assert.equal(decision.requiresHumanReview, true);
 });
 
-test('响应中没有 JSON 对象时报错', () => {
-  assert.throws(
-    () => parseLlmStageDecisionResponse('模型拒绝回答。'),
-    /没有合法 JSON 对象/
-  );
-});
-
-test('模型自报矛盾时强制转人工，高把握也不放行', () => {
-  // 实测出现过的失败形态：模型标注了与关联文件的金额矛盾，同时给 85 分并判错。
-  const decided = decisionFromParsedForTests(
+test('模型自己写下存疑之处时强制转人工', () => {
+  const decision = buildDecisionFromParsed(
     {
       stage: 'investment_execution',
-      confidence: 85,
       review: false,
-      reasoning: '注册资本增至11.73624万元',
-      evidence: ['存在增资变化'],
-      contradictions: ['存在注册资本金额与关联文件矛盾的情况'],
+      reasoning: '记载了变更后的注册资本',
+      evidence: ['注册资本 1500万'],
+      contradictions: ['与关联章程记载的金额对不上'],
     },
     healthyFacts()
   );
-  assert.equal(decided.status, 'decided');
-  assert.equal(decided.selectedFolder?.businessStage, 'investment_execution');
-  assert.equal(decided.requiresHumanReview, true);
+  assert.equal(decision.requiresHumanReview, true);
 });
 
-test('没有矛盾且事实健康时不会无故转人工', () => {
-  const decided = decisionFromParsedForTests(
+test('只读到文件名时强制转人工', () => {
+  const decision = buildDecisionFromParsed(
     {
-      stage: 'due_diligence',
-      confidence: 80,
+      stage: 'investment_execution',
       review: false,
-      reasoning: '尽职调查报告',
-      evidence: ['标题为尽职调查报告'],
-      contradictions: [],
-    },
-    healthyFacts()
-  );
-  assert.equal(decided.requiresHumanReview, false);
-});
-
-test('事实仅来自文件名时强制转人工，模型给高分也不放行', () => {
-  const decided = decisionFromParsedForTests(
-    {
-      stage: 'initiation',
-      confidence: 95,
-      review: false,
-      reasoning: '文件名含立项',
+      reasoning: '据文件名判断',
       evidence: [],
       contradictions: [],
     },
-    { ...healthyFacts(), sourceQuality: 'filename_only' }
+    healthyFacts({ sourceQuality: 'filename_only' })
   );
-  assert.equal(decided.requiresHumanReview, true);
+  assert.equal(decision.requiresHumanReview, true);
 });
 
-test('abstract 版阶段说明不含任何文件类型清单', () => {
-  const abstractPrompt = JSON.stringify(
-    buildStageDecisionPromptForTests({
+test('事实清楚且模型无异议时不强制复核', () => {
+  const decision = buildDecisionFromParsed(
+    {
+      stage: 'due_diligence',
+      review: false,
+      reasoning: '文件是对标的的核查记录',
+      evidence: ['尽职调查工作底稿'],
+      contradictions: [],
+    },
+    healthyFacts({ documentType: 'due_diligence_report' })
+  );
+  assert.equal(decision.requiresHumanReview, false);
+  assert.equal(decision.status, 'decided');
+  assert.equal(decision.businessStage, 'due_diligence');
+});
+
+/**
+ * 提示词不得夹带业务预设。这是这一版重构的核心约束：模型只应看到阶段定义和
+ * 原始事实，不应看到"哪类文件通常属于哪个阶段"，也不应看到代码替它算好的结论。
+ */
+
+test('阶段说明不列举各阶段的常见文件类型', () => {
+  const systemPrompt = String(
+    buildStageDecisionPrompt({
       sourcePath: '公司章程.pdf',
       facts: healthyFacts(),
-      stageGuideMode: 'abstract',
-    })
+    })[0].content
   );
-  // 这些是 examples 版里逐一列出的文件类型，abstract 版不应出现在阶段说明里。
+
+  // 阶段定义必须在，否则模型无从判断。
+  assert.match(systemPrompt, /investment_execution/);
+  // 但不能出现文件类型清单式的举例。
   for (const listed of [
-    '立项会纪要',
-    '尽调报告',
-    '投资建议书',
-    '交割确认函',
+    '立项申请',
+    '立项报告',
+    '商业计划书',
+    '增资协议',
+    '股东会决议',
     '缴款通知书',
     '出资证明书',
-    '银行回单',
-    'Teaser',
+    '营业执照',
   ]) {
     assert.equal(
-      abstractPrompt.includes(listed),
+      systemPrompt.includes(listed),
       false,
-      `abstract 版不应出现文件类型「${listed}」`
+      `阶段说明里出现了文件类型举例“${listed}”，模型会据此查表而不是推理`
     );
   }
-  // 但判断依据必须保留——那是依据，不是答案。
-  assert.match(abstractPrompt, /交易发生之前/);
-  assert.match(abstractPrompt, /交易发生之后/);
 });
 
-test('examples 版保留文件类型清单，两版确实不同', () => {
-  const examplesPrompt = JSON.stringify(
-    buildStageDecisionPromptForTests({
+test('提示词不预设某类文件指向某个阶段', () => {
+  const systemPrompt = String(
+    buildStageDecisionPrompt({
       sourcePath: '公司章程.pdf',
       facts: healthyFacts(),
-      stageGuideMode: 'examples',
-    })
+    })[0].content
   );
-  assert.match(examplesPrompt, /交割确认函/);
-  assert.match(examplesPrompt, /立项会纪要/);
+
+  assert.equal(systemPrompt.includes('指向 investment_execution'), false);
+  assert.equal(systemPrompt.includes('注册资本'), false);
+  // 反过来，必须明确要求模型不要按"通常"归档、不要假设未见到的文件存在。
+  assert.match(systemPrompt, /通常/);
+  assert.match(systemPrompt, /不要假设项目里应当存在某份没有出现的文件/);
+});
+
+test('用户提示只提供事实与时间线，不含代码算出的结论', () => {
+  const userPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '公司章程.pdf',
+      facts: healthyFacts({ evidenceQuotes: ['注册资本为人民币1000万元'] }),
+      relatedDocuments: [
+        {
+          sourcePath: '股东会决议.pdf',
+          facts: healthyFacts({
+            documentType: 'shareholder_resolution',
+            title: '股东会决议',
+            transactionChanges: [
+              {
+                field: '注册资本',
+                before: '1000万元',
+                after: '1500万元',
+                evidence: '注册资本由1000万元增加至1500万元',
+              },
+            ],
+          }),
+        },
+      ],
+      timeline:
+        '- 2026-04-10 股东会决议.pdf（已归入 investment_execution）：决议通过',
+    })[1].content
+  );
+
+  // 事实照常提供。
+  assert.match(userPrompt, /注册资本为人民币1000万元/);
+  assert.match(userPrompt, /1000万元 → 1500万元/);
+  assert.match(userPrompt, /2026-04-10/);
+  // 但不能出现代码替模型下的结论。
+  for (const verdict of [
+    '已由代码确定',
+    '形成于该笔交易',
+    '请直接采用',
+    '倾向性推测',
+    '必须逐一比对',
+  ]) {
+    assert.equal(
+      userPrompt.includes(verdict),
+      false,
+      `提示里出现了代码的结论“${verdict}”，模型看到的就不再是原始事实`
+    );
+  }
+});
+
+test('提示词只给文件名，不给目录路径（目录名往往就是人工归档的答案）', () => {
+  const userPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '君柔档案/投资决策/财务资料/公司章程.pdf',
+      facts: healthyFacts(),
+      relatedDocuments: [
+        {
+          sourcePath: '君柔档案/投资实施/股东会决议.pdf',
+          facts: healthyFacts({ documentType: 'shareholder_resolution' }),
+        },
+      ],
+    })[1].content
+  );
+
+  assert.match(userPrompt, /公司章程\.pdf/);
+  assert.match(userPrompt, /股东会决议\.pdf/);
+  for (const directory of ['投资决策', '投资实施', '君柔档案', '财务资料']) {
+    assert.equal(
+      userPrompt.includes(directory),
+      false,
+      `提示里泄漏了归档目录名“${directory}”，模型无需推理即可读出答案`
+    );
+  }
+  assert.equal(userPrompt.includes('/'), false);
 });
