@@ -173,14 +173,38 @@ export function extractCapitalTransition(
     : null;
 }
 
-function meaningfulDate(facts: DocumentFacts): string | null {
-  const terms = ['签署', '批准', '通过', '修订', '修改', '生效', '形成', '出具'];
+/** 表示"文件在此时形成"的日期含义。缴款期限、有效期等未来日期不在此列。 */
+const FORMATION_DATE_TERMS = [
+  '签署',
+  '签订',
+  '签字',
+  '批准',
+  '通过',
+  '决议',
+  '修订',
+  '修改',
+  '生效',
+  '形成',
+  '出具',
+  '召开',
+  '发出',
+  '成立',
+];
+
+/**
+ * 取文件的形成时点。
+ *
+ * 找不到就返回 null，**不退而求其次抓任意一个日期**。实测中公司章程只抽出了
+ * "2030-03-30 股东认缴出资截止日期"——那是未来的缴款期限，与章程何时形成毫无
+ * 关系。拿它当文件日期会让两份文件的先后比较得出完全错误的结论。
+ */
+export function extractFormationDate(facts: DocumentFacts): string | null {
   return (
     facts.dates.find(
-      item => item.date && terms.some(term => item.meaning.includes(term))
-    )?.date ??
-    facts.dates.find(item => item.date)?.date ??
-    null
+      item =>
+        item.date &&
+        FORMATION_DATE_TERMS.some(term => item.meaning.includes(term))
+    )?.date ?? null
   );
 }
 
@@ -260,14 +284,14 @@ function checkVersionOrder(
 ): ConsistencyFinding[] {
   const findings: ConsistencyFinding[] = [];
   for (const left of documents) {
-    const leftDate = meaningfulDate(left.facts);
+    const leftDate = extractFormationDate(left.facts);
     const leftRank = stageRank(left.currentStage);
     if (!leftDate || leftRank === null) continue;
 
     for (const right of documents) {
       if (right.sourcePath === left.sourcePath) continue;
       if (right.facts.documentType !== left.facts.documentType) continue;
-      const rightDate = meaningfulDate(right.facts);
+      const rightDate = extractFormationDate(right.facts);
       const rightRank = stageRank(right.currentStage);
       if (!rightDate || rightRank === null) continue;
 

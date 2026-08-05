@@ -270,3 +270,40 @@ test('有交割确认函却没有增资协议时提示档案缺口', () => {
 test('空项目不产生任何提示', () => {
   assert.deepEqual(checkArchiveConsistency([]), []);
 });
+
+test('未来缴款期限不被当作文件日期，不产生假的先后矛盾', () => {
+  // 实测：两份章程都只抽出了"2030-03-30 股东认缴出资截止日期"。
+  // 若把它当文件日期，一旦另一份抽到的是签署日，就会比出错误的先后关系。
+  const deadlineCharter: ArchiveDocument = {
+    sourcePath: '缴款期限章程.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      dates: [
+        {
+          date: '2030-03-30',
+          meaning: '股东认缴出资截止日期',
+          evidence: '认缴期限',
+        },
+      ],
+    }),
+  };
+  const signedCharter: ArchiveDocument = {
+    sourcePath: '签署章程.pdf',
+    currentStage: 'investment_decision',
+    facts: facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      dates: [
+        { date: '2026-03-20', meaning: '章程签署日期', evidence: '落款' },
+      ],
+    }),
+  };
+  const findings = checkArchiveConsistency([deadlineCharter, signedCharter]);
+  assert.deepEqual(
+    findings.filter(item => item.kind === 'version_order_conflict'),
+    [],
+    '缺少形成日期的一方应被跳过，而不是拿缴款期限去比'
+  );
+});

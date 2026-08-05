@@ -1,6 +1,7 @@
 import type { ArchiveBusinessStage } from '../../folder-structure';
 import {
   extractCapitalTransition,
+  extractFormationDate,
   extractRegisteredCapital,
 } from '../archive-consistency';
 import type { MinimalDocument } from './store';
@@ -54,9 +55,21 @@ export interface TransactionSide {
 
 export type EvidenceStrength = 'high' | 'medium' | 'low' | 'none';
 
+export interface CapitalTendency {
+  side: 'before' | 'after';
+  siblingSourcePath: string;
+  currentAmount: number;
+  siblingAmount: number;
+}
+
 export interface ResolvedEvidence {
   /** 代码算出的"这份文件在交易的哪一侧"。null 表示项目里没有可用的交易锚点。 */
   transactionSide: TransactionSide | null;
+  /**
+   * 没有交易锚点时的**倾向性推测**，只用来排默认选项，绝不作为证据。
+   * 投资项目里增资远多于减资，所以金额较低者通常形成较早——但这是先验，不是证明。
+   */
+  tendency: CapitalTendency | null;
   /** 同项目里与本文件同类型的文件，存在时说明可能有版本歧义。 */
   sameTypeSiblings: string[];
   strength: EvidenceStrength;
@@ -80,8 +93,12 @@ const TRANSACTION_RECORD_TYPES = new Set([
   'investment_committee_resolution',
 ]);
 
-function hasMeaningfulDate(document: MinimalDocument): boolean {
-  return document.facts.dates.some(item => Boolean(item.date));
+/**
+ * 只认"文件形成时点"类日期。缴款期限、认缴出资截止日这类未来日期说明不了文件属于
+ * 哪个阶段，拿它撑起中等把握等于给无关数据发合格证。
+ */
+function hasFormationDate(document: MinimalDocument): boolean {
+  return extractFormationDate(document.facts) !== null;
 }
 
 function approximatelyEqual(left: number, right: number): boolean {
@@ -139,25 +156,48 @@ export function resolveEvidence(
     }
   }
 
+  // 没有交易锚点时，同类文件之间的金额差异只能形成倾向，不能形成结论。
+  let tendency: CapitalTendency | null = null;
+  if (!transactionSide && capital !== null) {
+    for (const document of others) {
+      if (document.facts.documentType !== current.facts.documentType) continue;
+      const siblingCapital = extractRegisteredCapital(document.facts);
+      if (siblingCapital === null || approximatelyEqual(capital, siblingCapital)) {
+        continue;
+      }
+      tendency = {
+        side: capital < siblingCapital ? 'before' : 'after',
+        siblingSourcePath: document.sourcePath,
+        currentAmount: capital,
+        siblingAmount: siblingCapital,
+      };
+      break;
+    }
+  }
+
   const strength: EvidenceStrength = transactionSide
     ? 'high'
-    : hasMeaningfulDate(current)
+    : hasFormationDate(current)
       ? 'medium'
-      : current.facts.documentType !== 'unknown' &&
-          current.facts.documentType !== 'other'
+      : tendency ||
+          (current.facts.documentType !== 'unknown' &&
+            current.facts.documentType !== 'other')
         ? 'low'
         : 'none';
 
   const basis = transactionSide
     ? `注册资本 ${transactionSide.amount} 万元与“${transactionSide.anchorSourcePath}”记载的变更${transactionSide.side === 'before' ? '前' : '后'}值一致`
-    : strength === 'medium'
-      ? '只有文件日期可用，缺少可比对的交易记录'
-      : strength === 'low'
-        ? '只有文档类型可用，缺少数字和日期证据'
-        : '没有可用的确定性证据';
+    : tendency
+      ? `缺少交易文件佐证，仅按"投资项目多为增资、金额较低者形成较早"作倾向性推测（本文件 ${tendency.currentAmount} 万元，同类文件 ${tendency.siblingAmount} 万元）`
+      : strength === 'medium'
+        ? '只有文件形成日期可用，缺少可比对的交易记录'
+        : strength === 'low'
+          ? '只有文档类型可用，缺少数字和日期证据'
+          : '没有可用的确定性证据';
 
   return {
     transactionSide,
+    tendency,
     sameTypeSiblings,
     strength,
     confidence: CONFIDENCE_BY_STRENGTH[strength],
@@ -178,13 +218,26 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
     lines.push(
       '这条结论已经过确定性计算，请直接采用，不要再自行比较金额大小推断先后。'
     );
+  } else if (resolved.tendency) {
+    const { side, siblingSourcePath, currentAmount, siblingAmount } =
+      resolved.tendency;
+    lines.push(
+      `项目里没有记载资本变更前后值的交易文件，无法确定先后。` +
+        `本文件注册资本 ${currentAmount} 万元，同类型文件“${siblingSourcePath}”为 ${siblingAmount} 万元。`
+    );
+    lines.push(
+      `【倾向性推测，不是证据】投资项目中增资多于减资，金额较低者通常形成较早，` +
+        `据此本文件**倾向于**是交易${side === 'before' ? '前' : '后'}版本。` +
+        '请据此给出默认建议，但必须在理由中写明这是缺少交易文件时的推测，并把 review 设为 true。' +
+        '若本文件有明确的减资、回购或退出表述，则不适用此倾向，应据实判断。'
+    );
   } else if (resolved.sameTypeSiblings.length > 0) {
     lines.push(
       `项目里有 ${resolved.sameTypeSiblings.length} 份同类型文件（${resolved.sameTypeSiblings.join('、')}），` +
-        '但没有找到记载资本变更前后值的交易文件，无法用数字确定先后。'
+        '但没有找到记载资本变更前后值的交易文件，也读不到可比对的金额。'
     );
     lines.push(
-      '此时不要凭金额大小猜方向。若无法确定，请如实说明缺少一份记载资本变更的股东会决议或增资协议。'
+      '此时不要凭空猜方向。若无法确定，请如实说明缺少一份记载资本变更的股东会决议或增资协议。'
     );
   } else {
     lines.push('项目里没有可用于比对的同类型文件或交易记录。');

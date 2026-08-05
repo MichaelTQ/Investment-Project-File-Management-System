@@ -119,18 +119,70 @@ test('减资场景方向不反：金额更小的是交易之后', () => {
   assert.equal(resolved.transactionSide?.side, 'after');
 });
 
-test('没有交易锚点时不臆断方向，把握降为中等', () => {
+test('没有交易锚点时给出倾向性推测而不是沉默', () => {
   const resolved = resolveEvidence(preCharter, [postCharter]);
   assert.equal(resolved.transactionSide, null);
+  assert.equal(resolved.tendency?.side, 'before');
+  assert.equal(resolved.tendency?.siblingSourcePath, '6君柔科技-公司章程.pdf');
   assert.deepEqual(resolved.sameTypeSiblings, ['6君柔科技-公司章程.pdf']);
-  assert.equal(resolved.strength, 'medium');
-  assert.equal(resolved.confidence, 65);
 });
 
-test('缺交易锚点时给模型的提示明确要求不要靠比大小猜', () => {
+test('倾向性推测明确标注为推测，且要求转人工', () => {
   const text = describeResolvedEvidence(resolveEvidence(preCharter, [postCharter]));
-  assert.match(text, /不要凭金额大小猜方向/);
+  assert.match(text, /倾向性推测，不是证据/);
+  assert.match(text, /review 设为 true/);
+  assert.match(text, /减资、回购或退出/);
+});
+
+test('读不到可比金额时才回到"说清缺什么"', () => {
+  const bareCharter = document(
+    '无金额章程.pdf',
+    null,
+    facts({ documentType: 'company_charter', title: '公司章程' })
+  );
+  const text = describeResolvedEvidence(
+    resolveEvidence(bareCharter, [postCharter])
+  );
+  assert.match(text, /不要凭空猜方向/);
   assert.match(text, /股东会决议或增资协议/);
+});
+
+test('未来期限不能撑起中等把握', () => {
+  // 实测中公司章程只抽出了"2030-03-30 股东认缴出资截止日期"，
+  // 那是缴款期限，说明不了章程何时形成。
+  const deadlineOnly = document(
+    '只有缴款期限的章程.pdf',
+    null,
+    facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      dates: [
+        {
+          date: '2030-03-30',
+          meaning: '股东认缴出资截止日期',
+          evidence: '章程约定认缴期限',
+        },
+      ],
+    })
+  );
+  const resolved = resolveEvidence(deadlineOnly, []);
+  assert.notEqual(resolved.strength, 'medium');
+  assert.equal(resolved.confidence, 45);
+});
+
+test('签署日期可以撑起中等把握', () => {
+  const signed = document(
+    '有签署日的章程.pdf',
+    null,
+    facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      dates: [
+        { date: '2026-03-20', meaning: '章程签署日期', evidence: '落款日期' },
+      ],
+    })
+  );
+  assert.equal(resolveEvidence(signed, []).strength, 'medium');
 });
 
 test('有交易锚点时提示模型直接采用代码结论', () => {

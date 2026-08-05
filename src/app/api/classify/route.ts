@@ -37,12 +37,6 @@ import {
   type ClassificationAgentResult,
 } from '@/lib/classification/classification-agent';
 import {
-  decideStageWithModel,
-  LLM_STAGE_DECISION_MODEL,
-  LLM_STAGE_DECISION_VERSION,
-  type LlmStageDecisionResult,
-} from '@/lib/classification/llm-stage-decision';
-import {
   classifyWithMinimalPath,
   type MinimalClassifyResult,
 } from '@/lib/classification/minimal/pipeline';
@@ -126,15 +120,6 @@ interface ClassifyProcess {
     error?: string;
     modelCall?: ModelCallDiagnostics;
   };
-  step0_modelStageDecision?: {
-    enabled: boolean;
-    status: LlmStageDecisionResult['status'];
-    model: string;
-    policyVersion: string;
-    agreesWithRules?: boolean;
-    error?: string;
-    modelCall?: ModelCallDiagnostics;
-  };
   step0_projectSessionMemory?: {
     enabled: boolean;
     status: 'success' | 'skipped' | 'failed';
@@ -183,8 +168,6 @@ interface ClassifyResult {
   documentFacts?: DocumentFacts;
   contextDecision?: ContextClassificationDecision;
   agentDecision?: ClassificationAgentResult;
-  /** 影子模式：模型给出的阶段判断，仅供对照，不影响 targetFolder。 */
-  modelStageDecision?: LlmStageDecisionResult;
   /** 极简链路的结论，与 Agent 链路并行运行、互不影响，用于 A/B 对照。 */
   minimalDecision?: MinimalClassifyResult;
   projectSessionMemory?: ProjectSessionMemoryView;
@@ -339,8 +322,6 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.ENABLE_CONTEXT_DECISION_SHADOW === 'true';
     let runAgentDecision =
       globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
-    let runModelStageDecision =
-      globalThis.process.env.ENABLE_LLM_STAGE_DECISION_SHADOW === 'true';
     let runMinimalPath =
       globalThis.process.env.ENABLE_MINIMAL_PATH === 'true';
     let rawProjectContext: unknown;
@@ -374,10 +355,6 @@ export async function POST(request: NextRequest) {
         typeof body.agentDecision === 'boolean'
           ? body.agentDecision
           : runAgentDecision;
-      runModelStageDecision =
-        typeof body.modelStageDecision === 'boolean'
-          ? body.modelStageDecision
-          : runModelStageDecision;
       runMinimalPath =
         typeof body.minimalPath === 'boolean' ? body.minimalPath : runMinimalPath;
       rawProjectContext = body.projectContext;
@@ -421,11 +398,6 @@ export async function POST(request: NextRequest) {
         agentDecisionValue === null
           ? runAgentDecision
           : agentDecisionValue === 'true';
-      const modelStageDecisionValue = formData.get('modelStageDecision');
-      runModelStageDecision =
-        modelStageDecisionValue === null
-          ? runModelStageDecision
-          : modelStageDecisionValue === 'true';
       const minimalPathValue = formData.get('minimalPath');
       runMinimalPath =
         minimalPathValue === null
@@ -459,7 +431,6 @@ export async function POST(request: NextRequest) {
       persistFacts ||
       runContextDecision ||
       runAgentDecision ||
-      runModelStageDecision ||
       runMinimalPath;
 
     const projectContext: ProjectContextSnapshot | null =
@@ -670,10 +641,6 @@ export async function POST(request: NextRequest) {
     let projectSessionMemoryStep:
       | ClassifyProcess['step0_projectSessionMemory']
       | undefined;
-    let modelStageDecision: LlmStageDecisionResult | undefined;
-    let modelStageDecisionStep:
-      | ClassifyProcess['step0_modelStageDecision']
-      | undefined;
     let minimalDecision: MinimalClassifyResult | undefined;
     let minimalPathStep: ClassifyProcess['step0_minimalPath'] | undefined;
     if (extractFacts) {
@@ -843,42 +810,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 影子模式：让模型基于同一批事实和上下文独立判断阶段，只做对照，不参与
-    // targetFolder 的计算。关联文件优先使用 Agent 实际选中的那几份，保证两边
-    // 看到的材料一致；模型失败时结果为 null，分类流程不受影响。
-    if (runModelStageDecision && documentFacts) {
-      const factsForModel = documentFacts;
-      modelStageDecision = await measurePhase('model_stage_decision', () =>
-        decideStageWithModel({
-          sourcePath: sourcePath || fileName,
-          facts: factsForModel,
-          projectName: project?.name,
-          projectContext:
-            projectSessionMemory?.projectContext ?? projectContext,
-          relatedDocuments:
-            agentClassificationResult?.selectedRelatedDocuments ??
-            relatedDocumentFacts,
-          customHeaders,
-        })
-      );
-      if (modelStageDecision.modelCall) {
-        modelCalls.push(modelStageDecision.modelCall);
-      }
-      const ruleStage =
-        agentClassificationResult?.decision.businessStage ?? null;
-      modelStageDecisionStep = {
-        enabled: true,
-        status: modelStageDecision.status,
-        model: LLM_STAGE_DECISION_MODEL,
-        policyVersion: LLM_STAGE_DECISION_VERSION,
-        agreesWithRules: modelStageDecision.decision
-          ? modelStageDecision.decision.businessStage === ruleStage
-          : undefined,
-        error: modelStageDecision.error,
-        modelCall: modelStageDecision.modelCall,
-      };
-    }
-
     // 极简链路：与 Agent 链路并行，用同一份事实，判断者不同。两条路互不读写对方
     // 的状态，因此可以直接 A/B；将来极简版胜出时删掉 Agent 一整块即可。
     if (runMinimalPath && documentFacts && projectId) {
@@ -941,7 +872,6 @@ export async function POST(request: NextRequest) {
         : undefined,
       step0_agentOrchestration: agentOrchestrationStep,
       step0_minimalPath: minimalPathStep,
-      step0_modelStageDecision: modelStageDecisionStep,
       step0_projectSessionMemory: projectSessionMemoryStep,
       finalDecision: { method: 'none', explanation: '' },
     };
@@ -994,9 +924,6 @@ export async function POST(request: NextRequest) {
     }
     if (agentClassificationResult) {
       result.agentDecision = agentClassificationResult;
-    }
-    if (modelStageDecision) {
-      result.modelStageDecision = modelStageDecision;
     }
     if (minimalDecision) {
       result.minimalDecision = minimalDecision;
