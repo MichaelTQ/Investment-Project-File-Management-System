@@ -116,3 +116,42 @@ test('代码算出的锚点结论里也不带目录路径', () => {
   const described = describeResolvedEvidence(resolveEvidence(current, [anchor]));
   assertNoGoldDirectory(described, '代码结论');
 });
+
+/**
+ * 诊断文案只能陈述代码真的看见的东西。
+ *
+ * 反面教材：把"缺少一份记载注册资本变更前后值的股东会决议或增资协议"写死在
+ * 分支里。代码并不知道这个项目该有哪些文件，这类句子读起来像结论，实际是模板，
+ * 会让人误以为系统已经查证过档案应有的构成。
+ */
+
+const PRESCRIPTIVE_PHRASES = ['应有', '应当有', '通常应', '缺少一份'];
+
+test('找不到锚点时只陈述观察到的事实，不预设项目该有哪些文件', () => {
+  const lonely: MinimalDocument = {
+    sourcePath: '公司章程.pdf',
+    stage: null,
+    updatedAt: 0,
+    facts: facts(),
+  };
+  const other: MinimalDocument = {
+    sourcePath: '营业执照.pdf',
+    stage: null,
+    updatedAt: 0,
+    facts: facts({ documentType: 'business_license', title: '营业执照' }),
+  };
+
+  const detail =
+    resolveEvidence(lonely, [other]).anchorDiagnostic?.detail ?? '';
+
+  // 说清看见了哪几份文件。
+  assert.match(detail, /营业执照\.pdf/);
+  assert.match(detail, /1 份/);
+  for (const phrase of PRESCRIPTIVE_PHRASES) {
+    assert.equal(
+      detail.includes(phrase),
+      false,
+      `诊断里出现了预设该有什么文件的措辞“${phrase}”`
+    );
+  }
+});

@@ -152,7 +152,7 @@ function comparableFields(document: MinimalDocument): string[] {
  * "证据不足"：数值对不上要人去查，字段没写要补文件，项目里没交易文件则只能等。
  */
 function buildAnchorDiagnostic(input: {
-  hasOtherDocuments: boolean;
+  otherDocumentNames: string[];
   anchorSourcePaths: string[];
   fieldsNotStated: string[];
   mismatches: string[];
@@ -188,18 +188,21 @@ function buildAnchorDiagnostic(input: {
       detail:
         `项目里有文件写明了变更前后值（${input.rejectedAnchors.join('、')}），` +
         '但它的文件类型未能识别或属于转述性文件，因此没有被采信为交易锚点。' +
-        '若它确实是股东会决议、增资协议一类的交易文件，请先修正其文件类型再重跑。',
+        '若它确实是记载本次交易的文件，请先修正其文件类型再重跑。',
       anchorSourcePaths: input.rejectedAnchors,
       fields: [],
     };
   }
 
-  return input.hasOtherDocuments
+  // 这里只陈述代码实际看到的东西：有哪几份文件、它们都没写前后值。
+  // 不写"应该有一份股东会决议"——项目该有什么文件是业务判断，代码不掌握，
+  // 硬写进来会让一句模板读起来像结论。
+  return input.otherDocumentNames.length > 0
     ? {
         reason: 'no_transaction_records',
         detail:
-          '项目里已有其他文件，但没有任何一份写明了"某字段由 X 变为 Y"，' +
-          '缺少可用作锚点的交易记录（如记载注册资本变更前后值的股东会决议或增资协议）。',
+          `项目里另有 ${input.otherDocumentNames.length} 份文件（${input.otherDocumentNames.join('、')}），` +
+          '但没有一份写明了"某字段由 X 变为 Y"，因此没有可用来定位交易前后侧的锚点。',
         anchorSourcePaths: [],
         fields: [],
       }
@@ -293,7 +296,7 @@ export function resolveEvidence(
   const anchorDiagnostic = transactionSide
     ? null
     : buildAnchorDiagnostic({
-        hasOtherDocuments: others.length > 0,
+        otherDocumentNames: others.map(document => leafName(document.sourcePath)),
         anchorSourcePaths,
         fieldsNotStated,
         mismatches,

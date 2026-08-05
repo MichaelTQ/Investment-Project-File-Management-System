@@ -77,22 +77,26 @@ export function canAnchorTransaction(documentType: DocumentType): boolean {
 const EXPECTED_COMPANIONS: Array<{
   present: DocumentType;
   expected: DocumentType;
-  hint: string;
+  presentLabel: string;
+  expectedLabel: string;
 }> = [
   {
     present: 'closing_confirmation',
     expected: 'capital_increase_agreement',
-    hint: '有交割确认函，通常应有对应的增资协议在档',
+    presentLabel: '交割确认函',
+    expectedLabel: '增资协议',
   },
   {
     present: 'payment_notice',
     expected: 'capital_increase_agreement',
-    hint: '有缴款通知书，通常应有对应的增资协议在档',
+    presentLabel: '缴款通知书',
+    expectedLabel: '增资协议',
   },
   {
     present: 'capital_increase_agreement',
     expected: 'shareholder_resolution',
-    hint: '有增资协议，通常应有批准本次增资的股东会决议在档',
+    presentLabel: '增资协议',
+    expectedLabel: '股东会决议',
   },
 ];
 
@@ -479,7 +483,11 @@ function checkMissingCompanions(
     sourcePath: '',
     currentStage: null,
     constraint: '档案完整性提示',
-    reason: rule.hint,
+    // 先说看见了什么，再挑明这条来自固定清单。原先写的是"通常应有…在档"，
+    // 读起来像从本项目文件里推出的结论，其实只是一条预先写好的组合规则。
+    reason:
+      `档案里有${rule.presentLabel}，没有${rule.expectedLabel}。` +
+      '这是固定检查清单上的一组常见搭配，不是从本项目文件中推出的结论。',
     evidence: [],
     relatedSourcePaths: documents
       .filter(document => document.facts.documentType === rule.present)
