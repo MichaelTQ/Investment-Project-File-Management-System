@@ -286,62 +286,74 @@ function StoredFactsCard({ entry }: { entry: StoredDocument }) {
   const facts = entry.facts;
   const fileName =
     entry.sourcePath.split(/[/\\]/).pop() ?? entry.sourcePath;
-  const unreadable = facts.sourceQuality === 'filename_only';
+  // 判据是有没有原文事实，不是模型自报的来源——它经常自报"只读到文件名"，
+  // 却同时给出了日期和原文摘录。
+  const hasContent =
+    facts.dates.length > 0 ||
+    facts.parties.length > 0 ||
+    facts.transactionChanges.length > 0 ||
+    facts.explicitStageClues.length > 0 ||
+    facts.evidenceQuotes.length > 0;
 
   return (
-    <div className="min-w-0 rounded-lg border border-emerald-200 bg-white/70 p-2.5">
-      <div className="flex flex-wrap items-start justify-between gap-1.5">
-        <p className="min-w-0 break-all text-[11px] font-medium text-emerald-950">
+    <details className="min-w-0 rounded-lg border border-emerald-200 bg-white/70">
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-1.5 p-2.5">
+        <span className="min-w-0 break-all text-[11px] font-medium text-emerald-950">
           {fileName}
-        </p>
+        </span>
         <span className="shrink-0 text-[10px] text-muted-foreground">
+          {facts.documentType}
+          {' · '}
           {entry.stage
             ? PROJECT_STAGE_LABELS[entry.stage] ?? entry.stage
             : '尚未归档'}
         </span>
-      </div>
+      </summary>
 
-      <p className="mt-1 break-words text-[10px] leading-4 text-muted-foreground">
-        类型：{facts.documentType}
-        {facts.rawDocumentType && facts.rawDocumentType !== '未知'
-          ? `（原文表述：${facts.rawDocumentType}）`
-          : ''}
-        {' · '}
-        {SIGN_STATUS_LABELS[facts.signStatus] ?? facts.signStatus}
-        {' · '}
-        来源：{SOURCE_QUALITY_LABELS[facts.sourceQuality] ?? facts.sourceQuality}
-      </p>
-
-      {unreadable && (
-        <p className="mt-1 text-[10px] leading-4 text-amber-700">
-          没有读到文件内容，以下事实几乎为空，判断只能靠人工。
+      <div className="border-t border-emerald-100 px-2.5 pb-2.5 pt-2">
+        <p className="break-words text-[10px] leading-4 text-muted-foreground">
+          类型：{facts.documentType}
+          {facts.rawDocumentType && facts.rawDocumentType !== '未知'
+            ? `（原文表述：${facts.rawDocumentType}）`
+            : ''}
+          {' · '}
+          {SIGN_STATUS_LABELS[facts.signStatus] ?? facts.signStatus}
+          {' · '}
+          来源：
+          {SOURCE_QUALITY_LABELS[facts.sourceQuality] ?? facts.sourceQuality}
         </p>
-      )}
 
-      <dl className="mt-1.5 space-y-1 text-[10px] leading-4">
-        <FactRow label="标题" values={[facts.title]} />
-        <FactRow
-          label="日期"
-          values={facts.dates.map(
-            item => `${item.date ?? '日期未知'}：${item.meaning}`
-          )}
-        />
-        <FactRow
-          label="字段变化"
-          values={facts.transactionChanges.map(
-            item =>
-              `${item.field} ${item.before ?? '未写明'} → ${item.after ?? '未写明'}`
-          )}
-        />
-        <FactRow
-          label="主体"
-          values={facts.parties.map(item => `${item.name}（${item.role}）`)}
-        />
-        <FactRow label="业务动作" values={facts.explicitStageClues} />
-        <FactRow label="原文摘录" values={facts.evidenceQuotes} />
-        <FactRow label="抽取提示" values={facts.warnings} muted />
-      </dl>
-    </div>
+        {!hasContent && (
+          <p className="mt-1 text-[10px] leading-4 text-amber-700">
+            没有读到任何原文事实，判断只能靠人工。
+          </p>
+        )}
+
+        <dl className="mt-1.5 space-y-1 text-[10px] leading-4">
+          <FactRow label="标题" values={[facts.title]} />
+          <FactRow
+            label="日期"
+            values={facts.dates.map(
+              item => `${item.date ?? '日期未知'}：${item.meaning}`
+            )}
+          />
+          <FactRow
+            label="字段变化"
+            values={facts.transactionChanges.map(
+              item =>
+                `${item.field} ${item.before ?? '未写明'} → ${item.after ?? '未写明'}`
+            )}
+          />
+          <FactRow
+            label="主体"
+            values={facts.parties.map(item => `${item.name}（${item.role}）`)}
+          />
+          <FactRow label="业务动作" values={facts.explicitStageClues} />
+          <FactRow label="原文摘录" values={facts.evidenceQuotes} />
+          <FactRow label="抽取提示" values={facts.warnings} muted />
+        </dl>
+      </div>
+    </details>
   );
 }
 

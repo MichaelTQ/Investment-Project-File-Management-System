@@ -236,3 +236,34 @@ test('其他文件的归档位置可参考，但提示词禁止把它当唯一�
   assert.match(systemPrompt, /不得只凭/);
   assert.match(systemPrompt, /必须结合本文件自身记载的内容/);
 });
+
+test('自报只读到文件名但有原文事实时，不算读不到，不因此强制复核', () => {
+  const decision = buildDecisionFromParsed(
+    {
+      stage: 'investment_execution',
+      review: false,
+      reasoning: '文件记载注册资本已变更',
+      evidence: ['注册资本 11.73624万元 → 13.04027万元'],
+      contradictions: [],
+    },
+    healthyFacts({
+      sourceQuality: 'filename_only',
+      evidenceQuotes: ['注册资本由11.73624万元增加至13.04027万元'],
+    })
+  );
+  assert.equal(decision.requiresHumanReview, false);
+});
+
+test('确实什么都没抽到时才按读不到处理，强制复核', () => {
+  const decision = buildDecisionFromParsed(
+    {
+      stage: 'investment_execution',
+      review: false,
+      reasoning: '据文件名判断',
+      evidence: [],
+      contradictions: [],
+    },
+    healthyFacts({ sourceQuality: 'filename_only' })
+  );
+  assert.equal(decision.requiresHumanReview, true);
+});

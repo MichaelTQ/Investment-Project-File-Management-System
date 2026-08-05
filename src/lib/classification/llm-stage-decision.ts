@@ -8,7 +8,11 @@ import {
   invokeChatCompletion,
   type ModelCallDiagnostics,
 } from './chat-completions';
-import { extractFirstJsonObject, type DocumentFacts } from './document-facts';
+import {
+  extractFirstJsonObject,
+  hasContentEvidence,
+  type DocumentFacts,
+} from './document-facts';
 import type { ContextClassificationDecision } from './minimal/types';
 import { leafName } from './source-path';
 
@@ -247,7 +251,10 @@ export function buildDecisionFromParsed(
   parsed: ParsedModelStage,
   facts: DocumentFacts
 ): ContextClassificationDecision {
-  const unreadable = facts.sourceQuality === 'filename_only';
+  // 以有没有原文事实为准。模型自报的 sourceQuality 会与它自己的产出矛盾，
+  // 只信自报会把一批读到了内容的文件误判成"读不到"。
+  const unreadable =
+    facts.sourceQuality === 'filename_only' && !hasContentEvidence(facts);
   const requiresHumanReview =
     !parsed.stage ||
     parsed.review ||
