@@ -44,15 +44,30 @@ export function buildTimeline(documents: MinimalDocument[]): TimelineEntry[] {
     );
 }
 
-/** 把时间线整理成文本，供模型阅读。只列事实，不做归纳。 */
-export function describeTimeline(entries: TimelineEntry[]): string {
+/**
+ * 把时间线整理成文本，供模型阅读。只列事实，不做归纳。
+ *
+ * showStage 控制要不要写出每份文件归在哪个阶段。这个值来自文件此刻实际所在的
+ * 目录，而归档一律需要人工点确认（classify 恒定要求确认，不存在自动归档），
+ * 因此它是人工确认过的结果，不是模型的猜测——措辞上必须说清这一点，否则模型
+ * 会把它当成系统自己的输出，或者反过来当成不容置疑的铁证。
+ *
+ * 需要留意的缝隙：确认时下拉框的默认值就是模型建议，一路点确认的话，这个"人工
+ * 确认"实质仍是模型的猜测。所以提示词里同时要求模型不得只凭这一条下结论。
+ */
+export function describeTimeline(
+  entries: TimelineEntry[],
+  options: { showStage?: boolean } = {}
+): string {
   if (entries.length === 0) return '项目里还没有带日期的文件。';
   return entries
-    .map(
-      entry =>
-        `- ${entry.date} ${leafName(entry.sourcePath)}` +
-        `${entry.stage ? `（已归入 ${entry.stage}）` : '（尚未归档）'}` +
-        `：${entry.meaning}。原文：${entry.evidence}`
-    )
+    .map(entry => {
+      const stage = options.showStage
+        ? entry.stage
+          ? `（人工确认归入 ${entry.stage}）`
+          : '（尚未归档）'
+        : '';
+      return `- ${entry.date} ${leafName(entry.sourcePath)}${stage}：${entry.meaning}。原文：${entry.evidence}`;
+    })
     .join('\n');
 }

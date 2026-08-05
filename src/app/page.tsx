@@ -136,7 +136,8 @@ interface ClassifyResult {
   documentType?: string;
   minimalDecision?: MinimalDecisionResult;
   minimalPending?: boolean;
-  documentFacts?: unknown;
+  // 只声明界面用得到的字段；其余原样透传给归档接口。
+  documentFacts?: { rawDocumentType?: string } & Record<string, unknown>;
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
   sourceFile?: File;
@@ -425,6 +426,9 @@ function ClassifyResultItem({
             ] ?? '待确认'}
             {' · '}
             文件类型：{result.documentType ?? '待识别'}
+            {result.documentFacts?.rawDocumentType &&
+              result.documentFacts.rawDocumentType !== '未知' &&
+              `（原文表述：${result.documentFacts.rawDocumentType}）`}
           </p>
           <p className="mt-2 break-words text-xs leading-5 text-violet-800">
             {minimal?.reasoning ??
