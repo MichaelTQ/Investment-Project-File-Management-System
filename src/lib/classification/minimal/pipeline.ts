@@ -103,10 +103,20 @@ export async function classifyWithMinimalPath(
   };
 }
 
+/** 一份已存文件的事实，原样交给界面展示。 */
+export interface MinimalArchivedDocument {
+  sourcePath: string;
+  stage: ArchiveBusinessStage | null;
+  facts: DocumentFacts;
+  updatedAt: number;
+}
+
 export interface MinimalRebuildReport {
   documentCount: number;
   checkedCount: number;
   skippedCount: number;
+  /** 每份文件抽取出来的事实。界面据此展示"这份文件系统读到了什么"。 */
+  documents: MinimalArchivedDocument[];
   timeline: TimelineEntry[];
   findings: ConflictFinding[];
   dismissedCount: number;
@@ -126,6 +136,13 @@ export async function rebuildMinimalArchive(
   options: {
     projectName?: string;
     customHeaders?: Record<string, string>;
+    /**
+     * 是否跑冲突复核。默认跑。
+     *
+     * 只是想看已存事实和时间线时必须关掉——复核要调模型，切换项目、刷新页面
+     * 都触发的话，成本和等待时间都白花。时间线和事实本来就是纯读取。
+     */
+    reviewConflicts?: boolean;
   } = {}
 ): Promise<MinimalRebuildReport> {
   const [archive, archivedFiles] = await Promise.all([
@@ -161,13 +178,23 @@ export async function rebuildMinimalArchive(
   }
 
   const timeline = buildTimeline(withStage);
-  const review = await reviewConflictsWithModel({
-    documents: archivedDocuments,
-    timeline,
-    projectName: options.projectName,
-    stageDefinitions: STAGE_DEFINITIONS,
-    customHeaders: options.customHeaders,
-  });
+  const documents: MinimalArchivedDocument[] = withStage.map(document => ({
+    sourcePath: document.sourcePath,
+    stage: document.stage,
+    facts: document.facts,
+    updatedAt: document.updatedAt,
+  }));
+
+  const review =
+    options.reviewConflicts === false
+      ? { findings: [], error: undefined, modelCall: undefined }
+      : await reviewConflictsWithModel({
+          documents: archivedDocuments,
+          timeline,
+          projectName: options.projectName,
+          stageDefinitions: STAGE_DEFINITIONS,
+          customHeaders: options.customHeaders,
+        });
 
   const dismissed = new Set(archive.dismissedFindings);
   const findings = review.findings.filter(
@@ -178,6 +205,7 @@ export async function rebuildMinimalArchive(
     documentCount: archive.documents.length,
     checkedCount: archivedDocuments.length,
     skippedCount,
+    documents,
     timeline,
     findings,
     dismissedCount: review.findings.length - findings.length,

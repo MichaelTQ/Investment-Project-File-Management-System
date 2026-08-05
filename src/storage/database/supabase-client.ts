@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { execSync } from 'child_process';
 import { getReportBuffer, createWrappedFetch } from 'coze-coding-dev-sdk';
+// dotenv 是正式依赖，静态导入即可。只导入不执行，config() 仍在 loadEnv 里按需调用。
+import { config as loadDotenvFile } from 'dotenv';
 
 let envLoaded = false;
 
@@ -16,13 +18,13 @@ function loadEnv(): void {
 
   try {
     try {
-      require('dotenv').config();
+      loadDotenvFile();
       if (process.env.COZE_SUPABASE_URL && process.env.COZE_SUPABASE_ANON_KEY) {
         envLoaded = true;
         return;
       }
     } catch {
-      // dotenv not available
+      // 没有 .env 文件或读取失败：继续走下面的 workload identity 兜底
     }
 
     const pythonCode = `
@@ -100,7 +102,11 @@ function getSupabaseClient(token?: string): SupabaseClient {
     key = serviceRoleKey ?? anonKey;
   }
 
-  const globalOptions: Record<string, any> = {};
+  // 只会放这两样：带 token 时的鉴权头，以及用于上报的包装 fetch。
+  const globalOptions: {
+    headers?: Record<string, string>;
+    fetch?: typeof fetch;
+  } = {};
   if (token) {
     globalOptions.headers = { Authorization: `Bearer ${token}` };
   }

@@ -96,10 +96,40 @@ interface ConsistencyReport {
   reviewError?: string;
 }
 
+/** 一份已存文件抽取出来的事实。字段与后端 DocumentFacts 对齐。 */
+interface StoredDocumentFacts {
+  documentType: string;
+  rawDocumentType: string;
+  title: string;
+  documentNumber: string | null;
+  version: string | null;
+  dates: Array<{ date: string | null; meaning: string; evidence: string }>;
+  parties: Array<{ name: string; role: string }>;
+  signStatus: string;
+  transactionChanges: Array<{
+    field: string;
+    before: string | null;
+    after: string | null;
+    evidence: string;
+  }>;
+  explicitStageClues: string[];
+  evidenceQuotes: string[];
+  warnings: string[];
+  sourceQuality: string;
+}
+
+interface StoredDocument {
+  sourcePath: string;
+  stage: string | null;
+  facts: StoredDocumentFacts;
+  updatedAt: number;
+}
+
 interface MinimalRebuildReport {
   documentCount: number;
   checkedCount: number;
   skippedCount: number;
+  documents: StoredDocument[];
   timeline: Array<{
     date: string;
     sourcePath: string;
@@ -225,6 +255,116 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
           <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、TXT、图片（JPG/PNG/GIF/WebP/SVG）等格式</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============ 已提取的事实 ============
+const SIGN_STATUS_LABELS: Record<string, string> = {
+  unsigned: '未签署',
+  signed: '已签字',
+  sealed: '已盖章',
+  signed_and_sealed: '签字并盖章',
+  unknown: '无法判断',
+};
+
+const SOURCE_QUALITY_LABELS: Record<string, string> = {
+  text: '文字层',
+  visual_summary: '扫描件视觉识别',
+  image: '图片',
+  filename_only: '只读到文件名',
+  mixed: '文字与图片混合',
+};
+
+/**
+ * 一份文件抽取出来的事实。
+ *
+ * 这是系统对这份文件的全部认知——阶段判断、时间线、冲突复核都只看这些字段。
+ * 归档结果不对时，先看这里：多半是事实就没读对，而不是判断逻辑有问题。
+ */
+function StoredFactsCard({ entry }: { entry: StoredDocument }) {
+  const facts = entry.facts;
+  const fileName =
+    entry.sourcePath.split(/[/\\]/).pop() ?? entry.sourcePath;
+  const unreadable = facts.sourceQuality === 'filename_only';
+
+  return (
+    <div className="min-w-0 rounded-lg border border-emerald-200 bg-white/70 p-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-1.5">
+        <p className="min-w-0 break-all text-[11px] font-medium text-emerald-950">
+          {fileName}
+        </p>
+        <span className="shrink-0 text-[10px] text-muted-foreground">
+          {entry.stage
+            ? PROJECT_STAGE_LABELS[entry.stage] ?? entry.stage
+            : '尚未归档'}
+        </span>
+      </div>
+
+      <p className="mt-1 break-words text-[10px] leading-4 text-muted-foreground">
+        类型：{facts.documentType}
+        {facts.rawDocumentType && facts.rawDocumentType !== '未知'
+          ? `（原文表述：${facts.rawDocumentType}）`
+          : ''}
+        {' · '}
+        {SIGN_STATUS_LABELS[facts.signStatus] ?? facts.signStatus}
+        {' · '}
+        来源：{SOURCE_QUALITY_LABELS[facts.sourceQuality] ?? facts.sourceQuality}
+      </p>
+
+      {unreadable && (
+        <p className="mt-1 text-[10px] leading-4 text-amber-700">
+          没有读到文件内容，以下事实几乎为空，判断只能靠人工。
+        </p>
+      )}
+
+      <dl className="mt-1.5 space-y-1 text-[10px] leading-4">
+        <FactRow label="标题" values={[facts.title]} />
+        <FactRow
+          label="日期"
+          values={facts.dates.map(
+            item => `${item.date ?? '日期未知'}：${item.meaning}`
+          )}
+        />
+        <FactRow
+          label="字段变化"
+          values={facts.transactionChanges.map(
+            item =>
+              `${item.field} ${item.before ?? '未写明'} → ${item.after ?? '未写明'}`
+          )}
+        />
+        <FactRow
+          label="主体"
+          values={facts.parties.map(item => `${item.name}（${item.role}）`)}
+        />
+        <FactRow label="业务动作" values={facts.explicitStageClues} />
+        <FactRow label="原文摘录" values={facts.evidenceQuotes} />
+        <FactRow label="抽取提示" values={facts.warnings} muted />
+      </dl>
+    </div>
+  );
+}
+
+function FactRow({
+  label,
+  values,
+  muted,
+}: {
+  label: string;
+  values: string[];
+  muted?: boolean;
+}) {
+  if (values.length === 0) return null;
+  return (
+    <div className="min-w-0">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={`break-words ${muted ? 'text-amber-700' : 'text-emerald-900'}`}>
+        {values.map((value, index) => (
+          <span key={`${value}-${index}`} className="block">
+            {value}
+          </span>
+        ))}
+      </dd>
     </div>
   );
 }
@@ -2457,7 +2597,7 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Project Context：由代码从文件事实拼出，零模型调用 */}
+            {/* Project Context：时间线由代码拼出；冲突复核由模型在归档后跑 */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -2478,20 +2618,37 @@ export default function Home() {
                         variant="outline"
                         className="border-emerald-300 bg-white text-[10px] text-emerald-700"
                       >
-                        0 次模型调用
+                        时间线不调模型
                       </Badge>
                     </div>
                     <p className="text-[11px] leading-4 text-emerald-800">
-                      依据 {minimalReport.documentCount} 份文件的事实；已校验{' '}
+                      依据 {minimalReport.documentCount} 份文件的事实；已归档{' '}
                       {minimalReport.checkedCount} 份
                       {minimalReport.skippedCount > 0
                         ? `，${minimalReport.skippedCount} 份尚未归档已跳过`
                         : ''}
                       ；事件 {minimalReport.timeline.length} 个
                       {minimalReport.findings.length > 0
-                        ? `；发现 ${minimalReport.findings.length} 处矛盾`
-                        : '；未发现矛盾'}
+                        ? `；上次复核发现 ${minimalReport.findings.length} 处矛盾`
+                        : ''}
                     </p>
+
+                    {/* 已存事实：系统从每份文件里究竟读到了什么，判断全部基于它 */}
+                    {minimalReport.documents.length > 0 && (
+                      <details className="group">
+                        <summary className="cursor-pointer text-[11px] text-emerald-700 hover:underline">
+                          查看各文件已提取的事实（{minimalReport.documents.length}）
+                        </summary>
+                        <div className="mt-1.5 space-y-2">
+                          {minimalReport.documents.map(document => (
+                            <StoredFactsCard
+                              key={document.sourcePath}
+                              entry={document}
+                            />
+                          ))}
+                        </div>
+                      </details>
+                    )}
 
                     {minimalReport.timeline.length > 0 ? (
                       <details className="group">
