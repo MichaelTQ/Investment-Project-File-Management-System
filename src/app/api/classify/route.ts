@@ -137,6 +137,12 @@ const PDF_VISUAL_MAX_PAGES = envInt('PDF_VISUAL_MAX_PAGES', 12);
 const PDF_VISUAL_DETAIL: 'high' | 'low' =
   globalThis.process.env.PDF_VISUAL_DETAIL === 'low' ? 'low' : 'high';
 
+// 启动时打印一次。环境变量是在模块加载时读的，服务不重启就不会生效——
+// 没有这行日志，改没改成只能靠猜 OCR 质量，很容易测了半天其实一直是旧值。
+console.log(
+  `[OCR] detail=${PDF_VISUAL_DETAIL} batch=${PDF_VISUAL_BATCH_SIZE} maxPages=${PDF_VISUAL_MAX_PAGES}`
+);
+
 // 扫描 PDF 没有文字层时，将解析服务返回的页面图片分批交给多模态模型提取关键信息。
 async function extractScannedPdfText(
   pageImageUrls: string[],
