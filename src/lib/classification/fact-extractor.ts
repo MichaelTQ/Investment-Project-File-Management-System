@@ -28,7 +28,14 @@ const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
 export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-mini-260215';
-export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v3-compact';
+/**
+ * 抽取器版本。**改了提示词或后处理逻辑就必须改这里**——它是事实缓存键的一部分，
+ * 不改的话旧结果会继续命中，改动等于没生效。
+ *
+ * v4：提示词要求必须从枚举里选类型、不再规定哪种日期优先；新增按中文类型名
+ * 补回枚举、以及只读到文件名时作废类型这两步后处理。
+ */
+export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v4';
 
 interface InvokeClient {
   // 与 LLMClient['invoke'] 兼容，但显式带上 finishReason：截断与其他失败必须能区分。
