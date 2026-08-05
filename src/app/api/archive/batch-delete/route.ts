@@ -5,6 +5,7 @@ import {
   forgetProjectDocumentByArchivedFileId,
   forgetProjectDocumentsByFileName,
 } from "@/lib/classification/session-project-memory";
+import { forgetMinimalDocumentsByArchivedFile } from "@/lib/classification/minimal/store";
 
 export const runtime = "nodejs";
 
@@ -50,6 +51,15 @@ export async function POST(request: NextRequest) {
           }
         } catch (memoryError) {
           console.error('Batch delete memory cleanup failed:', memoryError);
+        }
+        try {
+          // 极简链路有自己的事实表，删除必须同步，否则事实会继续参与后续判断。
+          await forgetMinimalDocumentsByArchivedFile(deleted.projectId, {
+            archivedFileId: deleted.archivedFileId,
+            originalName: deleted.originalName,
+          });
+        } catch (minimalError) {
+          console.error('Minimal archive cleanup failed:', minimalError);
         }
       }
     }

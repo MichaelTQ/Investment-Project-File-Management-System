@@ -278,6 +278,64 @@ export async function dismissMinimalFinding(
   });
 }
 
+/**
+ * 归档文件被删除时清掉对应的事实。
+ *
+ * 事实留着不删有实际危害：它仍然会作为"同项目关联文件"参与后续判断，甚至作为
+ * 交易锚点为别的文件定方向——用户以为删干净了，实际还在影响结果。
+ *
+ * 优先按归档记录 ID 匹配；早期条目没有该字段，退回按原始文件名匹配。
+ */
+export async function forgetMinimalDocumentsByArchivedFile(
+  projectId: string,
+  params: { archivedFileId?: string; originalName?: string }
+): Promise<number> {
+  const normalized = projectId.trim();
+  if (!normalized) return 0;
+  if (!params.archivedFileId && !params.originalName) return 0;
+
+  return withProjectLock(normalized, async () => {
+    const { archive, staleKeys } = await loadFromBackend(normalized);
+    const remaining = archive.documents.filter(document => {
+      if (
+        params.archivedFileId &&
+        document.archivedFileId === params.archivedFileId
+      ) {
+        return false;
+      }
+      if (params.originalName) {
+        const leafName =
+          document.sourcePath.split(/[/\\]/).pop() ?? document.sourcePath;
+        if (leafName === params.originalName) return false;
+      }
+      return true;
+    });
+
+    const removedCount = archive.documents.length - remaining.length;
+    if (removedCount > 0) {
+      archive.documents = remaining;
+      archive.updatedAt = Date.now();
+      await saveToBackend(archive, staleKeys);
+    }
+    return removedCount;
+  });
+}
+
+/** 清空整个项目的极简事实表。用于重跑测试，或修复历史遗留的孤立条目。 */
+export async function clearMinimalArchive(projectId: string): Promise<number> {
+  const normalized = projectId.trim();
+  if (!normalized) return 0;
+  return withProjectLock(normalized, async () => {
+    const { archive, staleKeys } = await loadFromBackend(normalized);
+    const removedCount = archive.documents.length;
+    archive.documents = [];
+    archive.dismissedFindings = [];
+    archive.updatedAt = Date.now();
+    await saveToBackend(archive, staleKeys);
+    return removedCount;
+  });
+}
+
 export async function forgetMinimalDocument(
   projectId: string,
   sourcePath: string

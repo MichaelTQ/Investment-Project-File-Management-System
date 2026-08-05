@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { HeaderUtils } from 'coze-coding-dev-sdk';
 
 import { rebuildMinimalArchive } from '@/lib/classification/minimal/pipeline';
+import { clearMinimalArchive } from '@/lib/classification/minimal/store';
 import { checkProjectConsistency } from '@/lib/classification/project-consistency';
 import {
   getProjectContextMemoryView,
@@ -67,6 +68,44 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : '重建项目Context失败',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/project-context?projectId=xxx&scope=minimal
+ * 清空极简链路的事实表。归档文件删除后事实会同步清理，这个接口用于重跑测试，
+ * 或修复历史遗留的孤立条目（删除流程接入之前产生的）。
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const projectId = request.nextUrl.searchParams.get('projectId')?.trim() ?? '';
+    const scope = request.nextUrl.searchParams.get('scope') ?? 'minimal';
+    if (!projectId) {
+      return NextResponse.json({ error: '缺少项目ID' }, { status: 400 });
+    }
+    if (scope !== 'minimal') {
+      return NextResponse.json(
+        { error: '仅支持 scope=minimal' },
+        { status: 400 }
+      );
+    }
+    if (!(await getProject(projectId))) {
+      return NextResponse.json({ error: '项目不存在' }, { status: 404 });
+    }
+    const removedCount = await clearMinimalArchive(projectId);
+    return NextResponse.json({
+      success: true,
+      removedCount,
+      minimal: await rebuildMinimalArchive(projectId),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : '清空极简事实表失败',
       },
       { status: 500 }
     );
