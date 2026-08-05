@@ -299,3 +299,34 @@ test('数值吻合指向的时点与归档阶段对不上时，规则要求报�
   assert.match(systemPrompt, /与它当前归档的阶段对不上，才是矛盾/);
   assert.match(systemPrompt, /必须报出来/);
 });
+
+/**
+ * 提示词去重。16 份文件时，归档阶段重复约 770 字、日期出处约 800 字。
+ * 省的是输入不是输出，收益有限，但白花的字没有理由留着。
+ */
+test('冲突复核里每份文件的归档阶段只出现一次', () => {
+  const userPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter, resolution],
+      timeline: buildTimeline([charter, resolution]),
+      stageDefinitions: '',
+    })[1].content
+  );
+
+  const occurrences = userPrompt.split('investment_decision').length - 1;
+  assert.equal(
+    occurrences,
+    1,
+    `归档阶段在提示词里出现了 ${occurrences} 次，应只在文件事实块里出现一次`
+  );
+  assert.match(userPrompt, /当前归档阶段：investment_decision/);
+  assert.match(userPrompt, /各文件归在哪个阶段见上一节/);
+});
+
+test('时间线不再重复日期出处，只保留日期含义', () => {
+  const text = describeTimeline(buildTimeline([charter]));
+  assert.match(text, /2026-03-20/);
+  assert.match(text, /生效日期/);
+  // meaning 已经说清是什么日期，出处对判断没有增量。
+  assert.equal(text.includes('原文：'), false);
+});
