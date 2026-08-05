@@ -1057,6 +1057,33 @@ export async function forgetProjectDocumentsByFileName(
   });
 }
 
+export interface ProjectDocumentFactsView {
+  sourcePath: string;
+  facts: DocumentFacts;
+  archivedFileId?: string;
+}
+
+/**
+ * 取出项目里每份文件的原始事实，供代码校验器做全量一致性检查。
+ *
+ * 与 ProjectMemoryDocumentView 的区别：那个是给界面看的摘要，这个给校验器用，
+ * 必须带上完整事实（注册资本、日期、交易变化），否则数字链无从比对。
+ */
+export async function getProjectDocumentFacts(
+  projectId: string
+): Promise<ProjectDocumentFactsView[]> {
+  const normalizedProjectId = projectId.trim();
+  if (!normalizedProjectId) return [];
+  return withProjectLock(normalizedProjectId, async () => {
+    const loaded = await loadProjectRecord(normalizedProjectId);
+    return [...loaded.project.documents.values()].map(record => ({
+      sourcePath: record.sourcePath,
+      facts: record.facts,
+      archivedFileId: record.archivedFileId,
+    }));
+  });
+}
+
 export async function getProjectContextMemoryView(
   projectId: string
 ): Promise<ProjectSessionMemoryView> {

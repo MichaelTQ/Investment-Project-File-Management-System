@@ -15,6 +15,7 @@
     "test:context": "node --import tsx --test tests/context-decision.test.ts",
     "test:facts": "node --import tsx --test tests/document-facts.test.ts",
     "test:llm-stage": "node --import tsx --test tests/llm-stage-decision.test.ts",
+    "test:consistency": "node --import tsx --test tests/archive-consistency.test.ts",
     "test:fixtures": "node --import tsx --test tests/junrou-fixtures.test.ts",
     "test:agent-report": "node --import tsx --test tests/junrou-agent-report.test.ts",
     "test:shadow-report": "node --import tsx --test tests/junrou-shadow-report.test.ts",
