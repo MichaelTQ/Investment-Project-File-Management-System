@@ -190,14 +190,18 @@ function relatedDocumentsBrief(
             `${change.field} ${change.before ?? '未写明'} → ${change.after ?? '未写明'}`
         )
         .join('；');
-      const capitalQuotes = item.facts.evidenceQuotes.filter(quote =>
-        quote.includes('注册资本')
-      );
+      // 带数字的原文一律带上，不预设哪个字段重要。原先只筛含"注册资本"的句子，
+      // 项目的锚点若是持股比例或实缴出资额，模型就完全看不到那些数值。
+      const numericQuotes = item.facts.evidenceQuotes
+        .filter(quote => /\d/.test(quote))
+        .slice(0, 2);
       return [
         `- ${leafName(item.sourcePath)}${sameType ? '  ★与当前文件同类型' : ''}`,
         `  类型：${item.facts.documentType}，标题：${item.facts.title}`,
         changes ? `  交易变化：${changes}` : '',
-        capitalQuotes.length > 0 ? `  关键数字：${capitalQuotes.join('；')}` : '',
+        numericQuotes.length > 0
+          ? `  写明的数值：${numericQuotes.join('；')}`
+          : '',
       ]
         .filter(Boolean)
         .join('\n');
