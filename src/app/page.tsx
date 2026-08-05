@@ -42,7 +42,6 @@ import {
   type ArchiveFolder,
   type Project,
   type ArchivedFile,
-  getFolderForBusinessStage,
 } from '@/lib/folder-structure';
 
 interface ClassifyProcess {
@@ -50,44 +49,6 @@ interface ClassifyProcess {
     method: 'agent' | 'stage' | 'none';
     explanation: string;
   };
-}
-
-interface AgentTraceStep {
-  node:
-    | 'plan_evidence'
-    | 'retrieve_related_document'
-    | 'context_decision'
-    | 'complete'
-    | 'human_review';
-  tool?: string;
-  summary: string;
-  round: number;
-}
-
-interface AgentDecisionResult {
-  status: 'decided' | 'needs_review';
-  decision: {
-    status: 'decided' | 'insufficient' | 'conflict';
-    selectedFolder: ArchiveFolder | null;
-    businessStage: string | null;
-    stageConfidence: number;
-    routingMethod:
-      | 'context_policy'
-      | 'stage_policy'
-      | 'needs_stage_review';
-    confidence: number;
-    evidence: string[];
-    contradictions: string[];
-    requiresHumanReview: boolean;
-    reasoning: string;
-    policyVersion: string;
-  };
-  selectedRelatedDocuments: Array<{ sourcePath: string }>;
-  requestedEvidence: string[];
-  trace: AgentTraceStep[];
-  rounds: number;
-  llmCallCount: number;
-  graphVersion: string;
 }
 
 interface ModelCallDiagnostics {
@@ -110,100 +71,6 @@ interface ProcessingPerformance {
     parentPhase?: string;
   }>;
   modelCalls: ModelCallDiagnostics[];
-}
-
-interface RebuildHistoryEntry {
-  trigger: 'add_file' | 'delete_file' | 'manual';
-  timestamp: number;
-  totalDurationMs: number;
-  synthesisDurationMs: number;
-  reevaluationDurationMs: number;
-  llmCallCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  inputDocumentCount: number;
-  includedDocumentCount: number;
-  reevaluationMode: 'incremental' | 'full';
-  totalDocumentCount: number;
-  reEvaluatedDocumentCount: number;
-  changedDecisionCount: number;
-  status: 'success' | 'failed';
-  contextVersion: number;
-  contextStatus: 'llm_synthesized' | 'deterministic_fallback';
-  stageTransition?: { from: string; to: string };
-  error?: string;
-}
-
-interface ProjectSessionMemoryResult {
-  mode: 's3-durable-shadow' | 'process-local-fallback';
-  persistent: boolean;
-  persistenceWarning?: string;
-  memoryLoadDurationMs: number;
-  projectId: string;
-  revision: number;
-  documentCount: number;
-  relatedDocumentCount: number;
-  documents: Array<{
-    sourcePath: string;
-    documentType: string;
-    title: string;
-    sourceQuality: string;
-    extractionConfidence: number;
-    factStatus: 'extracted' | 'repaired' | 'fallback' | 'type_recovered';
-    warnings: string[];
-    agentStatus: 'decided' | 'needs_review' | null;
-    selectedFolder: string | null;
-  }>;
-  projectContext?: {
-    contextStatus: string;
-    latestEvidencedStage: string;
-    stageConfidence: 'low' | 'medium' | 'high';
-    timeline: Array<{
-      date: string | null;
-      eventType: string;
-      stage: string;
-      title: string;
-      evidenceFiles: string[];
-      evidence: string;
-      confidence: 'low' | 'medium' | 'high';
-    }>;
-    openQuestions: string[];
-    synthesisWarnings?: string[];
-  } | null;
-  contextState: {
-    status: 'clean' | 'dirty' | 'rebuilding' | 'failed';
-    version: number;
-    basedOnRevision: number;
-    dirtyReasons: string[];
-    updatedAt: number | null;
-    lastAttemptAt: number | null;
-    lastError?: string;
-  };
-  decisionContextVersion?: number;
-  contextSynthesis?: {
-    status: 'llm_synthesized' | 'deterministic_fallback';
-    llmCallCount: number;
-    modelCalls: ModelCallDiagnostics[];
-    totalDurationMs: number;
-    inputDocumentCount: number;
-    includedDocumentCount: number;
-    latestEvidencedStage: string;
-    stageConfidence: 'low' | 'medium' | 'high';
-    eventCount: number;
-    relationCount: number;
-    conflictCount: number;
-    error?: string;
-  };
-  reEvaluatedDocuments: Array<{
-    sourcePath: string;
-    previousStatus: 'decided' | 'needs_review';
-    status: 'decided' | 'needs_review';
-    previousFolder: string | null;
-    selectedFolder: string | null;
-    agentDecision: AgentDecisionResult;
-  }>;
-  rebuildHistory?: RebuildHistoryEntry[];
-  expiresAt?: string;
 }
 
 interface ConsistencyFinding {
@@ -272,15 +139,8 @@ interface ClassifyResult {
   classificationMode: 'minimal';
   businessStage?: string | null;
   documentType?: string;
-  legacyClassification?: {
-    targetFolder: ArchiveFolder | null;
-    confidence: number;
-    reasoning: string;
-  };
-  agentDecision?: AgentDecisionResult;
   minimalDecision?: MinimalDecisionResult;
   minimalPending?: boolean;
-  projectSessionMemory?: ProjectSessionMemoryResult;
   documentFacts?: unknown;
   suggestedArchiveTitle?: string;
   requiresArchiveConfirmation?: boolean;
@@ -292,18 +152,8 @@ interface ClassifyResult {
   archiveError?: string;
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
   performance?: ProcessingPerformance;
-  agentPending?: boolean;
-  rulePreliminary?: boolean;
   contextRebuildPending?: boolean;
 }
-
-const AGENT_NODE_LABELS: Record<AgentTraceStep['node'], string> = {
-  plan_evidence: '规划证据',
-  retrieve_related_document: '检索关联文件',
-  context_decision: '上下文决策',
-  complete: '形成建议',
-  human_review: '转人工复核',
-};
 
 const PROJECT_STAGE_LABELS: Record<string, string> = {
   pre_initiation: '立项前',
@@ -316,306 +166,6 @@ const PROJECT_STAGE_LABELS: Record<string, string> = {
   exit_execution: '退出执行',
   unknown: '尚未确定',
 };
-
-function AgentDecisionPanel({
-  agent,
-  projectMemory,
-  performance,
-}: {
-  agent: AgentDecisionResult;
-  projectMemory?: ProjectSessionMemoryResult;
-  performance?: ProcessingPerformance;
-}) {
-  const suggestion = agent.decision.selectedFolder;
-  const needsReview = agent.status === 'needs_review';
-
-  return (
-    <div className="space-y-3 rounded-lg border border-violet-200 bg-violet-50/50 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Brain className="h-4 w-4 text-violet-700" />
-          <h4 className="text-sm font-medium text-violet-950">Agent 上下文建议</h4>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant="outline" className="border-violet-300 bg-white text-violet-700">
-            Shadow
-          </Badge>
-          {projectMemory && (
-            <Badge variant="outline" className="border-violet-300 bg-white text-violet-700">
-              项目记忆 {projectMemory.documentCount} 份
-            </Badge>
-          )}
-          <Badge
-            variant="outline"
-            className={needsReview
-              ? 'border-amber-300 bg-amber-50 text-amber-700'
-              : 'border-green-300 bg-green-50 text-green-700'}
-          >
-            {needsReview ? '需要人工复核' : '证据充分'}
-          </Badge>
-        </div>
-      </div>
-
-      <div className="rounded-md border bg-white p-3 text-sm">
-        <p className="text-xs text-muted-foreground">建议归档位置</p>
-        <p className="mt-1 break-words font-medium text-violet-900">
-          {suggestion
-            ? suggestion.folderPath.join(' / ')
-            : '暂不建议分类，等待人工处理'}
-        </p>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">
-          {agent.decision.reasoning}
-        </p>
-      </div>
-
-      {agent.decision.evidence.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-green-800">支持证据</p>
-          <ul className="mt-1 space-y-1 text-xs leading-5 text-green-800">
-            {agent.decision.evidence.map((item, index) => (
-              <li key={`${item}-${index}`} className="flex gap-2">
-                <span aria-hidden="true">✓</span>
-                <span className="break-words">{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {agent.decision.contradictions.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-amber-800">冲突或风险</p>
-          <ul className="mt-1 space-y-1 text-xs leading-5 text-amber-800">
-            {agent.decision.contradictions.map((item, index) => (
-              <li key={`${item}-${index}`} className="flex gap-2">
-                <span aria-hidden="true">!</span>
-                <span className="break-words">{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {agent.selectedRelatedDocuments.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-violet-900">使用的关联文件</p>
-          <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">
-            {agent.selectedRelatedDocuments.map(item => item.sourcePath).join('；')}
-          </p>
-        </div>
-      )}
-
-      {projectMemory && (
-        <div className="rounded-md border border-violet-200 bg-white p-3">
-          <p className="text-xs font-medium text-violet-900">
-            {projectMemory.persistent ? '持久化项目记忆' : '临时项目记忆'}
-          </p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {projectMemory.persistent
-              ? 'Coze S3 已保存并可在重启、重新部署及多实例间恢复本项目'
-              : 'S3 暂时不可用，当前运行实例临时保存本项目'}{' '}
-            {projectMemory.documentCount} 份文件，
-            本次可使用 {projectMemory.relatedDocumentCount} 份关联事实。
-            项目记忆加载 {projectMemory.memoryLoadDurationMs}ms。
-          </p>
-          {projectMemory.decisionContextVersion !== undefined && (
-            <p className="mt-1 text-xs font-medium text-violet-800">
-              本次分类使用正式 Context v
-              {projectMemory.decisionContextVersion}；当前待归档文件尚未写入Context。
-            </p>
-          )}
-          {projectMemory.contextSynthesis && (
-            <div className="mt-2 rounded border border-violet-100 bg-violet-50/50 px-2 py-1.5 text-xs leading-5">
-              <p className="font-medium text-violet-950">
-                项目上下文：
-                {PROJECT_STAGE_LABELS[
-                  projectMemory.contextSynthesis.latestEvidencedStage
-                ] ?? projectMemory.contextSynthesis.latestEvidencedStage}
-                （{projectMemory.contextSynthesis.stageConfidence === 'high'
-                  ? '高可信'
-                  : projectMemory.contextSynthesis.stageConfidence === 'medium'
-                    ? '中等可信'
-                    : '低可信'}）
-              </p>
-              <p className="text-muted-foreground">
-                {projectMemory.contextSynthesis.status === 'llm_synthesized'
-                  ? 'LLM 已综合当前全部有效事实卡片'
-                  : '当前使用确定性降级快照'}
-                ；事件 {projectMemory.contextSynthesis.eventCount} 个；关系{' '}
-                {projectMemory.contextSynthesis.relationCount} 个；冲突{' '}
-                {projectMemory.contextSynthesis.conflictCount} 个；上下文 LLM{' '}
-                {projectMemory.contextSynthesis.llmCallCount} 次；综合耗时{' '}
-                {projectMemory.contextSynthesis.totalDurationMs}ms。
-              </p>
-              {projectMemory.contextSynthesis.error && (
-                <p className="break-words text-amber-700">
-                  上下文综合降级：{projectMemory.contextSynthesis.error}
-                </p>
-              )}
-            </div>
-          )}
-          {!projectMemory.persistent && projectMemory.persistenceWarning && (
-            <p className="mt-1 break-words text-xs leading-5 text-amber-700">
-              持久化失败：{projectMemory.persistenceWarning}
-              {projectMemory.expiresAt
-                ? `；临时记忆预计于 ${new Date(projectMemory.expiresAt).toLocaleString()} 失效`
-                : ''}
-            </p>
-          )}
-          <details className="mt-2 border-t pt-2">
-            <summary className="cursor-pointer text-xs font-medium text-violet-900">
-              查看项目记忆明细（{projectMemory.documents.length}）
-            </summary>
-            <ul className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-              {projectMemory.documents.map(document => (
-                <li
-                  key={document.sourcePath}
-                  className="rounded border border-violet-100 bg-violet-50/40 px-2 py-1.5"
-                >
-                  <p className="break-words font-medium text-violet-950">
-                    {document.sourcePath}
-                  </p>
-                  <p>
-                    类型：{document.documentType}；抽取状态：
-                    {{
-                      extracted: '成功',
-                      repaired: '成功（局部字段已校正）',
-                      fallback: '降级',
-                      type_recovered: '类型已保守恢复',
-                    }[document.factStatus]}
-                    ；事实完整度：
-                    {document.extractionConfidence}；来源：{document.sourceQuality}
-                  </p>
-                  <p>
-                    Agent：{document.selectedFolder ?? document.agentStatus ?? '尚无结论'}
-                  </p>
-                  {document.warnings.length > 0 && (
-                    <p className="break-words text-amber-700">
-                      提示：{document.warnings.join('；')}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </details>
-          {projectMemory.projectContext && (
-            <details className="mt-2 border-t pt-2">
-              <summary className="cursor-pointer text-xs font-medium text-violet-900">
-                查看项目事件时间线（{projectMemory.projectContext.timeline.length}）
-              </summary>
-              <ol className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-                {projectMemory.projectContext.timeline.map((event, index) => (
-                  <li
-                    key={`${event.eventType}-${event.date ?? 'unknown'}-${index}`}
-                    className="rounded border border-violet-100 bg-violet-50/40 px-2 py-1.5"
-                  >
-                    <p className="font-medium text-violet-950">
-                      {event.date ?? '日期待确认'} · {event.title}
-                    </p>
-                    <p>
-                      阶段：{PROJECT_STAGE_LABELS[event.stage] ?? event.stage}；
-                      证据：{event.evidenceFiles.join('；')}
-                    </p>
-                    <p className="break-words">{event.evidence}</p>
-                  </li>
-                ))}
-              </ol>
-              {(projectMemory.projectContext.synthesisWarnings?.length ?? 0) > 0 && (
-                <p className="mt-2 break-words text-xs leading-5 text-amber-700">
-                  上下文提示：
-                  {projectMemory.projectContext.synthesisWarnings?.join('；')}
-                </p>
-              )}
-            </details>
-          )}
-          {projectMemory.reEvaluatedDocuments.length > 0 && (
-            <div className="mt-2 border-t pt-2">
-              <p className="text-xs font-medium text-green-800">
-                新证据已重新判断以下历史文件
-              </p>
-              <ul className="mt-1 space-y-1 text-xs leading-5 text-green-800">
-                {projectMemory.reEvaluatedDocuments.map(document => (
-                  <li key={document.sourcePath} className="break-words">
-                    {document.sourcePath}：
-                    {document.previousFolder ?? '无结论'} →{' '}
-                    {document.selectedFolder ?? '仍需复核'}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {performance && (
-        <details className="rounded-md border border-violet-200 bg-white p-3">
-          <summary className="cursor-pointer text-xs font-medium text-violet-900">
-            查看性能诊断（总计 {performance.totalDurationMs}ms）
-          </summary>
-          <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-            <p>
-              {performance.phases
-                .filter(item => !item.parentPhase)
-                .map(item => `${item.phase} ${item.durationMs}ms`)
-                .join('；') || '暂无阶段数据'}
-            </p>
-            {performance.phases.some(item => item.parentPhase) && (
-              <p>
-                子阶段：
-                {performance.phases
-                  .filter(item => item.parentPhase)
-                  .map(
-                    item =>
-                      `${item.parentPhase}.${item.phase} ${item.durationMs}ms`
-                  )
-                  .join('；')}
-              </p>
-            )}
-            {performance.modelCalls.map((call, index) => (
-              <p key={`${call.model}-${index}`} className="break-words">
-                LLM {index + 1}：{call.model}，输入 {call.inputCharacters} 字符，
-                输出 {call.outputCharacters} 字符/
-                {call.outputTokens ?? '未知'} tokens，结束原因{' '}
-                {call.finishReason ?? '未知'}，完整耗时 {call.durationMs}ms
-                {call.responseHeadersDurationMs === undefined
-                  ? '。'
-                  : `（响应头 ${call.responseHeadersDurationMs}ms，后续流式生成 ${Math.max(0, call.durationMs - call.responseHeadersDurationMs)}ms）。`}
-              </p>
-            ))}
-          </div>
-        </details>
-      )}
-
-      <div>
-        <p className="text-xs font-medium text-violet-900">执行轨迹</p>
-        <ol className="mt-1 space-y-1.5">
-          {agent.trace.map((step, index) => (
-            <li key={`${step.node}-${index}`} className="flex gap-2 text-xs leading-5">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 font-medium text-violet-700">
-                {index + 1}
-              </span>
-              <span className="break-words text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {AGENT_NODE_LABELS[step.node]}
-                </span>
-                ：{step.summary}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-violet-200 pt-2 text-[11px] text-muted-foreground">
-        <span>规则：{agent.decision.policyVersion}</span>
-        <span>检索轮次：{agent.rounds}</span>
-        <span>Agent 调度 LLM：{agent.llmCallCount} 次</span>
-      </div>
-      <p className="text-[11px] leading-4 text-violet-700">
-        Agent 建议会作为人工归档确认的默认选项，但不会绕过人工确认直接写入档案。
-      </p>
-    </div>
-  );
-}
 
 // ============ 文件夹树组件 ============
 function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
@@ -677,42 +227,6 @@ function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList
           <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、TXT、图片（JPG/PNG/GIF/WebP/SVG）等格式</p>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ============ 分类过程面板 ============
-function ClassifyProcessPanel({ process }: { process: ClassifyProcess }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  return (
-    <div className="mt-3 overflow-hidden rounded-lg border">
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between bg-muted/50 p-3 text-left transition-colors hover:bg-muted"
-      >
-        <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium">查看归档判断</span>
-          <Badge variant="outline" className="text-xs">
-            {process.finalDecision.method === 'agent'
-              ? 'Agent 建议'
-              : process.finalDecision.method === 'stage'
-                ? '阶段判断'
-                : '待人工选择'}
-          </Badge>
-        </div>
-        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-      </button>
-      {isExpanded && (
-        <div className="bg-background p-4">
-          <div className="flex items-start gap-2">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <p className="text-sm leading-5 text-muted-foreground">
-              {process.finalDecision.explanation}
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -841,13 +355,11 @@ function ConsistencyPanel({
 // ============ 分类结果项 ============
 function ClassifyResultItem({
   result,
-  showLegacyClassification,
   showMinimalPath,
   onConfirmArchive,
   onCancelArchive,
 }: {
   result: ClassifyResult;
-  showLegacyClassification: boolean;
   showMinimalPath: boolean;
   onConfirmArchive: (
     clientId: string,
@@ -856,35 +368,27 @@ function ClassifyResultItem({
   ) => void;
   onCancelArchive: (clientId: string) => void;
 }) {
-  const agentFolder = result.minimalDecision?.folder ?? null;
-  const legacyClassification = result.legacyClassification;
+  const minimalFolder = result.minimalDecision?.folder ?? null;
   const minimal = result.minimalDecision;
   const minimalPending = Boolean(result.minimalPending && !minimal);
-  const minimalAgreesWithAgent =
-    minimal?.stage && result.agentDecision
-      ? minimal.stage === result.agentDecision.decision.businessStage
-      : null;
-  const comparisonColumns =
-    1 +
-    (showLegacyClassification ? 1 : 0) +
-    (showMinimalPath ? 1 : 0);
-  const agentConfidence = result.minimalDecision?.confidence ?? 0;
-  const agentPending = Boolean(result.minimalPending && !result.minimalDecision);
-  const agentNeedsReview = !agentPending && Boolean(result.minimalDecision?.requiresHumanReview);
-  const agentSelectionValue = agentFolder
-    ? agentFolder.folderId
+  const comparisonColumns = 1 + (showMinimalPath ? 1 : 0);
+  const minimalConfidence = result.minimalDecision?.confidence ?? 0;
+  const minimalRunning = Boolean(result.minimalPending && !result.minimalDecision);
+  const minimalNeedsReview = !minimalRunning && Boolean(result.minimalDecision?.requiresHumanReview);
+  const minimalSelectionValue = minimalFolder
+    ? minimalFolder.folderId
     : '';
   const [archiveTitle, setArchiveTitle] = useState(
     result.fileName.replace(/\.[^.]+$/, '')
   );
   const [selectedFolderId, setSelectedFolderId] = useState(
-    agentSelectionValue
+    minimalSelectionValue
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
-    if (result.archiveStatus !== 'pending' || !agentSelectionValue) return;
-    setSelectedFolderId(current => current || agentSelectionValue);
-  }, [agentSelectionValue, result.archiveStatus]);
+    if (result.archiveStatus !== 'pending' || !minimalSelectionValue) return;
+    setSelectedFolderId(current => current || minimalSelectionValue);
+  }, [minimalSelectionValue, result.archiveStatus]);
   const selectedFolder = SYSTEM_ARCHIVE_FOLDERS.find(
     folder => folder.folderId === selectedFolderId
   );
@@ -893,16 +397,11 @@ function ClassifyResultItem({
     result.requiresArchiveConfirmation &&
     !result.archived &&
     result.archiveStatus !== 'cancelled';
-  const classificationsDisagree = Boolean(
-    agentFolder &&
-    legacyClassification?.targetFolder &&
-    agentFolder.folderId !== legacyClassification.targetFolder.folderId
-  );
 
   return (
     <div
       className={`w-full min-w-0 overflow-hidden rounded-lg border bg-background ${
-        agentPending
+        minimalRunning
           ? 'border-l-4 border-l-sky-400'
           : result.minimalDecision?.folder
           ? 'border-l-4 border-l-violet-500'
@@ -910,10 +409,10 @@ function ClassifyResultItem({
       }`}
     >
       <div className="flex min-w-0 items-start gap-2.5 border-b bg-muted/20 p-3">
-        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${agentPending ? 'bg-sky-100' : agentNeedsReview ? 'bg-amber-100' : 'bg-violet-100'}`}>
-          {agentPending
+        <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${minimalRunning ? 'bg-sky-100' : minimalNeedsReview ? 'bg-amber-100' : 'bg-violet-100'}`}>
+          {minimalRunning
             ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" />
-            : agentNeedsReview
+            : minimalNeedsReview
             ? <AlertCircle className="h-4 w-4 text-amber-600" />
             : <Brain className="h-4 w-4 text-violet-600" />}
         </div>
@@ -922,7 +421,7 @@ function ClassifyResultItem({
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
             <span>·</span>
-            <span>{agentPending ? '极简分类中' : `证据强度 ${agentConfidence}%`}</span>
+            <span>{minimalRunning ? '极简分类中' : `证据强度 ${minimalConfidence}%`}</span>
             <Badge variant="outline" className="border-violet-300 bg-violet-50 text-[10px] text-violet-700">
               极简链路
             </Badge>
@@ -950,17 +449,17 @@ function ClassifyResultItem({
               </p>
               <Badge
                 variant="outline"
-                className={agentNeedsReview
+                className={minimalNeedsReview
                   ? 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'
                   : 'border-green-300 bg-green-50 text-[10px] text-green-700'}
               >
-                {agentPending ? '分析中' : agentNeedsReview ? '需要复核' : '证据充分'}
+                {minimalRunning ? '分析中' : minimalNeedsReview ? '需要复核' : '证据充分'}
               </Badge>
             </div>
             <p className="mt-2 break-words text-sm font-medium leading-5 text-violet-950">
-              {agentFolder
-                ? agentFolder.folderPath.join(' / ')
-                : agentPending
+              {minimalFolder
+                ? minimalFolder.folderPath.join(' / ')
+                : minimalRunning
                   ? '正在抽取事实并判断'
                   : '暂未形成唯一分类建议'}
             </p>
@@ -974,12 +473,12 @@ function ClassifyResultItem({
               文件类型：{result.documentType ?? '待识别'}
             </p>
             <div className="mt-2 flex items-center gap-2">
-              <Progress value={agentConfidence} className="h-1.5 flex-1" />
-              <span className="text-xs text-violet-800">{agentConfidence}%</span>
+              <Progress value={minimalConfidence} className="h-1.5 flex-1" />
+              <span className="text-xs text-violet-800">{minimalConfidence}%</span>
             </div>
             <p className="mt-2 break-words text-xs leading-5 text-violet-800">
               {result.minimalDecision?.reasoning ??
-                (agentPending
+                (minimalRunning
                   ? '正在抽取结构化事实并比对关联文件。'
                   : '未成功返回结果，请查看详情中的诊断信息。')}
             </p>
@@ -1011,16 +510,6 @@ function ClassifyResultItem({
                       className="border-amber-300 bg-amber-50 text-[10px] text-amber-700"
                     >
                       需要复核
-                    </Badge>
-                  )}
-                  {minimalAgreesWithAgent !== null && (
-                    <Badge
-                      variant="outline"
-                      className={minimalAgreesWithAgent
-                        ? 'border-green-300 bg-green-50 text-[10px] text-green-700'
-                        : 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'}
-                    >
-                      {minimalAgreesWithAgent ? '与 Agent 一致' : '与 Agent 分歧'}
                     </Badge>
                   )}
                 </div>
@@ -1077,44 +566,7 @@ function ClassifyResultItem({
             </div>
           )}
 
-          {showLegacyClassification && (
-            <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-slate-800">
-                  <Zap className="h-3.5 w-3.5" />
-                  规则阶段对照
-                </p>
-                {legacyClassification ? (
-                  <Badge variant="outline" className="bg-white text-[10px]">
-                    {result.rulePreliminary ? '快速预判' : `${legacyClassification.confidence}%`}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="bg-white text-[10px] text-muted-foreground">
-                    本次未运行
-                  </Badge>
-                )}
-              </div>
-              <p className="mt-2 break-words text-sm font-medium leading-5 text-slate-900">
-                {legacyClassification?.targetFolder
-                  ? legacyClassification.targetFolder.folderPath.join(' / ')
-                  : legacyClassification
-                    ? '未能确定业务阶段'
-                    : '该文件上传时规则对照开关处于关闭状态'}
-              </p>
-              <p className="mt-2 break-words text-xs leading-5 text-slate-600">
-                {legacyClassification?.reasoning ??
-                  '打开开关后，新上传文件会同时运行确定性阶段规则用于并列对照。'}
-              </p>
-            </div>
-          )}
         </div>
-
-        {classificationsDisagree && (
-          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            Agent 与规则阶段判断不一致，请结合证据后确认最终归档位置。
-          </div>
-        )}
 
         {result.archived && (
           <div className="min-w-0 rounded-md bg-green-50 p-2.5 text-sm text-green-700">
@@ -1235,38 +687,11 @@ function ClassifyResultItem({
           <DialogHeader className="shrink-0">
             <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
             <DialogDescription>
-              查看 Agent 证据、项目 Context 和处理过程
+              查看归档判断依据与文件内容摘要
             </DialogDescription>
           </DialogHeader>
           <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
             <div className="space-y-4 pb-4">
-              {result.agentDecision && (
-                <AgentDecisionPanel
-                  agent={result.agentDecision}
-                  projectMemory={result.projectSessionMemory}
-                  performance={result.performance}
-                />
-              )}
-
-              {showLegacyClassification && legacyClassification && (
-                <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="flex items-center gap-2 text-sm font-medium">
-                      <Zap className="h-4 w-4" />规则阶段判断详情
-                    </h4>
-                    <Badge variant="outline">{legacyClassification.confidence}%</Badge>
-                  </div>
-                  <p className="break-words text-sm font-medium">
-                    {legacyClassification.targetFolder
-                      ? legacyClassification.targetFolder.folderPath.join(' / ')
-                      : '未能确定归档阶段'}
-                  </p>
-                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
-                    {legacyClassification.reasoning || '暂无详细理由'}
-                  </p>
-                  <ClassifyProcessPanel process={result.process} />
-                </div>
-              )}
 
               {result.contentPreview && (
                 <div className="space-y-2">
@@ -2277,7 +1702,6 @@ export default function Home() {
   const [results, setResults] = useState<ClassifyResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
-  const [showLegacyClassification, setShowLegacyClassification] = useState(true);
   const [showMinimalPath, setShowMinimalPath] = useState(true);
   // 'abstract' 版阶段说明不含文件类型清单，用来验证清单是否在替模型答题。
   const [stageGuideMode, setStageGuideMode] = useState<'examples' | 'abstract'>('examples');
@@ -2287,8 +1711,6 @@ export default function Home() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [archiveRefreshKey, setArchiveRefreshKey] = useState(0);
   const [contextRefreshKey, setContextRefreshKey] = useState(0);
-  const [projectContextState, setProjectContextState] =
-    useState<ProjectSessionMemoryResult | null>(null);
   const [consistencyReport, setConsistencyReport] =
     useState<ConsistencyReport | null>(null);
   const [minimalReport, setMinimalReport] =
@@ -2298,8 +1720,6 @@ export default function Home() {
   const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
     () => new Set()
   );
-  const [projectContextLoading, setProjectContextLoading] = useState(false);
-  const [projectContextRebuilding, setProjectContextRebuilding] = useState(false);
   const [projectContextError, setProjectContextError] = useState<string | null>(null);
   const [archiveTree, setArchiveTree] = useState<ArchiveTreeNode[]>([]);
   const [archivedFiles, setArchivedFiles] = useState<ArchivedFile[]>([]);
@@ -2379,16 +1799,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!selectedProjectId) {
-      setProjectContextState(null);
       setConsistencyReport(null);
       setMinimalReport(null);
-      setProjectContextLoading(false);
       return;
     }
     // 换项目时清掉忽略记录，避免不同项目之间互相压制提示。
     setDismissedFindingKeys(new Set());
     const controller = new AbortController();
-    setProjectContextLoading(true);
     setProjectContextError(null);
     fetch(
       `/api/project-context?projectId=${encodeURIComponent(selectedProjectId)}`,
@@ -2399,7 +1816,6 @@ export default function Home() {
         if (!response.ok) {
           throw new Error(data?.error || '读取项目Context失败');
         }
-        setProjectContextState(data.projectContext ?? null);
         setConsistencyReport(data.consistency ?? null);
         setMinimalReport(data.minimal ?? null);
       })
@@ -2408,38 +1824,9 @@ export default function Home() {
         setProjectContextError(
           error instanceof Error ? error.message : '读取项目Context失败'
         );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setProjectContextLoading(false);
       });
     return () => controller.abort();
   }, [selectedProjectId, contextRefreshKey]);
-
-  const handleRebuildProjectContext = useCallback(async () => {
-    if (!selectedProjectId) return;
-    setProjectContextRebuilding(true);
-    setProjectContextError(null);
-    try {
-      const response = await fetch('/api/project-context', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: selectedProjectId }),
-      });
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(data?.error || '重建项目Context失败');
-      }
-      setProjectContextState(data.projectContext ?? null);
-      setConsistencyReport(data.consistency ?? null);
-      setMinimalReport(data.minimal ?? null);
-    } catch (error) {
-      setProjectContextError(
-        error instanceof Error ? error.message : '重建项目Context失败'
-      );
-    } finally {
-      setProjectContextRebuilding(false);
-    }
-  }, [selectedProjectId]);
 
   const handleClearMinimalArchive = useCallback(async () => {
     if (!selectedProjectId) return;
@@ -2628,11 +2015,9 @@ export default function Home() {
 
     try {
       const archiveConfidence =
-        pendingResult.agentDecision?.decision.confidence ??
-        pendingResult.confidence;
+        pendingResult.minimalDecision?.confidence ?? pendingResult.confidence;
       const archiveReasoning =
-        pendingResult.agentDecision?.decision.reasoning ??
-        pendingResult.reasoning;
+        pendingResult.minimalDecision?.reasoning ?? pendingResult.reasoning;
       const response = pendingResult.sourceStorageKey
         ? await fetch('/api/archive', {
             method: 'POST',
@@ -2675,14 +2060,6 @@ export default function Home() {
         throw new Error(data.error || '归档失败，请重试');
       }
 
-      const reEvaluatedByPath = new Map<string, AgentDecisionResult>(
-        (
-          data.projectContext?.reEvaluatedDocuments ?? []
-        ).map((document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
-          document.sourcePath,
-          document.agentDecision,
-        ] as const)
-      );
       setResults(prev => prev.map(result => {
         if (result.clientId === clientId) {
           return {
@@ -2722,29 +2099,13 @@ export default function Home() {
                     ],
                   }
                 : result.performance,
-              projectSessionMemory:
-                data.projectContext
-                  ? {
-                      ...data.projectContext,
-                      decisionContextVersion:
-                        result.projectSessionMemory?.decisionContextVersion,
-                    }
-                  : result.projectSessionMemory,
             };
         }
-        const updatedAgent = reEvaluatedByPath.get(
-          result.sourcePath || result.fileName
-        );
-        return updatedAgent ? { ...result, agentDecision: updatedAgent } : result;
+        return result;
       }));
       setArchiveRefreshKey(prev => prev + 1);
-      if (data.projectContext) {
-        setProjectContextState(data.projectContext);
-      } else {
-        setContextRefreshKey(prev => prev + 1);
-      }
+      setContextRefreshKey(prev => prev + 1);
       if (data.contextRebuildPending) {
-        setProjectContextRebuilding(true);
         setProjectContextError(null);
         void fetch('/api/project-context', {
           method: 'POST',
@@ -2758,26 +2119,8 @@ export default function Home() {
                 rebuildData?.error || '归档成功，但后台 Context 更新失败'
               );
             }
-            const rebuiltContext = rebuildData?.projectContext ?? null;
-            setProjectContextState(rebuiltContext);
             setConsistencyReport(rebuildData?.consistency ?? null);
             setMinimalReport(rebuildData?.minimal ?? null);
-            const rebuiltDecisions = new Map<string, AgentDecisionResult>(
-              (rebuiltContext?.reEvaluatedDocuments ?? []).map(
-                (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
-                  document.sourcePath,
-                  document.agentDecision,
-                ] as const
-              )
-            );
-            if (rebuiltDecisions.size > 0) {
-              setResults(current => current.map(item => {
-                const rebuilt = rebuiltDecisions.get(
-                  item.sourcePath || item.fileName
-                );
-                return rebuilt ? { ...item, agentDecision: rebuilt } : item;
-              }));
-            }
           })
           .catch(error => {
             setProjectContextError(
@@ -2785,8 +2128,7 @@ export default function Home() {
                 ? error.message
                 : '归档成功，但后台 Context 更新失败'
             );
-          })
-          .finally(() => setProjectContextRebuilding(false));
+          });
       }
       fetch('/api/projects')
         .then(response => response.json())
@@ -3002,52 +2344,25 @@ export default function Home() {
           throw new Error('服务器没有返回有效的分类结果');
         }
 
-        if (result.projectSessionMemory) {
-          setProjectContextState(result.projectSessionMemory);
-        }
-        const reEvaluatedByPath = new Map<string, AgentDecisionResult>(
-          (
-            result.projectSessionMemory?.reEvaluatedDocuments ?? []
-          ).map((document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
-            document.sourcePath,
-            document.agentDecision,
-          ] as const)
-        );
         setResults(prev => {
           const completed: ClassifyResult = {
             ...result,
             clientId,
             sourcePath: uploadedSourcePath,
-            legacyClassification:
-              result.classificationMode === 'comparison'
-                ? {
-                    targetFolder: result.targetFolder,
-                    confidence: result.confidence,
-                    reasoning: result.reasoning,
-                  }
-                : undefined,
             requiresArchiveConfirmation: true,
             sourceStorageKey: uploadedStorageKey,
             sourceMimeType: file.type || 'application/octet-stream',
             sourceProjectId: selectedProjectId,
             archiveStatus: 'pending',
-            agentPending: false,
             minimalPending: false,
-            rulePreliminary: false,
           };
           return prev.map(existing => {
             if (existing.clientId === clientId) return completed;
-            const updatedAgent = reEvaluatedByPath.get(
-              existing.sourcePath || existing.fileName
-            );
-            return updatedAgent
-              ? { ...existing, agentDecision: updatedAgent }
-              : existing;
+            return existing;
           });
         });
 
         if (result.contextRebuildPending && selectedProjectId) {
-          setProjectContextRebuilding(true);
           setProjectContextError(null);
           void fetch('/api/project-context', {
             method: 'POST',
@@ -3061,28 +2376,8 @@ export default function Home() {
                   rebuildData?.error || '分类成功，但后台 Context 更新失败'
                 );
               }
-              const rebuiltContext = rebuildData?.projectContext ?? null;
-              setProjectContextState(rebuiltContext);
               setConsistencyReport(rebuildData?.consistency ?? null);
               setMinimalReport(rebuildData?.minimal ?? null);
-              const rebuiltDecisions = new Map<string, AgentDecisionResult>(
-                (rebuiltContext?.reEvaluatedDocuments ?? []).map(
-                  (document: ProjectSessionMemoryResult['reEvaluatedDocuments'][number]) => [
-                    document.sourcePath,
-                    document.agentDecision,
-                  ] as const
-                )
-              );
-              if (rebuiltDecisions.size > 0) {
-                setResults(current =>
-                  current.map(item => {
-                    const rebuilt = rebuiltDecisions.get(
-                      item.sourcePath || item.fileName
-                    );
-                    return rebuilt ? { ...item, agentDecision: rebuilt } : item;
-                  })
-                );
-              }
             })
             .catch(error => {
               setProjectContextError(
@@ -3090,8 +2385,7 @@ export default function Home() {
                   ? error.message
                   : '分类成功，但后台 Context 更新失败'
               );
-            })
-            .finally(() => setProjectContextRebuilding(false));
+            });
         }
       } catch (error) {
         if (chunkUploadId) {
@@ -3129,8 +2423,6 @@ export default function Home() {
                     explanation: `文件处理失败：${errorMessage}`,
                   },
                 },
-                agentPending: false,
-                rulePreliminary: false,
               }
             : existing
         ));
@@ -3148,8 +2440,6 @@ export default function Home() {
   }, [
     selectedProjectId,
     results,
-    showLegacyClassification,
-    showMinimalPath,
     stageGuideMode,
   ]);
 
@@ -3271,265 +2561,15 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Project-level committed Context */}
+            {/* Project Context：由代码从文件事实拼出，零模型调用 */}
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Brain className="h-5 w-5 text-violet-600" />
-                    项目 Context
-                  </CardTitle>
-                  {projectContextState && (
-                    <Badge
-                      variant="outline"
-                      className={
-                        projectContextState.contextState.status === 'clean'
-                          ? 'border-green-300 text-green-700'
-                          : projectContextState.contextState.status === 'dirty'
-                            ? 'border-amber-300 text-amber-700'
-                            : 'border-red-300 text-red-700'
-                      }
-                    >
-                      {{
-                        clean: '最新',
-                        dirty: '需要更新',
-                        rebuilding: '更新中',
-                        failed: '更新失败',
-                      }[projectContextState.contextState.status]}
-                    </Badge>
-                  )}
-                </div>
-                <CardDescription>
-                  只使用已成功归档且当前有效的文件生成
-                </CardDescription>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Zap className="h-5 w-5 text-emerald-600" />
+                  项目 Context
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2 pt-0 text-xs leading-5">
-                {projectContextLoading ? (
-                  <p className="flex items-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    正在读取项目Context…
-                  </p>
-                ) : projectContextState ? (
-                  <>
-                    <p>
-                      Context v{projectContextState.contextState.version}；依据{' '}
-                      {projectContextState.documentCount} 份正式文件
-                    </p>
-                    {projectContextState.projectContext?.contextStatus ===
-                      'deterministic_fallback' && (
-                      <p className="rounded border border-orange-200 bg-orange-50 px-2 py-1 text-orange-800">
-                        本版 Context 使用确定性规则生成；具体原因可在下方数据质量提示中查看。
-                      </p>
-                    )}
-                    <p className="text-muted-foreground">
-                      最晚证据阶段：
-                      {PROJECT_STAGE_LABELS[
-                        projectContextState.projectContext
-                          ?.latestEvidencedStage ?? 'unknown'
-                      ] ?? '尚未确定'}
-                      ；事件{' '}
-                      {projectContextState.projectContext?.timeline.length ?? 0} 个
-                    </p>
-                    {projectContextState.contextState.status === 'failed' &&
-                      projectContextState.contextState.lastError && (
-                        <div
-                          role="alert"
-                          className="rounded border border-red-200 bg-red-50 p-2 text-red-800"
-                        >
-                          <p className="font-medium">Context 更新失败原因</p>
-                          <p className="mt-1 break-words">
-                            {projectContextState.contextState.lastError}
-                          </p>
-                          <p className="mt-1 text-[11px] text-red-700">
-                            系统仍保留上一版可用 Context；修复原因后可重新生成。
-                          </p>
-                        </div>
-                      )}
-                    {projectContextState.persistenceWarning && (
-                      <div className="rounded border border-orange-200 bg-orange-50 p-2 text-orange-800">
-                        <p className="font-medium">项目记忆持久化告警</p>
-                        <p className="mt-1 break-words">
-                          {projectContextState.persistenceWarning}
-                        </p>
-                      </div>
-                    )}
-                    {(projectContextState.projectContext?.synthesisWarnings
-                      ?.length ?? 0) > 0 && (
-                      <details className="rounded border border-slate-200 bg-slate-50 p-2 text-slate-700">
-                        <summary className="cursor-pointer font-medium">
-                          查看 Context 数据质量提示
-                        </summary>
-                        <ul className="mt-1 space-y-1">
-                          {projectContextState.projectContext?.synthesisWarnings?.map(
-                            warning => (
-                              <li key={warning} className="break-words">
-                                {warning}
-                              </li>
-                            )
-                          )}
-                        </ul>
-                      </details>
-                    )}
-                    {projectContextState.contextState.dirtyReasons.length > 0 && (
-                      <ul className="space-y-1 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">
-                        {projectContextState.contextState.dirtyReasons.map(reason => (
-                          <li key={reason} className="break-words">
-                            {reason}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {projectContextState.projectContext &&
-                      projectContextState.projectContext.timeline.length > 0 && (
-                        <details className="border-t pt-2">
-                          <summary className="cursor-pointer font-medium text-violet-800">
-                            查看事件时间线
-                          </summary>
-                          <ol className="mt-2 space-y-2 text-muted-foreground">
-                            {projectContextState.projectContext.timeline.map(
-                              (event, index) => (
-                                <li key={`${event.eventType}-${index}`}>
-                                  <span className="font-medium text-foreground">
-                                    {event.date ?? '日期待确认'} · {event.title}
-                                  </span>
-                                  <br />
-                                  证据：{event.evidenceFiles.join('；')}
-                                </li>
-                              )
-                            )}
-                          </ol>
-                        </details>
-                      )}
-                    {projectContextState.rebuildHistory &&
-                      projectContextState.rebuildHistory.length > 0 && (
-                        <details className="border-t pt-2">
-                          <summary className="cursor-pointer font-medium text-violet-800">
-                            查看 Context 重建历史（{projectContextState.rebuildHistory.length} 次）
-                          </summary>
-                          <div className="mt-2 space-y-3">
-                            {projectContextState.rebuildHistory.map((entry, index) => (
-                              <div
-                                key={`${entry.timestamp}-${index}`}
-                                className={`rounded-lg border p-3 ${
-                                  entry.status === 'success'
-                                    ? 'border-green-200 bg-green-50'
-                                    : 'border-red-200 bg-red-50'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <span
-                                      className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ${
-                                        entry.trigger === 'add_file'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : entry.trigger === 'delete_file'
-                                            ? 'bg-orange-100 text-orange-800'
-                                            : 'bg-purple-100 text-purple-800'
-                                      }`}
-                                    >
-                                      {entry.trigger === 'add_file'
-                                        ? '新增文件'
-                                        : entry.trigger === 'delete_file'
-                                          ? '删除文件'
-                                          : '手动重建'}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {new Date(entry.timestamp).toLocaleString('zh-CN')}
-                                    </span>
-                                  </div>
-                                  <span
-                                    className={`text-xs font-medium ${
-                                      entry.status === 'success' ? 'text-green-700' : 'text-red-700'
-                                    }`}
-                                  >
-                                    {entry.status === 'success' ? '✓ 成功' : '✗ 失败'}
-                                  </span>
-                                </div>
-                                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                                  <div>
-                                    <span className="text-muted-foreground">耗时：</span>
-                                    <span className="font-medium">
-                                      {entry.totalDurationMs >= 1000
-                                        ? `${(entry.totalDurationMs / 1000).toFixed(1)}s`
-                                        : `${entry.totalDurationMs}ms`}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">版本：</span>
-                                    <span className="font-medium">
-                                      v{entry.contextVersion}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">阶段变化：</span>
-                                    <span className="font-medium">
-                                      {entry.stageTransition
-                                        ? `${entry.stageTransition.from} → ${entry.stageTransition.to}`
-                                        : '未变化'}
-                                    </span>
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">重评估：</span>
-                                    <span className="font-medium">
-                                      {entry.reEvaluatedDocumentCount}/{entry.totalDocumentCount} 份
-                                      {entry.reevaluationMode === 'incremental' && (
-                                        <span className="ml-1 text-blue-600">(增量)</span>
-                                      )}
-                                    </span>
-                                  </div>
-                                  {entry.llmCallCount > 0 && (
-                                    <>
-                                      <div>
-                                        <span className="text-muted-foreground">LLM 调用：</span>
-                                        <span className="font-medium">
-                                          {entry.llmCallCount} 次 · 综合 {entry.synthesisDurationMs}ms
-                                        </span>
-                                      </div>
-                                      <div>
-                                        <span className="text-muted-foreground">Token：</span>
-                                        <span className="font-medium">
-                                          {entry.inputTokens.toLocaleString()} in /{' '}
-                                          {entry.outputTokens.toLocaleString()} out
-                                        </span>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                                {entry.error && (
-                                  <div className="mt-2 rounded bg-red-100 p-2 text-xs text-red-800">
-                                    <span className="font-medium">错误：</span>
-                                    {entry.error}
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-                    <Button
-                      type="button"
-                      variant={
-                        projectContextState.contextState.status === 'clean'
-                          ? 'outline'
-                          : 'default'
-                      }
-                      size="sm"
-                      className="w-full"
-                      disabled={projectContextRebuilding || !selectedProjectId}
-                      onClick={() => void handleRebuildProjectContext()}
-                    >
-                      {projectContextRebuilding && (
-                        <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                      )}
-                      重新生成项目Context
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-muted-foreground">
-                    选择项目后显示正式Context。
-                  </p>
-                )}
-
+              <CardContent className="space-y-2 text-xs">
                 {/* 极简链路的时间线：代码按日期排序拼出，不调用模型 */}
                 {minimalReport && (
                   <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
@@ -3734,20 +2774,6 @@ export default function Home() {
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
                       <Label
-                        htmlFor="legacy-classification-toggle"
-                        className="cursor-pointer text-xs font-normal text-muted-foreground"
-                      >
-                        显示规则阶段对照
-                      </Label>
-                      <Switch
-                        id="legacy-classification-toggle"
-                        checked={showLegacyClassification}
-                        onCheckedChange={setShowLegacyClassification}
-                        aria-label="运行并显示规则阶段对照"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
-                      <Label
                         htmlFor="minimal-path-toggle"
                         className="cursor-pointer text-xs font-normal text-muted-foreground"
                       >
@@ -3794,7 +2820,6 @@ export default function Home() {
                         <ClassifyResultItem
                           key={result.clientId}
                           result={result}
-                          showLegacyClassification={showLegacyClassification}
                           showMinimalPath={showMinimalPath}
                           onConfirmArchive={handleConfirmArchive}
                           onCancelArchive={handleCancelArchive}
