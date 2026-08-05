@@ -1,3 +1,4 @@
+import { HeaderUtils } from 'coze-coding-dev-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 import { rebuildMinimalArchive } from '@/lib/classification/minimal/pipeline';
 import { clearMinimalArchive } from '@/lib/classification/minimal/store';
@@ -11,10 +12,14 @@ export async function GET(request: NextRequest) {
     if (!projectId) {
       return NextResponse.json({ error: '缺少项目ID' }, { status: 400 });
     }
-    if (!(await getProject(projectId))) {
+    const project = await getProject(projectId);
+    if (!project) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
-    const minimal = await rebuildMinimalArchive(projectId);
+    const minimal = await rebuildMinimalArchive(projectId, {
+      projectName: project?.name,
+      customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+    });
     return NextResponse.json({ minimal, consistency: minimal });
   } catch (error) {
     return NextResponse.json(
@@ -37,7 +42,10 @@ export async function POST(request: NextRequest) {
     if (!project) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
-    const minimal = await rebuildMinimalArchive(projectId);
+    const minimal = await rebuildMinimalArchive(projectId, {
+      projectName: project.name,
+      customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
+    });
     return NextResponse.json({
       success: true,
       consistency: minimal,

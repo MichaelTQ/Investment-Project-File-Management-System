@@ -1,29 +1,20 @@
 import {
   getFolderBusinessStage,
-  getFolderForBusinessStage,
   type ArchiveBusinessStage,
   type ArchiveFolder,
 } from '../../folder-structure';
 import { listArchivedFiles } from '../../storage';
-import {
-  checkArchiveConsistency,
-  type ArchiveDocument,
-  type ConsistencyFinding,
-} from '../archive-consistency';
 import type { ModelCallDiagnostics } from '../chat-completions';
 import type { DocumentFacts } from '../document-facts';
 import {
   decideStageWithModel,
-  type StageGuideMode,
+  STAGE_DEFINITIONS,
 } from '../llm-stage-decision';
 import {
-  buildTimeline,
-  describeResolvedEvidence,
-  resolveEvidence,
-  type AnchorDiagnostic,
-  type EvidenceStrength,
-  type TimelineEntry,
-} from './evidence';
+  reviewConflictsWithModel,
+  type ConflictFinding,
+} from './conflict-review';
+import { buildTimeline, describeTimeline, type TimelineEntry } from './evidence';
 import {
   loadMinimalArchive,
   upsertMinimalDocument,
@@ -31,10 +22,17 @@ import {
 } from './store';
 
 /**
- * 极简链路。与 Agent 链路完全隔离，只共用"读文件 / 抽事实"这类底层能力。
+ * 极简链路。
  *
- * 上传时：代码解析确定性证据 → 模型判一次 → 代码覆盖把握程度 → 存事实。
- * 重建时：代码拼时间线 + 全量一致性校验，零模型调用。
+ * 上传时：模型机械抽取客观事实 → 代码把同项目其他文件的事实和时间线摆出来 →
+ * 模型判断阶段。代码不产生任何业务结论。
+ *
+ * 重建时：代码按日期排出时间线 → 模型比对全项目、指出矛盾。
+ *
+ * 设计原则：**代码只搬运事实，不夹带业务知识。** 曾经写在这里的交易锚点、
+ * 增资倾向、证据强度档位、文件类型与阶段的对应关系已全部删除——它们让准确率
+ * 看起来更高，代价是系统只在预设覆盖的情况里有效，且用户看到的"判断"其实是
+ * 代码的预设在说话。
  */
 
 export interface MinimalClassifyParams {
@@ -44,33 +42,19 @@ export interface MinimalClassifyParams {
   facts: DocumentFacts;
   fingerprint?: string;
   customHeaders?: Record<string, string>;
-  /** 阶段说明用哪一版，用于验证文件类型清单是否在替模型答题。 */
-  stageGuideMode?: StageGuideMode;
 }
 
 export interface MinimalClassifyResult {
   sourcePath: string;
   stage: ArchiveBusinessStage | null;
   folder: ArchiveFolder | null;
-  /** 由证据强度推导，不采用模型自报的数值。 */
-  confidence: number;
-  strength: EvidenceStrength;
-  /** 把握程度是怎么来的，一句话说清。 */
-  confidenceBasis: string;
   reasoning: string;
   evidence: string[];
   contradictions: string[];
   requiresHumanReview: boolean;
-  /** 判不出来时说清缺什么，而不是只说"证据不足"。 */
-  missingEvidence?: string;
-  /** 锚点没找到时的具体原因，界面据此提示用户下一步该补什么。 */
-  anchorDiagnostic?: AnchorDiagnostic;
-  relatedSourcePaths: string[];
   status: 'success' | 'fallback';
   error?: string;
   modelCall?: ModelCallDiagnostics;
-  /** 本次实际使用的阶段说明版本，便于在界面上区分两次运行。 */
-  stageGuideMode: StageGuideMode;
 }
 
 export async function classifyWithMinimalPath(
@@ -81,15 +65,6 @@ export async function classifyWithMinimalPath(
     document => document.sourcePath !== params.sourcePath
   );
 
-  const current: MinimalDocument = {
-    sourcePath: params.sourcePath,
-    facts: params.facts,
-    stage: null,
-    fingerprint: params.fingerprint,
-    updatedAt: Date.now(),
-  };
-  const resolved = resolveEvidence(current, others);
-
   const decision = await decideStageWithModel({
     sourcePath: params.sourcePath,
     facts: params.facts,
@@ -98,14 +73,11 @@ export async function classifyWithMinimalPath(
       sourcePath: document.sourcePath,
       facts: document.facts,
     })),
-    resolvedEvidence: describeResolvedEvidence(resolved),
-    stageGuideMode: params.stageGuideMode ?? 'examples',
+    timeline: describeTimeline(buildTimeline(others)),
     customHeaders: params.customHeaders,
   });
 
-  const stage =
-    (decision.decision?.businessStage as ArchiveBusinessStage | null) ?? null;
-  const folder = stage ? getFolderForBusinessStage(stage) : null;
+  const stage = decision.decision?.businessStage ?? null;
 
   // 事实先存下来：即便本次没判出阶段，它也是后续文件比对的原料。
   await upsertMinimalDocument({
@@ -115,39 +87,17 @@ export async function classifyWithMinimalPath(
     fingerprint: params.fingerprint,
   });
 
-  // 缺什么直接用代码算出的诊断，不再套那句写死的"缺少股东会决议"——
-  // 实际缺的可能是本文件自己的数值，也可能是数值对不上号，处置方式完全不同。
-  //
-  // 判出了阶段也照样显示。判得出来不等于判得准：靠先验推测得到的结论恰恰最需要
-  // 让用户看见缺口，否则界面上只有一个"投资实施 45%"，看不出它是猜的还是算的。
-  const missingEvidence = resolved.anchorDiagnostic?.detail;
-
-  // 数值对不上号说明两份文件之间还有没归档的变更，或者数字读错了。
-  // 这是必须有人看的信号，不能让模型用高把握直接放行。
-  const anchorConflict =
-    resolved.anchorDiagnostic?.reason === 'value_mismatch';
-
   return {
     sourcePath: params.sourcePath,
     stage,
-    folder,
-    confidence: resolved.confidence,
-    strength: resolved.strength,
-    confidenceBasis: resolved.basis,
+    folder: decision.decision?.selectedFolder ?? null,
     reasoning: decision.decision?.reasoning ?? decision.error ?? '模型未返回结论。',
     evidence: decision.decision?.evidence ?? [],
     contradictions: decision.decision?.contradictions ?? [],
-    requiresHumanReview:
-      anchorConflict || (decision.decision?.requiresHumanReview ?? true),
-    missingEvidence,
-    anchorDiagnostic: resolved.anchorDiagnostic ?? undefined,
-    relatedSourcePaths: resolved.transactionSide
-      ? [resolved.transactionSide.anchorSourcePath]
-      : resolved.sameTypeSiblings,
+    requiresHumanReview: decision.decision?.requiresHumanReview ?? true,
     status: decision.status,
     error: decision.error,
     modelCall: decision.modelCall,
-    stageGuideMode: params.stageGuideMode ?? 'examples',
   };
 }
 
@@ -156,18 +106,25 @@ export interface MinimalRebuildReport {
   checkedCount: number;
   skippedCount: number;
   timeline: TimelineEntry[];
-  findings: ConsistencyFinding[];
+  findings: ConflictFinding[];
   dismissedCount: number;
+  /** 冲突复核失败时的说明。为空表示复核正常完成。 */
+  reviewError?: string;
+  modelCall?: ModelCallDiagnostics;
 }
 
 /**
- * 每次归档之后全量重跑：拼时间线 + 校验一致性。
+ * 每次归档之后全量重跑：排时间线 + 交模型比对冲突。
  *
- * 全部是纯计算，所以不需要挑时机、不需要增量。晚到的交易文件正是靠这一步回头
- * 纠正先前判错的文件。
+ * 必须全量重跑而不是增量：决定性的文件经常比它要推翻的那份晚到。先传的章程当时
+ * 判不准是正常的，直到决议进来，才谈得上发现矛盾。
  */
 export async function rebuildMinimalArchive(
-  projectId: string
+  projectId: string,
+  options: {
+    projectName?: string;
+    customHeaders?: Record<string, string>;
+  } = {}
 ): Promise<MinimalRebuildReport> {
   const [archive, archivedFiles] = await Promise.all([
     loadMinimalArchive(projectId),
@@ -179,45 +136,60 @@ export async function rebuildMinimalArchive(
     archivedFiles.map(file => [file.originalName, file])
   );
 
-  const documents: ArchiveDocument[] = [];
   const withStage: MinimalDocument[] = [];
+  const archivedDocuments: MinimalDocument[] = [];
   let skippedCount = 0;
 
   for (const document of archive.documents) {
-    const leafName =
-      document.sourcePath.split(/[/\\]/).pop() ?? document.sourcePath;
+    const leaf = document.sourcePath.split(/[/\\]/).pop() ?? document.sourcePath;
     // 基准是文件实际归在哪，不是本链路当初建议归哪——用户手动改过要以用户为准。
     const archived =
       (document.archivedFileId
         ? archivedById.get(document.archivedFileId)
-        : undefined) ?? archivedByName.get(leafName);
+        : undefined) ?? archivedByName.get(leaf);
     const stage = archived ? getFolderBusinessStage(archived.folderId) : null;
 
-    withStage.push({ ...document, stage });
-    if (!stage) {
+    const withCurrentStage = { ...document, stage };
+    withStage.push(withCurrentStage);
+    if (stage) {
+      archivedDocuments.push(withCurrentStage);
+    } else {
       skippedCount += 1;
-      continue;
     }
-    documents.push({
-      sourcePath: document.sourcePath,
-      facts: document.facts,
-      currentStage: stage,
-      fingerprint: document.fingerprint,
-    });
   }
 
+  const timeline = buildTimeline(withStage);
+  const review = await reviewConflictsWithModel({
+    documents: archivedDocuments,
+    timeline,
+    projectName: options.projectName,
+    stageDefinitions: STAGE_DEFINITIONS,
+    customHeaders: options.customHeaders,
+  });
+
   const dismissed = new Set(archive.dismissedFindings);
-  const allFindings = checkArchiveConsistency(documents);
-  const findings = allFindings.filter(
-    finding => !dismissed.has(`${finding.kind}:${finding.sourcePath}`)
+  const findings = review.findings.filter(
+    finding => !dismissed.has(conflictKey(finding))
   );
 
   return {
     documentCount: archive.documents.length,
-    checkedCount: documents.length,
+    checkedCount: archivedDocuments.length,
     skippedCount,
-    timeline: buildTimeline(withStage),
+    timeline,
     findings,
-    dismissedCount: allFindings.length - findings.length,
+    dismissedCount: review.findings.length - findings.length,
+    reviewError: review.error,
+    modelCall: review.modelCall,
   };
+}
+
+/**
+ * 冲突的稳定标识，用于记住"用户已忽略过这条"。
+ *
+ * 模型每次措辞可能略有不同，所以用涉及的文件加描述一起做键；描述变了会被当成
+ * 新的一条重新提示——宁可多问一次，也不要把新问题当成旧的忽略掉。
+ */
+export function conflictKey(finding: ConflictFinding): string {
+  return `${[...finding.sourcePaths].sort().join('|')}::${finding.description}`;
 }
