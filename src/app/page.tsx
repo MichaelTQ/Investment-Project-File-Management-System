@@ -2306,7 +2306,9 @@ export default function Home() {
           chunkUploadId = crypto.randomUUID();
           const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
           const chunkKeys = new Array<string>(totalChunks);
-          const CHUNK_UPLOAD_CONCURRENCY = 3;
+          // 12.6MB 的文件切 7 片，3 并发要跑 3 批、6 并发只要 2 批，省约 2 秒。
+          // 单片仍是 2MB，失败重传的代价不变。
+          const CHUNK_UPLOAD_CONCURRENCY = 6;
 
           for (
             let batchStart = 0;
