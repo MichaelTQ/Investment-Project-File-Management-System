@@ -419,3 +419,50 @@ test('读不到内容时不做类型恢复，那道闸不能被绕过', async ()
 
   assert.equal(result.facts.documentType, 'unknown');
 });
+
+/**
+ * 模型自报的 sourceQuality 会与它自己的产出矛盾：一边抽出日期、字段变更、原文
+ * 摘录，一边自报"只读到文件名"。旧逻辑单凭自报就把类型作废成 unknown，界面上
+ * 大量 unknown 都出自这条路径——正确识别出的类型被静默销毁。以产出为准。
+ */
+
+test('自报只读到文件名但给出了原文事实时，类型不作废', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '7君柔科技-股东会决议.pdf',
+    contentText: '注册资本由11.73624万元增加至13.04027万元',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        // q:'f' 与下面的 d/c/e 直接矛盾：文件名里不会有这些内容。
+        content:
+          '{"dt":"shareholder_resolution","r":"股东会决议","t":"股东会决议","n":null,"v":null,"d":[["2026-04-10","批准日期","决议通过"]],"p":[],"s":"b","c":[["注册资本","11.73624万元","13.04027万元","由11.73624万元增加至13.04027万元"]],"g":[],"e":["注册资本由11.73624万元增加至13.04027万元"],"w":[],"q":"f","x":80}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'shareholder_resolution');
+  assert.equal(result.facts.dates.length, 1);
+  // 自相矛盾这件事要留痕，便于排查抽取质量。
+  assert.match(result.facts.warnings.join(''), /自报只读到文件名/);
+});
+
+test('自报只读到文件名且确实什么都没抽到时，类型仍然作废', async () => {
+  clearDocumentFactsCacheForTests();
+  const result = await extractDocumentFacts({
+    fileName: '股东会决议.pdf',
+    contentText: '',
+    projectName: '君柔',
+    customHeaders: {},
+    client: {
+      invoke: async () => ({
+        content:
+          '{"dt":"shareholder_resolution","r":"股东会决议","t":"股东会决议","n":null,"v":null,"d":[],"p":[],"s":"x","c":[],"g":[],"e":[],"w":[],"q":"f","x":20}',
+      }),
+    },
+  });
+
+  assert.equal(result.facts.documentType, 'unknown');
+  assert.match(result.facts.warnings.join(''), /仅凭文件名/);
+});

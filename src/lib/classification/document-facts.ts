@@ -378,6 +378,23 @@ function titleFromFileName(fileName: string): string {
   return extensionIndex > 0 ? leafName.slice(0, extensionIndex) : leafName;
 }
 
+/**
+ * 这份事实里有没有只可能来自文件内容的东西。
+ *
+ * 用来校验模型自报的 sourceQuality。实测模型会一边抽出日期、字段变更、原文摘录，
+ * 一边把来源自报成"只读到文件名"——自报与它自己的产出直接矛盾。这种情况下以
+ * 产出为准：文件名里不可能有"注册资本由 X 变为 Y"这种句子。
+ */
+export function hasContentEvidence(facts: DocumentFacts): boolean {
+  return (
+    facts.dates.length > 0 ||
+    facts.parties.length > 0 ||
+    facts.transactionChanges.length > 0 ||
+    facts.explicitStageClues.length > 0 ||
+    facts.evidenceQuotes.length > 0
+  );
+}
+
 export function createFallbackDocumentFacts(
   fileName: string,
   warning: string

@@ -7,6 +7,7 @@ import {
   createFallbackDocumentFacts,
   DocumentFactsSchema,
   extractFirstJsonObject,
+  hasContentEvidence,
   parseDocumentFactsResponse,
   type DocumentFacts,
   type DocumentFactsExtractionResult,
@@ -32,10 +33,11 @@ export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-mini-260215';
  * 抽取器版本。**改了提示词或后处理逻辑就必须改这里**——它是事实缓存键的一部分，
  * 不改的话旧结果会继续命中，改动等于没生效。
  *
- * v4：提示词要求必须从枚举里选类型、不再规定哪种日期优先；新增按中文类型名
- * 补回枚举、以及只读到文件名时作废类型这两步后处理。
+ * v5：不再单凭模型自报的 sourceQuality 判定"读不到内容"。实测模型会一边抽出
+ * 日期、字段变更、原文摘录，一边自报"只读到文件名"，旧逻辑据此把类型作废，
+ * 界面上大量 unknown 都是这么来的。现在以有没有原文事实为准。
  */
-export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v4';
+export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v5';
 
 interface InvokeClient {
   // 与 LLMClient['invoke'] 兼容，但显式带上 finishReason：截断与其他失败必须能区分。
@@ -284,8 +286,11 @@ ${params.imageDataUrl
  */
 function recoverDocumentTypeFromLabel(facts: DocumentFacts): DocumentFacts {
   if (facts.documentType !== 'unknown') return facts;
-  // 内容都没读到时不做恢复，否则等于绕过下面那道闸。
-  if (facts.sourceQuality === 'filename_only') return facts;
+  // 确实什么都没读到时不做恢复，否则等于绕过下面那道闸。
+  // 判据是有没有原文事实，不是模型自报的 sourceQuality——它经常报错。
+  if (facts.sourceQuality === 'filename_only' && !hasContentEvidence(facts)) {
+    return facts;
+  }
 
   const recovered = documentTypeFromRawLabel(facts.rawDocumentType);
   return recovered ? { ...facts, documentType: recovered } : facts;
@@ -303,6 +308,20 @@ function recoverDocumentTypeFromLabel(facts: DocumentFacts): DocumentFacts {
  */
 function enforceContentEvidence(facts: DocumentFacts): DocumentFacts {
   if (facts.sourceQuality !== 'filename_only') return facts;
+
+  // 自报"只读到文件名"，却交出了日期、字段变更、原文摘录——自相矛盾，以产出为准。
+  // 此前这里直接把类型作废，结果把模型正确识别出的类型销毁了，界面上大量 unknown
+  // 都出自这条路径。现在只记一条提示，不动事实。
+  if (hasContentEvidence(facts)) {
+    return {
+      ...facts,
+      warnings: [
+        ...facts.warnings,
+        '模型自报只读到文件名，但同时给出了原文事实，已按读到内容处理。',
+      ].slice(0, 3),
+    };
+  }
+
   if (facts.documentType === 'unknown') return facts;
 
   return {
