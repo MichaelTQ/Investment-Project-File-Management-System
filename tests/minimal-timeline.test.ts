@@ -188,3 +188,43 @@ test('缺少描述的条目被丢弃，不产生空提示', () => {
   assert.equal(findings.length, 1);
   assert.equal(findings[0].description, '真的有矛盾');
 });
+
+/**
+ * 其他文件的归档位置：可以给模型看，但必须说清它的性质。
+ *
+ * 这个值来自文件实际所在的目录，而归档一律需要人工点确认，所以它是人工确认过的
+ * 结果，不是模型自己的输出。措辞上必须标明"人工确认"，否则模型无从判断这条信息
+ * 有多可信；同时提示词要求它不得只凭这一条下结论——确认时的默认值就是模型建议，
+ * 一路点确认的话，这个"人工确认"实质仍是模型的猜测。
+ */
+test('时间线标明归档位置是人工确认的结果', () => {
+  const text = describeTimeline(buildTimeline([charter, resolution]), {
+    showStage: true,
+  });
+  assert.match(text, /人工确认归入 investment_decision/);
+  assert.match(text, /人工确认归入 investment_execution/);
+  // 不能写成中性的"已归入"，那会让模型以为是系统自己的判断结果。
+  assert.equal(text.includes('（已归入'), false);
+});
+
+test('默认不显示归档位置，要显示必须显式打开', () => {
+  const text = describeTimeline(buildTimeline([charter]));
+  assert.equal(text.includes('人工确认'), false);
+  assert.equal(text.includes('investment_decision'), false);
+});
+
+test('尚未归档的文件如实标注，不留空让模型猜', () => {
+  const pending = document(
+    '新文件.pdf',
+    null,
+    facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      dates: [{ date: '2026-05-01', meaning: '签署日期', evidence: '落款' }],
+    })
+  );
+  assert.match(
+    describeTimeline(buildTimeline([pending]), { showStage: true }),
+    /尚未归档/
+  );
+});

@@ -106,7 +106,7 @@ ${params.projectName || '未提供'}
 ${documentsBrief(params.documents)}
 
 【按日期排列的项目时间线】
-${describeTimeline(params.timeline)}`;
+${describeTimeline(params.timeline, { showStage: true })}`;
 
   return [
     { role: 'system', content: systemPrompt },

@@ -73,7 +73,9 @@ export async function classifyWithMinimalPath(
       sourcePath: document.sourcePath,
       facts: document.facts,
     })),
-    timeline: describeTimeline(buildTimeline(others)),
+    // 带上各文件的归档位置：归档必须人工确认，所以这是人工确认过的事实，
+    // 是这套系统里最硬的信号。提示词里同时约束它不能成为唯一依据。
+    timeline: describeTimeline(buildTimeline(others), { showStage: true }),
     customHeaders: params.customHeaders,
   });
 

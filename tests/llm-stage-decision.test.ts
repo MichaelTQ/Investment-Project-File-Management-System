@@ -223,3 +223,16 @@ test('提示词只给文件名，不给目录路径（目录名往往就是人�
   }
   assert.equal(userPrompt.includes('/'), false);
 });
+
+test('其他文件的归档位置可参考，但提示词禁止把它当唯一依据', () => {
+  const systemPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '公司章程.pdf',
+      facts: healthyFacts(),
+    })[0].content
+  );
+
+  assert.match(systemPrompt, /人工确认过的归档结果/);
+  assert.match(systemPrompt, /不得只凭/);
+  assert.match(systemPrompt, /必须结合本文件自身记载的内容/);
+});
