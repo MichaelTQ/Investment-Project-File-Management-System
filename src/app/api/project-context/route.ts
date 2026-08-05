@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { HeaderUtils } from 'coze-coding-dev-sdk';
-
 import { rebuildMinimalArchive } from '@/lib/classification/minimal/pipeline';
 import { clearMinimalArchive } from '@/lib/classification/minimal/store';
-import { checkProjectConsistency } from '@/lib/classification/project-consistency';
-import {
-  getProjectContextMemoryView,
-  rebuildProjectContext,
-} from '@/lib/classification/session-project-memory';
 import { getProject } from '@/lib/storage';
 
 export const runtime = 'nodejs';
@@ -21,12 +14,8 @@ export async function GET(request: NextRequest) {
     if (!(await getProject(projectId))) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
-    const [projectContext, consistency, minimal] = await Promise.all([
-      getProjectContextMemoryView(projectId),
-      checkProjectConsistency(projectId),
-      rebuildMinimalArchive(projectId).catch(() => null),
-    ]);
-    return NextResponse.json({ projectContext, consistency, minimal });
+    const minimal = await rebuildMinimalArchive(projectId);
+    return NextResponse.json({ minimal, consistency: minimal });
   } catch (error) {
     return NextResponse.json(
       {
@@ -48,20 +37,10 @@ export async function POST(request: NextRequest) {
     if (!project) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
-    const projectContext = await rebuildProjectContext(projectId, {
-      projectName: project.name,
-      customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
-    });
-    // 重建之后立刻全量校验：新文件带来的交易记录可能回头推翻先前判过的文件。
-    // 纯计算，不影响这次请求的耗时预算。
-    const [consistency, minimal] = await Promise.all([
-      checkProjectConsistency(projectId),
-      rebuildMinimalArchive(projectId).catch(() => null),
-    ]);
+    const minimal = await rebuildMinimalArchive(projectId);
     return NextResponse.json({
       success: true,
-      projectContext,
-      consistency,
+      consistency: minimal,
       minimal,
     });
   } catch (error) {

@@ -21,31 +21,12 @@ import {
 } from '@/lib/classification/chat-completions';
 import type { DocumentFacts } from '@/lib/classification/document-facts';
 import {
-  inferBusinessStage,
-  type BusinessStageDecision,
-} from '@/lib/classification/business-stage';
-import {
-  decideWithProjectContext,
-  parseProjectContextSnapshot,
-  parseRelatedDocumentFacts,
-  type ContextClassificationDecision,
-  type ProjectContextSnapshot,
-  type RelatedDocumentFacts,
-} from '@/lib/classification/context-decision';
-import {
-  runClassificationAgent,
-  type ClassificationAgentResult,
-} from '@/lib/classification/classification-agent';
-import {
   classifyWithMinimalPath,
+  rebuildMinimalArchive,
   type MinimalClassifyResult,
 } from '@/lib/classification/minimal/pipeline';
+import { upsertMinimalDocument } from '@/lib/classification/minimal/store';
 import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
-import {
-  commitArchivedProjectDocument,
-  evaluateProjectDocumentCandidate,
-  type ProjectSessionMemoryView,
-} from '@/lib/classification/session-project-memory';
 import {
   createClassificationDecisionRecord,
   createDocumentFingerprint,
@@ -80,7 +61,6 @@ interface ProcessingPerformance {
 
 // 分类过程详情
 interface ClassifyProcess {
-  step0_businessStage?: BusinessStageDecision;
   step0_factExtraction?: {
     enabled: boolean;
     status: 'success' | 'fallback';
@@ -95,24 +75,6 @@ interface ClassifyProcess {
       archivedFileLink?: 'success' | 'failed';
     };
   };
-  step0_contextDecision?: {
-    enabled: boolean;
-    status: ContextClassificationDecision['status'];
-    policyVersion: string;
-    requiresHumanReview: boolean;
-    inputWarnings?: string[];
-  };
-  step0_agentOrchestration?: {
-    enabled: boolean;
-    status: 'success' | 'failed';
-    graphVersion?: string;
-    finalStatus?: ClassificationAgentResult['status'];
-    rounds?: number;
-    toolSteps?: number;
-    llmCallCount?: number;
-    error?: string;
-    inputWarnings?: string[];
-  };
   step0_minimalPath?: {
     enabled: boolean;
     status: MinimalClassifyResult['status'];
@@ -120,34 +82,13 @@ interface ClassifyProcess {
     error?: string;
     modelCall?: ModelCallDiagnostics;
   };
-  step0_projectSessionMemory?: {
-    enabled: boolean;
-    status: 'success' | 'skipped' | 'failed';
-    mode?: ProjectSessionMemoryView['mode'];
-    persistent?: boolean;
-    persistenceWarning?: string;
-    documentCount?: number;
-    relatedDocumentCount?: number;
-    reEvaluatedCount?: number;
-    revision?: number;
-    contextStatus?:
-      | NonNullable<ProjectSessionMemoryView['contextSynthesis']>['status']
-      | ProjectSessionMemoryView['contextState']['status'];
-    contextLlmCallCount?: number;
-    contextEventCount?: number;
-    contextRelationCount?: number;
-    latestEvidencedStage?: NonNullable<
-      ProjectSessionMemoryView['contextSynthesis']
-    >['latestEvidencedStage'];
-    error?: string;
-  };
   decisionPersistence?: {
     status: 'success' | 'failed';
     recordId?: string;
     error?: string;
   };
   finalDecision: {
-    method: 'agent' | 'stage' | 'none';
+    method: 'minimal' | 'none';
     explanation: string;
   };
 }
@@ -161,16 +102,13 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
-  classificationMode: 'agent' | 'comparison';
+  classificationMode: 'minimal';
   businessStage?: string | null;
   documentType?: string;
   suggestedArchiveTitle?: string;
   documentFacts?: DocumentFacts;
-  contextDecision?: ContextClassificationDecision;
-  agentDecision?: ClassificationAgentResult;
   /** 极简链路的结论，与 Agent 链路并行运行、互不影响，用于 A/B 对照。 */
   minimalDecision?: MinimalClassifyResult;
-  projectSessionMemory?: ProjectSessionMemoryView;
   requiresArchiveConfirmation?: boolean;
   archived?: {
     id: string;
@@ -312,22 +250,14 @@ export async function POST(request: NextRequest) {
     let projectId = '';
     let sourcePath = '';
     let autoArchive = true;
-    let runLegacyDecision = true;
     let extractFacts =
       globalThis.process.env.ENABLE_DOCUMENT_FACTS_SHADOW === 'true';
     let persistFacts =
       globalThis.process.env.PERSIST_PROJECT_MEMORY_SHADOW === 'true' ||
       globalThis.process.env.PERSIST_DOCUMENT_FACTS_SHADOW === 'true';
-    let runContextDecision =
-      globalThis.process.env.ENABLE_CONTEXT_DECISION_SHADOW === 'true';
-    let runAgentDecision =
-      globalThis.process.env.ENABLE_CLASSIFICATION_AGENT_SHADOW === 'true';
-    let runMinimalPath =
-      globalThis.process.env.ENABLE_MINIMAL_PATH === 'true';
+    const runMinimalPath = true;
     // 'abstract' 版阶段说明不含文件类型清单，用于验证清单是否在替模型答题。
     let stageGuideMode: 'examples' | 'abstract' = 'examples';
-    let rawProjectContext: unknown;
-    let rawRelatedDocumentFacts: unknown;
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -340,7 +270,6 @@ export async function POST(request: NextRequest) {
       sourcePath =
         typeof body.sourcePath === 'string' ? body.sourcePath : fileName;
       autoArchive = body.autoArchive !== false;
-      runLegacyDecision = body.legacyDecision !== false;
       extractFacts =
         typeof body.extractFacts === 'boolean'
           ? body.extractFacts
@@ -349,21 +278,9 @@ export async function POST(request: NextRequest) {
         typeof body.persistFacts === 'boolean'
           ? body.persistFacts
           : persistFacts;
-      runContextDecision =
-        typeof body.contextDecision === 'boolean'
-          ? body.contextDecision
-          : runContextDecision;
-      runAgentDecision =
-        typeof body.agentDecision === 'boolean'
-          ? body.agentDecision
-          : runAgentDecision;
-      runMinimalPath =
-        typeof body.minimalPath === 'boolean' ? body.minimalPath : runMinimalPath;
       if (body.stageGuideMode === 'abstract' || body.stageGuideMode === 'examples') {
         stageGuideMode = body.stageGuideMode;
       }
-      rawProjectContext = body.projectContext;
-      rawRelatedDocumentFacts = body.relatedDocumentFacts;
 
       if (
         !storageKey ||
@@ -382,7 +299,6 @@ export async function POST(request: NextRequest) {
       projectId = String(formData.get('projectId') || '');
       sourcePath = String(formData.get('sourcePath') || file?.name || '');
       autoArchive = formData.get('autoArchive') !== 'false';
-      runLegacyDecision = formData.get('legacyDecision') !== 'false';
       const extractFactsValue = formData.get('extractFacts');
       extractFacts =
         extractFactsValue === null
@@ -393,29 +309,10 @@ export async function POST(request: NextRequest) {
         persistFactsValue === null
           ? persistFacts
           : persistFactsValue === 'true';
-      const contextDecisionValue = formData.get('contextDecision');
-      runContextDecision =
-        contextDecisionValue === null
-          ? runContextDecision
-          : contextDecisionValue === 'true';
-      const agentDecisionValue = formData.get('agentDecision');
-      runAgentDecision =
-        agentDecisionValue === null
-          ? runAgentDecision
-          : agentDecisionValue === 'true';
-      const minimalPathValue = formData.get('minimalPath');
-      runMinimalPath =
-        minimalPathValue === null
-          ? runMinimalPath
-          : minimalPathValue === 'true';
       const guideValue = formData.get('stageGuideMode');
       if (guideValue === 'abstract' || guideValue === 'examples') {
         stageGuideMode = guideValue;
       }
-      rawProjectContext = parseOptionalJson(formData.get('projectContext'));
-      rawRelatedDocumentFacts = parseOptionalJson(
-        formData.get('relatedDocumentFacts')
-      );
       fileName = file?.name || '';
       fileSize = file?.size || 0;
       suppliedMimeType = file?.type || '';
@@ -428,34 +325,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Agent 主模式必须运行 Agent，并始终由用户确认后再归档。
-    if (!runLegacyDecision) {
-      runAgentDecision = true;
-      autoArchive = false;
-    }
-
-    // 持久化必须以结构化事实为输入，因此显式请求持久化时自动启用抽取。
+    // 极简分类始终依赖结构化事实，并始终保留人工确认。
+    autoArchive = false;
     extractFacts =
       extractFacts ||
       persistFacts ||
-      runContextDecision ||
-      runAgentDecision ||
       runMinimalPath;
-
-    const projectContext: ProjectContextSnapshot | null =
-      parseProjectContextSnapshot(rawProjectContext);
-    const relatedDocumentFacts: RelatedDocumentFacts[] =
-      parseRelatedDocumentFacts(rawRelatedDocumentFacts);
-    const contextInputWarnings: string[] = [];
-    if (rawProjectContext !== undefined && !projectContext) {
-      contextInputWarnings.push('项目上下文不符合 Schema，本次已忽略');
-    }
-    if (
-      rawRelatedDocumentFacts !== undefined &&
-      relatedDocumentFacts.length === 0
-    ) {
-      contextInputWarnings.push('关联文件事实不符合 Schema，本次已忽略');
-    }
 
     const project = projectId
       ? await measurePhase('load_project', () => getProject(projectId))
@@ -487,7 +362,7 @@ export async function POST(request: NextRequest) {
     const cachedExtraction = extractFacts
       ? getCachedDocumentFacts(factCacheKey)
       : null;
-    const canSkipContentParsing = Boolean(cachedExtraction && !runLegacyDecision);
+    const canSkipContentParsing = Boolean(cachedExtraction);
 
     if (canSkipContentParsing) {
       contentText = '[相同文件事实已从进程缓存复用，跳过重复文件解析]';
@@ -639,17 +514,6 @@ export async function POST(request: NextRequest) {
     let documentFacts: DocumentFacts | undefined;
     let persistedDocumentFactId: string | undefined;
     let factExtractionStep: ClassifyProcess['step0_factExtraction'];
-    let contextClassificationDecision:
-      | ContextClassificationDecision
-      | undefined;
-    let agentClassificationResult: ClassificationAgentResult | undefined;
-    let agentOrchestrationStep:
-      | ClassifyProcess['step0_agentOrchestration']
-      | undefined;
-    let projectSessionMemory: ProjectSessionMemoryView | undefined;
-    let projectSessionMemoryStep:
-      | ClassifyProcess['step0_projectSessionMemory']
-      | undefined;
     let minimalDecision: MinimalClassifyResult | undefined;
     let minimalPathStep: ClassifyProcess['step0_minimalPath'] | undefined;
     if (extractFacts) {
@@ -717,6 +581,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    /* Retired Agent / synthesized-Context path.
     if (runContextDecision && documentFacts) {
       contextClassificationDecision = decideWithProjectContext({
         sourcePath: sourcePath || fileName,
@@ -819,7 +684,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 极简链路：与 Agent 链路并行，用同一份事实，判断者不同。两条路互不读写对方
+    */
+    // 极简链路是唯一的分类建议来源。
     // 的状态，因此可以直接 A/B；将来极简版胜出时删掉 Agent 一整块即可。
     if (runMinimalPath && documentFacts && projectId) {
       const factsForMinimal = documentFacts;
@@ -855,6 +721,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    /* Retired keyword/Agent final-decision path.
     // 最终只判断业务阶段；阶段文件夹本身就是归档目标。
     const legacyStageDecision = inferBusinessStage({
       sourcePath: sourcePath || fileName,
@@ -942,6 +809,38 @@ export async function POST(request: NextRequest) {
       result.projectSessionMemory = projectSessionMemory;
     }
 
+    */
+    const targetFolder = minimalDecision?.folder ?? null;
+    const process: ClassifyProcess = {
+      step0_factExtraction: factExtractionStep,
+      step0_minimalPath: minimalPathStep,
+      finalDecision: targetFolder
+        ? {
+            method: 'minimal',
+            explanation: `极简链路建议归入“${targetFolder.folderPath.slice(1).join(' / ')}”；请人工确认后归档`,
+          }
+        : {
+            method: 'none',
+            explanation: '极简链路未能唯一确定阶段，需要人工选择阶段文件夹',
+          },
+    };
+    const result: ClassifyResult = {
+      fileName,
+      fileSize,
+      targetFolder,
+      confidence: minimalDecision?.confidence ?? 0,
+      reasoning: minimalDecision?.reasoning ?? minimalDecision?.error ?? '未能形成分类建议。',
+      contentPreview,
+      process,
+      classificationMode: 'minimal',
+      businessStage: minimalDecision?.stage,
+      documentType: documentFacts?.documentType,
+      suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
+      requiresArchiveConfirmation: true,
+      minimalDecision,
+    };
+    if (documentFacts) result.documentFacts = documentFacts;
+
     // 自动归档
     if (
       autoArchive &&
@@ -1001,6 +900,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        /* Retired project-memory commit.
         if (documentFacts) {
           const factsToCommit = documentFacts;
           try {
@@ -1057,6 +957,7 @@ export async function POST(request: NextRequest) {
             };
           }
         }
+        */
       }
     }
 
@@ -1080,17 +981,9 @@ export async function POST(request: NextRequest) {
           evidence: documentFacts?.evidenceQuotes ?? [],
           contradictions: [],
           decisionScore: result.confidence,
-          decisionSource:
-            process.finalDecision.method === 'agent'
-              ? 'context'
-              : process.finalDecision.method === 'stage'
-                ? 'context'
-                : 'none',
+          decisionSource: 'none',
           reasoning: result.reasoning,
-          policyVersion:
-            process.finalDecision.method === 'agent'
-              ? agentClassificationResult?.graphVersion ?? 'classification-agent'
-              : 'stage-folder-classification-v5',
+          policyVersion: 'minimal-v1',
           requiresReview:
             Boolean(result.requiresArchiveConfirmation) || !result.targetFolder,
         });
@@ -1113,9 +1006,7 @@ export async function POST(request: NextRequest) {
       phases: phaseTimings,
       modelCalls,
     };
-    result.contextRebuildPending = Boolean(
-      documentFacts && result.archived && result.projectSessionMemory
-    );
+    result.contextRebuildPending = Boolean(documentFacts && result.archived);
     return NextResponse.json(result);
 
   } catch (error) {

@@ -44,7 +44,6 @@ import {
   type ArchivedFile,
   getFolderForBusinessStage,
 } from '@/lib/folder-structure';
-import { inferBusinessStage } from '@/lib/classification/business-stage';
 
 interface ClassifyProcess {
   finalDecision: {
@@ -270,7 +269,7 @@ interface ClassifyResult {
   reasoning: string;
   contentPreview?: string;
   process: ClassifyProcess;
-  classificationMode: 'agent' | 'comparison';
+  classificationMode: 'minimal';
   businessStage?: string | null;
   documentType?: string;
   legacyClassification?: {
@@ -857,7 +856,7 @@ function ClassifyResultItem({
   ) => void;
   onCancelArchive: (clientId: string) => void;
 }) {
-  const agentFolder = result.agentDecision?.decision.selectedFolder ?? null;
+  const agentFolder = result.minimalDecision?.folder ?? null;
   const legacyClassification = result.legacyClassification;
   const minimal = result.minimalDecision;
   const minimalPending = Boolean(result.minimalPending && !minimal);
@@ -869,9 +868,9 @@ function ClassifyResultItem({
     1 +
     (showLegacyClassification ? 1 : 0) +
     (showMinimalPath ? 1 : 0);
-  const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
-  const agentPending = Boolean(result.agentPending && !result.agentDecision);
-  const agentNeedsReview = !agentPending && result.agentDecision?.status !== 'decided';
+  const agentConfidence = result.minimalDecision?.confidence ?? 0;
+  const agentPending = Boolean(result.minimalPending && !result.minimalDecision);
+  const agentNeedsReview = !agentPending && Boolean(result.minimalDecision?.requiresHumanReview);
   const agentSelectionValue = agentFolder
     ? agentFolder.folderId
     : '';
@@ -905,7 +904,7 @@ function ClassifyResultItem({
       className={`w-full min-w-0 overflow-hidden rounded-lg border bg-background ${
         agentPending
           ? 'border-l-4 border-l-sky-400'
-          : result.agentDecision?.status === 'decided'
+          : result.minimalDecision?.folder
           ? 'border-l-4 border-l-violet-500'
           : 'border-l-4 border-l-amber-500'
       }`}
@@ -923,9 +922,9 @@ function ClassifyResultItem({
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span>{(result.fileSize / 1024).toFixed(1)} KB</span>
             <span>·</span>
-            <span>{agentPending ? 'Agent 分析中' : `Agent 置信度 ${agentConfidence}%`}</span>
+            <span>{agentPending ? '极简分类中' : `证据强度 ${agentConfidence}%`}</span>
             <Badge variant="outline" className="border-violet-300 bg-violet-50 text-[10px] text-violet-700">
-              Agent 主模式
+              极简链路
             </Badge>
           </div>
         </div>
@@ -947,7 +946,7 @@ function ClassifyResultItem({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
                 <Brain className="h-3.5 w-3.5" />
-                Agent 分类结果
+                极简分类结果
               </p>
               <Badge
                 variant="outline"
@@ -962,12 +961,12 @@ function ClassifyResultItem({
               {agentFolder
                 ? agentFolder.folderPath.join(' / ')
                 : agentPending
-                  ? '规则预判已返回，正在等待 Agent'
+                  ? '正在抽取事实并判断'
                   : '暂未形成唯一分类建议'}
             </p>
             <p className="mt-1 break-words text-[11px] leading-4 text-violet-700">
               业务阶段：{PROJECT_STAGE_LABELS[
-                result.agentDecision?.decision.businessStage ??
+                result.minimalDecision?.stage ??
                   result.businessStage ??
                   'unknown'
               ] ?? '待确认'}
@@ -979,14 +978,14 @@ function ClassifyResultItem({
               <span className="text-xs text-violet-800">{agentConfidence}%</span>
             </div>
             <p className="mt-2 break-words text-xs leading-5 text-violet-800">
-              {result.agentDecision?.decision.reasoning ??
+              {result.minimalDecision?.reasoning ??
                 (agentPending
-                  ? 'Agent 正在抽取结构化事实并结合项目 Context 判断。'
-                  : 'Agent 未成功返回结果，请查看详情中的诊断信息。')}
+                  ? '正在抽取结构化事实并比对关联文件。'
+                  : '未成功返回结果，请查看详情中的诊断信息。')}
             </p>
-            {(result.agentDecision?.decision.evidence.length ?? 0) > 0 && (
+            {(result.minimalDecision?.evidence.length ?? 0) > 0 && (
               <ul className="mt-2 space-y-1 border-t border-violet-200 pt-2 text-[11px] leading-4 text-green-800">
-                {result.agentDecision?.decision.evidence.slice(0, 2).map(evidence => (
+                {result.minimalDecision?.evidence.slice(0, 2).map(evidence => (
                   <li key={evidence} className="break-words">✓ {evidence}</li>
                 ))}
               </ul>
@@ -2850,12 +2849,6 @@ export default function Home() {
     for (const file of Array.from(files)) {
       const clientId = crypto.randomUUID();
       const uploadedSourcePath = file.webkitRelativePath || file.name;
-      const quickRule = showLegacyClassification
-        ? inferBusinessStage({ sourcePath: uploadedSourcePath })
-        : null;
-      const quickRuleFolder = quickRule?.selectedStage
-        ? getFolderForBusinessStage(quickRule.selectedStage)
-        : null;
       setResults(prev => [
         ...prev,
         {
@@ -2863,33 +2856,18 @@ export default function Home() {
           fileName: file.name,
           sourcePath: uploadedSourcePath,
           fileSize: file.size,
-          targetFolder: quickRuleFolder,
-          confidence: quickRule?.confidence ?? 0,
-          reasoning:
-            quickRule?.reasoning ?? '文件上传完成后将运行 Agent 分类。',
+          targetFolder: null,
+          confidence: 0,
+          reasoning: '文件上传完成后将运行极简分类。',
           process: {
             finalDecision: {
-              method: quickRuleFolder ? 'stage' : 'none',
-              explanation: quickRuleFolder
-                ? '文件名规则已形成快速预判，等待 Agent 使用正文和项目 Context 复核。'
-                : '文件名规则证据不足，等待 Agent 使用正文和项目 Context 判断。',
+              method: 'none',
+              explanation: '正在抽取事实并运行极简分类。',
             },
           },
-          classificationMode: showLegacyClassification
-            ? 'comparison'
-            : 'agent',
-          businessStage: quickRule?.selectedStage,
-          legacyClassification: quickRule
-            ? {
-                targetFolder: quickRuleFolder,
-                confidence: quickRule.confidence,
-                reasoning: `快速预判仅使用文件名：${quickRule.reasoning}`,
-              }
-            : undefined,
+          classificationMode: 'minimal',
           requiresArchiveConfirmation: false,
-          agentPending: true,
-          minimalPending: showMinimalPath,
-          rulePreliminary: Boolean(quickRule),
+          minimalPending: true,
         },
       ]);
       let uploadedStorageKey = '';
@@ -3003,9 +2981,7 @@ export default function Home() {
             mimeType: file.type || 'application/octet-stream',
             projectId: selectedProjectId,
             autoArchive: false,
-            agentDecision: true,
-            legacyDecision: showLegacyClassification,
-            minimalPath: showMinimalPath,
+            minimalPath: true,
             stageGuideMode,
             sourcePath: file.webkitRelativePath || file.name,
           }),
@@ -3753,7 +3729,7 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle className="flex items-center gap-2 text-base md:text-lg">
                     <Brain className="h-5 w-5 text-violet-600" />
-                    Agent 分类结果
+                    极简分类结果
                   </CardTitle>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
@@ -3806,10 +3782,8 @@ export default function Home() {
                 </div>
                 <CardDescription>
                   {results.length > 0
-                    ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}`
-                    : showLegacyClassification
-                      ? '上传后并列显示 Agent 与规则阶段判断'
-                      : '规则对照已关闭，上传后直接显示 Agent 建议'}
+                    ? `已处理 ${results.length} 个文件；结果均需人工确认后归档`
+                    : '上传后显示极简分类建议与一致性校验'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">
