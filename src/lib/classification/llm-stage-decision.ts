@@ -32,7 +32,18 @@ const STAGE_VALUES: ArchiveBusinessStage[] = [
   'exit_execution',
 ];
 
-const STAGE_GUIDE = `pre_initiation 立项前：项目接触与初步筛选，保密协议、初步介绍材料。
+/**
+ * 阶段说明有两版，用来验证一个问题：**模型到底是在推理，还是在查表？**
+ *
+ * examples 版把每个阶段常见的文件类型直接列出来。它可能提高准确率，但也可能
+ * 让模型跳过推理直接查表——那样系统就无法泛化到清单没写过的文件类型。
+ *
+ * abstract 版只描述每个阶段的业务含义和判断依据，不列任何文件类型。两版对同一批
+ * 文件的准确率差多少，就是清单实际贡献（或代劳）了多少。
+ */
+export type StageGuideMode = 'examples' | 'abstract';
+
+const STAGE_GUIDE_EXAMPLES = `pre_initiation 立项前：项目接触与初步筛选，保密协议、初步介绍材料。
 initiation 项目立项：立项申请、立项报告、立项会纪要、立项表决结果、商业计划书、Teaser。
 due_diligence 尽职调查：业务/财务/法律/风控尽调报告，以及为尽调收集的底稿资料。
 investment_decision 投资决策：上会与决策材料，投资建议书、投委会与专家委员会决议及表决结果、投资合规性审查表，以及作为上会附件的交易前版本章程、营业执照、财务报表、信用报告。
@@ -40,6 +51,19 @@ investment_execution 投资实施：交易文件签署与交割，增资协议�
 post_investment 投后管理：投后管理报告、实地调研、被投企业投后定期经营数据。
 exit_decision 退出决策：退出方案、退出投委会决议与表决。
 exit_execution 退出执行：退出交割、退出价款结算、档案移交。`;
+
+const STAGE_GUIDE_ABSTRACT = `pre_initiation 立项前：与项目方初步接触、建立保密安排、获取初步介绍材料的阶段。此时尚未走内部立项程序，文件反映的是"是否值得进一步了解"。
+initiation 项目立项：正式启动项目、走内部立项审批的阶段。文件反映的是"决定投入资源开展调查"这一内部决策过程本身。
+due_diligence 尽职调查：对标的开展业务、财务、法律、风控核查的阶段。文件反映的是"对标的的调查与核实"，以及为核查而收集的标的方原始资料。
+investment_decision 投资决策：内部作出投或不投决定的阶段。文件反映的是"提交决策机构审议的材料与决策结论"。作为审议附件提交的标的方资料也属于这个阶段——关键判据是它描述的是**交易发生之前**的状态。
+investment_execution 投资实施：交易文件正式签署、条件交割、投资款支付的阶段。文件反映的是"交易已经发生"的事实状态：交易各方达成的约定、交易完成后更新的主体信息、资金实际交付的凭证。关键判据是它描述的是**交易发生之后**的状态。
+post_investment 投后管理：投资完成后持续跟踪被投企业的阶段。文件反映的是"投资之后的经营与管理情况"。
+exit_decision 退出决策：内部决定是否退出、如何退出的阶段。文件反映的是"退出方案的审议与决定"。
+exit_execution 退出执行：退出交易实际完成的阶段。文件反映的是"退出已经发生"的事实状态。`;
+
+function stageGuide(mode: StageGuideMode): string {
+  return mode === 'abstract' ? STAGE_GUIDE_ABSTRACT : STAGE_GUIDE_EXAMPLES;
+}
 
 export interface LlmStageDecisionParams {
   sourcePath: string;
@@ -53,6 +77,8 @@ export interface LlmStageDecisionParams {
    * 极简链路用它把方向判断从模型手里收回来——实测模型会把金额先后解释反。
    */
   resolvedEvidence?: string;
+  /** 阶段说明用哪一版。默认 examples（含文件类型清单）。 */
+  stageGuideMode?: StageGuideMode;
 }
 
 export interface LlmStageDecisionResult {
@@ -180,11 +206,13 @@ function relatedDocumentsBrief(
   return `${header}${body}`;
 }
 
-function buildPrompt(params: LlmStageDecisionParams): Message[] {
+export function buildStageDecisionPrompt(
+  params: LlmStageDecisionParams
+): Message[] {
   const systemPrompt = `你是投资项目档案归档专家。你的任务是根据已经抽取好的文档事实和项目上下文，判断一份文件应当归入哪个业务阶段文件夹。
 
 【可选阶段及其含义】
-${STAGE_GUIDE}
+${stageGuide(params.stageGuideMode ?? 'examples')}
 
 【判断原则】
 1. 以文档事实和项目时间线为准，不要只看文件名。文件名可能不含任何阶段信息。
@@ -365,7 +393,7 @@ export function buildDecisionFromParsed(
 export async function decideStageWithModel(
   params: LlmStageDecisionParams
 ): Promise<LlmStageDecisionResult> {
-  const messages = buildPrompt(params);
+  const messages = buildStageDecisionPrompt(params);
   let modelCall: ModelCallDiagnostics | undefined;
 
   try {
