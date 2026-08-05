@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import {
   checkArchiveConsistency,
-  extractCapitalTransition,
-  extractRegisteredCapital,
+  extractFieldTransitions,
+  extractStatedValue,
   type ArchiveDocument,
 } from '../src/lib/classification/archive-consistency';
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
@@ -73,26 +73,34 @@ const shareholderResolution: ArchiveDocument = {
 };
 
 test('从股东会决议里读出交易的变更前后值', () => {
-  const transition = extractCapitalTransition(shareholderResolution.facts);
-  assert.equal(transition?.before, 11.73624);
-  assert.equal(transition?.after, 13.04027);
+  const [transition] = extractFieldTransitions(shareholderResolution.facts);
+  assert.equal(transition.field, '注册资本');
+  assert.equal(transition.before.amount, 11.73624);
+  assert.equal(transition.after.amount, 13.04027);
+  assert.equal(transition.before.unit, '万元');
 });
 
 test('减资决议同样能读出前后值，不假设方向', () => {
-  const transition = extractCapitalTransition(
+  const [transition] = extractFieldTransitions(
     facts({
       documentType: 'shareholder_resolution',
       title: '减资决议',
       evidenceQuotes: ['注册资本由人民币500万元减少至人民币300万元'],
     })
   );
-  assert.equal(transition?.before, 500);
-  assert.equal(transition?.after, 300);
+  assert.equal(transition.before.amount, 500);
+  assert.equal(transition.after.amount, 300);
 });
 
 test('从章程里读出它自己记载的注册资本', () => {
-  assert.equal(extractRegisteredCapital(preTransactionCharter.facts), 11.73624);
-  assert.equal(extractRegisteredCapital(postTransactionCharter.facts), 13.04027);
+  assert.equal(
+    extractStatedValue(preTransactionCharter.facts, '注册资本')?.amount,
+    11.73624
+  );
+  assert.equal(
+    extractStatedValue(postTransactionCharter.facts, '注册资本')?.amount,
+    13.04027
+  );
 });
 
 test('分类正确时校验器保持沉默', () => {
@@ -306,4 +314,142 @@ test('未来缴款期限不被当作文件日期，不产生假的先后矛盾',
     [],
     '缺少形成日期的一方应被跳过，而不是拿缴款期限去比'
   );
+});
+
+test('持股比例也能作为交易锚点，不限于注册资本', () => {
+  const equityResolution: ArchiveDocument = {
+    sourcePath: '股权转让决议.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'shareholder_resolution',
+      title: '股权转让决议',
+      transactionChanges: [
+        {
+          field: '创始人持股比例',
+          before: '65%',
+          after: '52%',
+          evidence: '决议同意创始人持股比例由65%变更为52%',
+        },
+      ],
+    }),
+  };
+  const preCharter: ArchiveDocument = {
+    sourcePath: '转让前章程.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'company_charter',
+      title: '公司章程',
+      evidenceQuotes: ['创始人持股比例为65%'],
+    }),
+  };
+
+  const conflict = checkArchiveConsistency([
+    equityResolution,
+    preCharter,
+  ]).find(item => item.kind === 'transaction_side_conflict');
+  assert.ok(conflict, '持股比例应当能定位交易先后');
+  assert.equal(conflict?.sourcePath, '转让前章程.pdf');
+  assert.equal(conflict?.constraint, '形成于该笔交易之前');
+  assert.match(conflict?.reason ?? '', /持股比例/);
+});
+
+test('实缴出资额也能作为交易锚点', () => {
+  const paidIn: ArchiveDocument = {
+    sourcePath: '增资协议.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'capital_increase_agreement',
+      title: '增资协议',
+      transactionChanges: [
+        {
+          field: '实缴出资额',
+          before: '200万元',
+          after: '1200万元',
+          evidence: '实缴出资额由200万元增加至1200万元',
+        },
+      ],
+    }),
+  };
+  const later: ArchiveDocument = {
+    sourcePath: '出资证明书.pdf',
+    currentStage: 'due_diligence',
+    facts: facts({
+      documentType: 'capital_contribution_certificate',
+      title: '出资证明书',
+      evidenceQuotes: ['实缴出资额1200万元'],
+    }),
+  };
+
+  const conflict = checkArchiveConsistency([paidIn, later]).find(
+    item => item.kind === 'transaction_side_conflict'
+  );
+  assert.equal(conflict?.constraint, '形成于该笔交易之后');
+  assert.match(conflict?.reason ?? '', /实缴出资额/);
+});
+
+test('单位不同的数值不会被误判为相等', () => {
+  const resolution: ArchiveDocument = {
+    sourcePath: '决议.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'shareholder_resolution',
+      title: '决议',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '1000万元',
+          after: '1500万元',
+          evidence: '注册资本由1000万元增加至1500万元',
+        },
+      ],
+    }),
+  };
+  // 1000 元 与 1000 万元 数值相同但单位不同，不构成匹配。
+  const unrelated: ArchiveDocument = {
+    sourcePath: '无关文件.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'company_charter',
+      title: '章程',
+      evidenceQuotes: ['注册资本为1000元'],
+    }),
+  };
+  assert.deepEqual(
+    checkArchiveConsistency([resolution, unrelated]).filter(
+      item => item.kind === 'transaction_side_conflict'
+    ),
+    []
+  );
+});
+
+test('字段名写法不同也能对上', () => {
+  const resolution: ArchiveDocument = {
+    sourcePath: '决议.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'shareholder_resolution',
+      title: '决议',
+      transactionChanges: [
+        {
+          field: '公司注册资本总额',
+          before: '1000万元',
+          after: '1500万元',
+          evidence: '公司注册资本总额由1000万元增加至1500万元',
+        },
+      ],
+    }),
+  };
+  const charter: ArchiveDocument = {
+    sourcePath: '章程.pdf',
+    currentStage: 'investment_execution',
+    facts: facts({
+      documentType: 'company_charter',
+      title: '章程',
+      evidenceQuotes: ['注册资本为1000万元'],
+    }),
+  };
+  const conflict = checkArchiveConsistency([resolution, charter]).find(
+    item => item.kind === 'transaction_side_conflict'
+  );
+  assert.equal(conflict?.constraint, '形成于该笔交易之前');
 });

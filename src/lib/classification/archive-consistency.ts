@@ -98,79 +98,169 @@ export interface ConsistencyFinding {
   relatedSourcePaths: string[];
 }
 
-function parseAmount(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const match = value.match(/[\d,.]+/);
+/**
+ * 数值 + 单位。单位必须一起比，否则「1000 万元」和「1000 元」会被当成同一个值。
+ */
+export interface ComparableValue {
+  amount: number;
+  unit: string;
+}
+
+const UNIT_PATTERN = '(?:万元|亿元|万美元|美元|万股|亿股|万|元|股|人|%|％)';
+
+function normalizeUnit(unit: string): string {
+  return unit === '％' ? '%' : unit;
+}
+
+function parseValue(text: string | null | undefined): ComparableValue | null {
+  if (!text) return null;
+  const match = text.match(new RegExp(`([\\d,.]+)\\s*(${UNIT_PATTERN})?`));
   if (!match) return null;
-  const amount = Number(match[0].replaceAll(',', ''));
-  return Number.isFinite(amount) ? amount : null;
+  const amount = Number(match[1].replaceAll(',', ''));
+  if (!Number.isFinite(amount)) return null;
+  return { amount, unit: normalizeUnit(match[2] ?? '') };
 }
 
 function approximatelyEqual(left: number, right: number): boolean {
   return Math.abs(left - right) <= Math.max(0.00001, Math.abs(right) * 0.0001);
 }
 
-/** 这份文件自己记载的注册资本。只取明确写出的数值，不做任何推算。 */
-export function extractRegisteredCapital(facts: DocumentFacts): number | null {
-  const texts = [
-    ...facts.transactionChanges
-      .filter(change => change.field.includes('注册资本'))
-      .flatMap(change => [change.after ?? '', change.before ?? '']),
-    ...facts.evidenceQuotes.filter(quote => quote.includes('注册资本')),
-  ].filter(Boolean);
-
-  const amounts = texts.flatMap(value =>
-    [
-      ...value.matchAll(/注册资本[^\d]{0,30}([\d,.]+)/g),
-      ...value.matchAll(/([\d,.]+)\s*万元/g),
-    ]
-      .map(match => Number(match[1].replaceAll(',', '')))
-      .filter(Number.isFinite)
-  );
-
-  return amounts.length > 0 ? Math.max(...amounts) : null;
+/** 数值相等且单位兼容（相同，或有一方没写单位）才算匹配。 */
+export function valuesMatch(
+  left: ComparableValue,
+  right: ComparableValue
+): boolean {
+  if (!approximatelyEqual(left.amount, right.amount)) return false;
+  if (!left.unit || !right.unit) return true;
+  return left.unit === right.unit;
 }
 
-interface CapitalTransition {
-  sourcePath: string;
-  before: number;
-  after: number;
-  stage: ArchiveBusinessStage;
+/**
+ * 字段名归一化。抽取出的字段名写法不统一——「注册资本」「公司注册资本」
+ * 「注册资本总额」指的是同一件事，比对时必须能对上。
+ */
+function normalizeFieldName(field: string): string {
+  return field
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/(公司|本次|人民币|标的|合计|总额|金额|数额|情况)/g, '')
+    .trim();
+}
+
+export function fieldsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizeFieldName(left);
+  const normalizedRight = normalizeFieldName(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
+}
+
+export interface FieldTransition {
+  field: string;
+  before: ComparableValue;
+  after: ComparableValue;
   evidence: string;
 }
 
 /**
- * 从一份交易文件里读出"注册资本由 X 变为 Y"。
+ * 从一份交易文件里读出所有「某字段由 X 变为 Y」。
  *
- * 不假设方向：减资决议同样写明前后值，一样能用。刻意不做"金额大的在后"这类推断——
- * 注册资本并非单调递增（减资、回购、对赌退出都会让它减少），凭大小推先后是循环论证。
+ * 不限于注册资本——实缴出资额、持股比例、股东人数、董事席位，任何写明了前后值的
+ * 字段都能作为交易锚点。不假设方向：减资、回购同样写明前后值，一样能用。
+ * 刻意不做"数值大的在后"这类推断，凭大小推先后是循环论证。
  */
-export function extractCapitalTransition(
+export function extractFieldTransitions(
   facts: DocumentFacts
-): { before: number; after: number; evidence: string } | null {
+): FieldTransition[] {
+  const transitions: FieldTransition[] = [];
+
   for (const change of facts.transactionChanges) {
-    if (!change.field.includes('注册资本')) continue;
-    const before = parseAmount(change.before);
-    const after = parseAmount(change.after);
-    if (before !== null && after !== null && before !== after) {
-      return { before, after, evidence: change.evidence };
-    }
+    const before = parseValue(change.before);
+    const after = parseValue(change.after);
+    if (!before || !after) continue;
+    if (approximatelyEqual(before.amount, after.amount)) continue;
+    transitions.push({
+      field: change.field,
+      before,
+      after,
+      evidence: change.evidence,
+    });
   }
 
+  // 文字表述兜底：事实里没拆成前后字段，但原文写了"由…增加至…"。
   const text = [
     ...facts.evidenceQuotes,
     ...facts.explicitStageClues,
     ...facts.transactionChanges.map(change => change.evidence),
   ].join('\n');
-  const match = text.match(
-    /注册资本[^\d]{0,10}由(?:人民币)?\s*([\d,.]+)\s*万元[^\d]{0,10}(?:增加至|增至|减少至|减至|变更为)(?:人民币)?\s*([\d,.]+)\s*万元/
+  const textPattern = new RegExp(
+    `([\\u4e00-\\u9fa5]{2,10})[^\\d]{0,10}由(?:人民币)?\\s*([\\d,.]+)\\s*(${UNIT_PATTERN})?[^\\d]{0,10}(?:增加至|增至|上升至|减少至|减至|下降至|变更为|调整为|变为)(?:人民币)?\\s*([\\d,.]+)\\s*(${UNIT_PATTERN})?`,
+    'g'
   );
-  if (!match) return null;
-  const before = Number(match[1].replaceAll(',', ''));
-  const after = Number(match[2].replaceAll(',', ''));
-  return Number.isFinite(before) && Number.isFinite(after) && before !== after
-    ? { before, after, evidence: match[0] }
-    : null;
+  for (const match of text.matchAll(textPattern)) {
+    const field = match[1];
+    const before = {
+      amount: Number(match[2].replaceAll(',', '')),
+      unit: normalizeUnit(match[3] ?? ''),
+    };
+    const after = {
+      amount: Number(match[4].replaceAll(',', '')),
+      unit: normalizeUnit(match[5] ?? ''),
+    };
+    if (!Number.isFinite(before.amount) || !Number.isFinite(after.amount)) {
+      continue;
+    }
+    if (approximatelyEqual(before.amount, after.amount)) continue;
+    if (transitions.some(existing => fieldsMatch(existing.field, field))) {
+      continue;
+    }
+    transitions.push({ field, before, after, evidence: match[0] });
+  }
+
+  return transitions;
+}
+
+/**
+ * 这份文件自己就某个字段记载的数值。只取明确写出的，不做任何推算。
+ *
+ * 只查询交易锚点实际变动过的字段，而不是把文件里所有数字都抽出来——后者噪音太大，
+ * 很容易让无关数字碰巧撞上交易金额。
+ */
+export function extractStatedValue(
+  facts: DocumentFacts,
+  field: string
+): ComparableValue | null {
+  for (const change of facts.transactionChanges) {
+    if (!fieldsMatch(change.field, field)) continue;
+    const stated = parseValue(change.after) ?? parseValue(change.before);
+    if (stated) return stated;
+  }
+
+  const normalizedField = normalizeFieldName(field);
+  if (!normalizedField) return null;
+  const escaped = normalizedField.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `${escaped}[^\\d]{0,30}?([\\d,.]+)\\s*(${UNIT_PATTERN})?`
+  );
+  for (const quote of [
+    ...facts.evidenceQuotes,
+    ...facts.explicitStageClues,
+    facts.title,
+  ]) {
+    const match = quote.match(pattern);
+    if (!match) continue;
+    const amount = Number(match[1].replaceAll(',', ''));
+    if (!Number.isFinite(amount)) continue;
+    return { amount, unit: normalizeUnit(match[2] ?? '') };
+  }
+  return null;
+}
+
+interface AnchorTransition extends FieldTransition {
+  sourcePath: string;
+  stage: ArchiveBusinessStage;
 }
 
 /** 表示"文件在此时形成"的日期含义。缴款期限、有效期等未来日期不在此列。 */
@@ -209,65 +299,74 @@ export function extractFormationDate(facts: DocumentFacts): string | null {
 }
 
 /** 数字链：当前文件的资本匹配某笔交易的变更前 / 变更后值，据此定出它在交易的哪一侧。 */
-function checkTransactionSides(
+export function collectAnchorTransitions(
   documents: ArchiveDocument[]
-): ConsistencyFinding[] {
-  const transitions: CapitalTransition[] = [];
+): AnchorTransition[] {
+  const anchors: AnchorTransition[] = [];
   for (const document of documents) {
     if (!TRANSACTION_RECORD_TYPES.includes(document.facts.documentType)) {
       continue;
     }
     if (!document.currentStage) continue;
-    const transition = extractCapitalTransition(document.facts);
-    if (!transition) continue;
-    transitions.push({
-      sourcePath: document.sourcePath,
-      before: transition.before,
-      after: transition.after,
-      stage: document.currentStage,
-      evidence: transition.evidence,
-    });
+    for (const transition of extractFieldTransitions(document.facts)) {
+      anchors.push({
+        ...transition,
+        sourcePath: document.sourcePath,
+        stage: document.currentStage,
+      });
+    }
   }
-  if (transitions.length === 0) return [];
+  return anchors;
+}
+
+function checkTransactionSides(
+  documents: ArchiveDocument[]
+): ConsistencyFinding[] {
+  const anchors = collectAnchorTransitions(documents);
+  if (anchors.length === 0) return [];
 
   const findings: ConsistencyFinding[] = [];
+  const seen = new Set<string>();
+
   for (const document of documents) {
-    const capital = extractRegisteredCapital(document.facts);
-    if (capital === null) continue;
     const currentRank = stageRank(document.currentStage);
     if (currentRank === null) continue;
 
-    for (const transition of transitions) {
-      if (transition.sourcePath === document.sourcePath) continue;
-      const anchorRank = stageRank(transition.stage);
+    for (const anchor of anchors) {
+      if (anchor.sourcePath === document.sourcePath) continue;
+      const anchorRank = stageRank(anchor.stage);
       if (anchorRank === null) continue;
 
-      const matchesBefore = approximatelyEqual(capital, transition.before);
-      const matchesAfter = approximatelyEqual(capital, transition.after);
+      const stated = extractStatedValue(document.facts, anchor.field);
+      if (!stated) continue;
+
+      const matchesBefore = valuesMatch(stated, anchor.before);
+      const matchesAfter = valuesMatch(stated, anchor.after);
       // 变更前后值相同的交易已在提取时排除，这里两者不会同时成立。
       if (!matchesBefore && !matchesAfter) continue;
 
-      if (matchesBefore && currentRank >= anchorRank) {
-        findings.push({
-          kind: 'transaction_side_conflict',
-          sourcePath: document.sourcePath,
-          currentStage: document.currentStage,
-          constraint: '形成于该笔交易之前',
-          reason: `本文件记载的注册资本 ${capital} 万元与“${transition.sourcePath}”记载的变更前值一致，说明它形成于该笔交易之前；但当前归档阶段不早于该交易所属阶段。`,
-          evidence: [transition.evidence],
-          relatedSourcePaths: [transition.sourcePath],
-        });
-      } else if (matchesAfter && currentRank < anchorRank) {
-        findings.push({
-          kind: 'transaction_side_conflict',
-          sourcePath: document.sourcePath,
-          currentStage: document.currentStage,
-          constraint: '形成于该笔交易之后',
-          reason: `本文件记载的注册资本 ${capital} 万元与“${transition.sourcePath}”记载的变更后值一致，说明它形成于该笔交易之后；但当前归档阶段早于该交易所属阶段。`,
-          evidence: [transition.evidence],
-          relatedSourcePaths: [transition.sourcePath],
-        });
+      const side = matchesBefore ? 'before' : 'after';
+      if (side === 'before' ? currentRank < anchorRank : currentRank >= anchorRank) {
+        continue;
       }
+      // 同一份文件可能同时匹配多个字段，只报一次。
+      const key = `${document.sourcePath}::${anchor.sourcePath}::${side}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const valueText = `${stated.amount}${stated.unit}`;
+      findings.push({
+        kind: 'transaction_side_conflict',
+        sourcePath: document.sourcePath,
+        currentStage: document.currentStage,
+        constraint: side === 'before' ? '形成于该笔交易之前' : '形成于该笔交易之后',
+        reason:
+          side === 'before'
+            ? `本文件记载的${anchor.field} ${valueText} 与“${anchor.sourcePath}”记载的变更前值一致，说明它形成于该笔交易之前；但当前归档阶段不早于该交易所属阶段。`
+            : `本文件记载的${anchor.field} ${valueText} 与“${anchor.sourcePath}”记载的变更后值一致，说明它形成于该笔交易之后；但当前归档阶段早于该交易所属阶段。`,
+        evidence: [anchor.evidence],
+        relatedSourcePaths: [anchor.sourcePath],
+      });
     }
   }
   return findings;
