@@ -144,7 +144,9 @@ test('读不到可比金额时才回到"说清缺什么"', () => {
     resolveEvidence(bareCharter, [postCharter])
   );
   assert.match(text, /不要凭空猜方向/);
-  assert.match(text, /股东会决议或增资协议/);
+  // 只说读不到什么，不断言项目里该有哪份文件。
+  assert.match(text, /哪个数值读不到/);
+  assert.equal(text.includes('股东会决议或增资协议'), false);
 });
 
 test('未来期限不能撑起中等把握', () => {
@@ -382,4 +384,46 @@ test('交易文件因类型未识别被挡掉时，如实说明而不是报"缺�
   // 上面的 reason 断言已经排除了"项目里没有交易记录"这种说法——
   // 文件就在项目里，只是被类型挡掉了，两者对用户的含义完全不同。
   assert.match(describeResolvedEvidence(resolved), /未采信/);
+});
+
+test('类型补回后，原本只能倾向性推测的章程被锚点钉死', () => {
+  // 完全复刻实测场景：决议内容抽对了，唯独类型是 unknown。
+  const untypedResolution = document(
+    '7君柔科技-股东会决议.pdf',
+    'investment_execution',
+    facts({
+      documentType: 'unknown',
+      title: '股东会决议',
+      transactionChanges: [
+        {
+          field: '注册资本',
+          before: '11.73624万元',
+          after: '13.04027万元',
+          evidence: '注册资本由11.73624万元增加至13.04027万元',
+        },
+      ],
+    })
+  );
+
+  // 类型未恢复：锚点被挡，只能靠章程自己的形成日期撑到中等把握 65。
+  const before = resolveEvidence(postCharter, [untypedResolution, preCharter]);
+  assert.equal(before.transactionSide, null);
+  assert.equal(before.confidence, 65);
+  assert.equal(before.anchorDiagnostic?.reason, 'anchor_type_rejected');
+
+  // 类型恢复后：锚点命中，方向来自决议白纸黑字的前后值，把握 85。
+  const typedResolution = document(
+    '7君柔科技-股东会决议.pdf',
+    'investment_execution',
+    facts({
+      ...untypedResolution.facts,
+      documentType: 'shareholder_resolution',
+      title: '股东会决议',
+    })
+  );
+  const after = resolveEvidence(postCharter, [typedResolution, preCharter]);
+  assert.equal(after.transactionSide?.side, 'after');
+  assert.equal(after.confidence, 85);
+  assert.equal(after.anchorDiagnostic, null);
+  assert.match(after.basis, /变更后值一致/);
 });
