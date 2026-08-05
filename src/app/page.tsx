@@ -33,7 +33,7 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
-  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye, Sparkles
+  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
 } from 'lucide-react';
 import {
   FOLDER_STRUCTURE,
@@ -259,12 +259,6 @@ interface MinimalDecisionResult {
   error?: string;
 }
 
-interface ModelStageDecisionResult {
-  status: 'success' | 'fallback';
-  decision: AgentDecisionResult['decision'] | null;
-  error?: string;
-}
-
 interface ClassifyResult {
   clientId: string;
   fileName: string;
@@ -284,8 +278,6 @@ interface ClassifyResult {
     reasoning: string;
   };
   agentDecision?: AgentDecisionResult;
-  modelStageDecision?: ModelStageDecisionResult;
-  modelStagePending?: boolean;
   minimalDecision?: MinimalDecisionResult;
   minimalPending?: boolean;
   projectSessionMemory?: ProjectSessionMemoryResult;
@@ -850,14 +842,12 @@ function ConsistencyPanel({
 function ClassifyResultItem({
   result,
   showLegacyClassification,
-  showModelStageDecision,
   showMinimalPath,
   onConfirmArchive,
   onCancelArchive,
 }: {
   result: ClassifyResult;
   showLegacyClassification: boolean;
-  showModelStageDecision: boolean;
   showMinimalPath: boolean;
   onConfirmArchive: (
     clientId: string,
@@ -868,15 +858,6 @@ function ClassifyResultItem({
 }) {
   const agentFolder = result.agentDecision?.decision.selectedFolder ?? null;
   const legacyClassification = result.legacyClassification;
-  const modelStage = result.modelStageDecision;
-  const modelStagePending = Boolean(result.modelStagePending && !modelStage);
-  const modelFolder = modelStage?.decision?.selectedFolder ?? null;
-  // 只有两边都给出了明确阶段才谈得上一致或分歧；任一方沉默时不下判断。
-  const modelAgreesWithAgent =
-    modelStage?.decision?.businessStage && result.agentDecision
-      ? modelStage.decision.businessStage ===
-        result.agentDecision.decision.businessStage
-      : null;
   const minimal = result.minimalDecision;
   const minimalPending = Boolean(result.minimalPending && !minimal);
   const minimalAgreesWithAgent =
@@ -886,7 +867,6 @@ function ClassifyResultItem({
   const comparisonColumns =
     1 +
     (showLegacyClassification ? 1 : 0) +
-    (showModelStageDecision ? 1 : 0) +
     (showMinimalPath ? 1 : 0);
   const agentConfidence = result.agentDecision?.decision.confidence ?? 0;
   const agentPending = Boolean(result.agentPending && !result.agentDecision);
@@ -1089,84 +1069,6 @@ function ClassifyResultItem({
                   缺什么：{minimal.missingEvidence}
                 </p>
               )}
-            </div>
-          )}
-
-          {showModelStageDecision && (
-            <div className="min-w-0 rounded-lg border border-sky-200 bg-sky-50/60 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-xs font-medium text-sky-900">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  模型阶段判断（影子）
-                </p>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {modelStage?.decision?.requiresHumanReview && (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-300 bg-amber-50 text-[10px] text-amber-700"
-                    >
-                      需要复核
-                    </Badge>
-                  )}
-                  {modelAgreesWithAgent !== null && (
-                    <Badge
-                      variant="outline"
-                      className={modelAgreesWithAgent
-                        ? 'border-green-300 bg-green-50 text-[10px] text-green-700'
-                        : 'border-amber-300 bg-amber-50 text-[10px] text-amber-700'}
-                    >
-                      {modelAgreesWithAgent ? '与规则一致' : '与规则分歧'}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              <p className="mt-2 break-words text-sm font-medium leading-5 text-sky-950">
-                {modelFolder
-                  ? modelFolder.folderPath.join(' / ')
-                  : modelStagePending
-                    ? '模型判断进行中'
-                    : modelStage?.status === 'fallback'
-                      ? '模型判断失败，本次以规则结论为准'
-                      : '模型认为证据不足以确定阶段'}
-              </p>
-              <p className="mt-1 break-words text-[11px] leading-4 text-sky-700">
-                业务阶段：{PROJECT_STAGE_LABELS[
-                  modelStage?.decision?.businessStage ?? 'unknown'
-                ] ?? '待确认'}
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <Progress
-                  value={modelStage?.decision?.confidence ?? 0}
-                  className="h-1.5 flex-1"
-                />
-                <span className="text-xs text-sky-800">
-                  {modelStage?.decision?.confidence ?? 0}%
-                </span>
-              </div>
-              <p className="mt-2 break-words text-xs leading-5 text-sky-800">
-                {modelStage?.decision?.reasoning ??
-                  modelStage?.error ??
-                  (modelStagePending
-                    ? '模型正在基于结构化事实和项目 Context 独立判断阶段。'
-                    : '暂无模型判断结果。')}
-              </p>
-              {(modelStage?.decision?.evidence.length ?? 0) > 0 && (
-                <ul className="mt-2 space-y-1 border-t border-sky-200 pt-2 text-[11px] leading-4 text-green-800">
-                  {modelStage?.decision?.evidence.slice(0, 2).map(evidence => (
-                    <li key={evidence} className="break-words">✓ {evidence}</li>
-                  ))}
-                </ul>
-              )}
-              {(modelStage?.decision?.contradictions.length ?? 0) > 0 && (
-                <ul className="mt-2 space-y-1 border-t border-sky-200 pt-2 text-[11px] leading-4 text-amber-800">
-                  {modelStage?.decision?.contradictions.slice(0, 2).map(item => (
-                    <li key={item} className="break-words">⚠ {item}</li>
-                  ))}
-                </ul>
-              )}
-              <p className="mt-2 border-t border-sky-200 pt-2 text-[10px] leading-4 text-sky-600">
-                影子模式：此结论仅供对照，不影响下方的归档建议。
-              </p>
             </div>
           )}
 
@@ -2371,7 +2273,6 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [showLegacyClassification, setShowLegacyClassification] = useState(true);
-  const [showModelStageDecision, setShowModelStageDecision] = useState(true);
   const [showMinimalPath, setShowMinimalPath] = useState(true);
 
   // 项目管理
@@ -2956,7 +2857,6 @@ export default function Home() {
             : undefined,
           requiresArchiveConfirmation: false,
           agentPending: true,
-          modelStagePending: showModelStageDecision,
           minimalPending: showMinimalPath,
           rulePreliminary: Boolean(quickRule),
         },
@@ -3074,7 +2974,6 @@ export default function Home() {
             autoArchive: false,
             agentDecision: true,
             legacyDecision: showLegacyClassification,
-            modelStageDecision: showModelStageDecision,
             minimalPath: showMinimalPath,
             sourcePath: file.webkitRelativePath || file.name,
           }),
@@ -3125,7 +3024,6 @@ export default function Home() {
             sourceProjectId: selectedProjectId,
             archiveStatus: 'pending',
             agentPending: false,
-            modelStagePending: false,
             minimalPending: false,
             rulePreliminary: false,
           };
@@ -3243,7 +3141,6 @@ export default function Home() {
     selectedProjectId,
     results,
     showLegacyClassification,
-    showModelStageDecision,
     showMinimalPath,
   ]);
 
@@ -3827,20 +3724,6 @@ export default function Home() {
                     </div>
                     <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
                       <Label
-                        htmlFor="model-stage-decision-toggle"
-                        className="cursor-pointer text-xs font-normal text-muted-foreground"
-                      >
-                        显示模型阶段判断
-                      </Label>
-                      <Switch
-                        id="model-stage-decision-toggle"
-                        checked={showModelStageDecision}
-                        onCheckedChange={setShowModelStageDecision}
-                        aria-label="运行并显示模型阶段判断影子结果"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 rounded-full border bg-muted/30 px-3 py-1.5">
-                      <Label
                         htmlFor="minimal-path-toggle"
                         className="cursor-pointer text-xs font-normal text-muted-foreground"
                       >
@@ -3857,7 +3740,7 @@ export default function Home() {
                 </div>
                 <CardDescription>
                   {results.length > 0
-                    ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}${showModelStageDecision ? '，并附模型阶段判断影子结果' : ''}`
+                    ? `已处理 ${results.length} 个文件；${showLegacyClassification ? '后续上传将运行双轨对照' : '当前仅运行 Agent 分类'}`
                     : showLegacyClassification
                       ? '上传后并列显示 Agent 与规则阶段判断'
                       : '规则对照已关闭，上传后直接显示 Agent 建议'}
@@ -3872,7 +3755,6 @@ export default function Home() {
                           key={result.clientId}
                           result={result}
                           showLegacyClassification={showLegacyClassification}
-                          showModelStageDecision={showModelStageDecision}
                           showMinimalPath={showMinimalPath}
                           onConfirmArchive={handleConfirmArchive}
                           onCancelArchive={handleCancelArchive}
