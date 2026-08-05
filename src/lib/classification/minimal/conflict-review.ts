@@ -130,8 +130,8 @@ ${params.projectName || '未提供'}
 【已归档文件及其事实】
 ${documentsBrief(params.documents)}
 
-【按日期排列的项目时间线】
-${describeTimeline(params.timeline, { showStage: true })}`;
+【按日期排列的项目时间线】（各文件归在哪个阶段见上一节，此处不再重复）
+${describeTimeline(params.timeline)}`;
 
   return [
     { role: 'system', content: systemPrompt },

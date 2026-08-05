@@ -67,7 +67,9 @@ export function describeTimeline(
           ? `（人工确认归入 ${entry.stage}）`
           : '（尚未归档）'
         : '';
-      return `- ${entry.date} ${leafName(entry.sourcePath)}${stage}：${entry.meaning}。原文：${entry.evidence}`;
+      // 不带 evidence：meaning 已经说清这是什么日期（"章程生效日期"），
+      // 再抄一遍出处对判断没有增量，16 份文件时白花约 800 字。
+      return `- ${entry.date} ${leafName(entry.sourcePath)}${stage}：${entry.meaning}`;
     })
     .join('\n');
 }
