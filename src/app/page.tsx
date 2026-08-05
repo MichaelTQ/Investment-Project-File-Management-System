@@ -2286,6 +2286,7 @@ export default function Home() {
     useState<ConsistencyReport | null>(null);
   const [minimalReport, setMinimalReport] =
     useState<MinimalRebuildReport | null>(null);
+  const [minimalClearing, setMinimalClearing] = useState(false);
   // 用户忽略过的提示不再重复弹。切换项目时清空；持久化留待后续。
   const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
     () => new Set()
@@ -2430,6 +2431,28 @@ export default function Home() {
       );
     } finally {
       setProjectContextRebuilding(false);
+    }
+  }, [selectedProjectId]);
+
+  const handleClearMinimalArchive = useCallback(async () => {
+    if (!selectedProjectId) return;
+    setMinimalClearing(true);
+    try {
+      const response = await fetch(
+        `/api/project-context?projectId=${encodeURIComponent(selectedProjectId)}&scope=minimal`,
+        { method: 'DELETE' }
+      );
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || '清空极简事实表失败');
+      }
+      setMinimalReport(data.minimal ?? null);
+    } catch (error) {
+      setProjectContextError(
+        error instanceof Error ? error.message : '清空极简事实表失败'
+      );
+    } finally {
+      setMinimalClearing(false);
     }
   }, [selectedProjectId]);
 
@@ -3586,6 +3609,21 @@ export default function Home() {
                       时间线由代码按日期排序拼出，不需要模型综合，因此每次归档后都能
                       免费全量重建。
                     </p>
+                    {minimalReport.documentCount > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-full text-[11px]"
+                        disabled={!selectedProjectId || minimalClearing}
+                        onClick={() => void handleClearMinimalArchive()}
+                      >
+                        {minimalClearing && (
+                          <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                        )}
+                        清空极简事实表（{minimalReport.documentCount} 份）
+                      </Button>
+                    )}
                   </div>
                 )}
                 {projectContextError && (
