@@ -1,8 +1,9 @@
 import type { ArchiveBusinessStage } from '../../folder-structure';
 import {
-  extractCapitalTransition,
+  extractFieldTransitions,
   extractFormationDate,
-  extractRegisteredCapital,
+  extractStatedValue,
+  valuesMatch,
 } from '../archive-consistency';
 import type { MinimalDocument } from './store';
 
@@ -49,7 +50,9 @@ export interface TransactionSide {
   side: 'before' | 'after';
   anchorSourcePath: string;
   anchorStage: ArchiveBusinessStage | null;
-  amount: number;
+  /** 用来定位的是哪个字段——不限于注册资本。 */
+  field: string;
+  valueText: string;
   evidence: string;
 }
 
@@ -58,8 +61,9 @@ export type EvidenceStrength = 'high' | 'medium' | 'low' | 'none';
 export interface CapitalTendency {
   side: 'before' | 'after';
   siblingSourcePath: string;
-  currentAmount: number;
-  siblingAmount: number;
+  field: string;
+  currentText: string;
+  siblingText: string;
 }
 
 export interface ResolvedEvidence {
@@ -101,8 +105,16 @@ function hasFormationDate(document: MinimalDocument): boolean {
   return extractFormationDate(document.facts) !== null;
 }
 
-function approximatelyEqual(left: number, right: number): boolean {
-  return Math.abs(left - right) <= Math.max(0.00001, Math.abs(right) * 0.0001);
+/**
+ * 这份文件写明了数值的字段。倾向性比较只在双方都写明的字段上进行，
+ * 避免拿两份文件里不相干的数字硬比。
+ */
+function comparableFields(document: MinimalDocument): string[] {
+  const fields = document.facts.transactionChanges.map(change => change.field);
+  // 交易变化里没有时，退回投资档案里最常见的几个可比字段。
+  return fields.length > 0
+    ? fields
+    : ['注册资本', '实缴出资额', '认缴出资额', '持股比例'];
 }
 
 /**
@@ -123,55 +135,53 @@ export function resolveEvidence(
     )
     .map(document => document.sourcePath);
 
-  const capital = extractRegisteredCapital(current.facts);
+  // 遍历项目里所有交易文件写明的字段变更，不限于注册资本——实缴出资额、
+  // 持股比例、股东人数，任何有前后值的字段都能定位当前文件在交易的哪一侧。
   let transactionSide: TransactionSide | null = null;
+  for (const document of others) {
+    if (document.sourcePath === current.sourcePath) continue;
+    if (!TRANSACTION_RECORD_TYPES.has(document.facts.documentType)) continue;
 
-  if (capital !== null) {
-    for (const document of others) {
-      if (document.sourcePath === current.sourcePath) continue;
-      if (!TRANSACTION_RECORD_TYPES.has(document.facts.documentType)) continue;
-      const transition = extractCapitalTransition(document.facts);
-      if (!transition) continue;
+    for (const transition of extractFieldTransitions(document.facts)) {
+      const stated = extractStatedValue(current.facts, transition.field);
+      if (!stated) continue;
+      const matchesBefore = valuesMatch(stated, transition.before);
+      const matchesAfter = valuesMatch(stated, transition.after);
+      if (!matchesBefore && !matchesAfter) continue;
 
-      if (approximatelyEqual(capital, transition.before)) {
-        transactionSide = {
-          side: 'before',
-          anchorSourcePath: document.sourcePath,
-          anchorStage: document.stage,
-          amount: capital,
-          evidence: transition.evidence,
-        };
-        break;
-      }
-      if (approximatelyEqual(capital, transition.after)) {
-        transactionSide = {
-          side: 'after',
-          anchorSourcePath: document.sourcePath,
-          anchorStage: document.stage,
-          amount: capital,
-          evidence: transition.evidence,
-        };
-        break;
-      }
-    }
-  }
-
-  // 没有交易锚点时，同类文件之间的金额差异只能形成倾向，不能形成结论。
-  let tendency: CapitalTendency | null = null;
-  if (!transactionSide && capital !== null) {
-    for (const document of others) {
-      if (document.facts.documentType !== current.facts.documentType) continue;
-      const siblingCapital = extractRegisteredCapital(document.facts);
-      if (siblingCapital === null || approximatelyEqual(capital, siblingCapital)) {
-        continue;
-      }
-      tendency = {
-        side: capital < siblingCapital ? 'before' : 'after',
-        siblingSourcePath: document.sourcePath,
-        currentAmount: capital,
-        siblingAmount: siblingCapital,
+      transactionSide = {
+        side: matchesBefore ? 'before' : 'after',
+        anchorSourcePath: document.sourcePath,
+        anchorStage: document.stage,
+        field: transition.field,
+        valueText: `${stated.amount}${stated.unit}`,
+        evidence: transition.evidence,
       };
       break;
+    }
+    if (transactionSide) break;
+  }
+
+  // 没有交易锚点时，同类文件之间的数值差异只能形成倾向，不能形成结论。
+  let tendency: CapitalTendency | null = null;
+  if (!transactionSide) {
+    outer: for (const document of others) {
+      if (document.facts.documentType !== current.facts.documentType) continue;
+      // 双方都写明了同一个字段，才谈得上比较。
+      for (const field of comparableFields(current)) {
+        const currentValue = extractStatedValue(current.facts, field);
+        const siblingValue = extractStatedValue(document.facts, field);
+        if (!currentValue || !siblingValue) continue;
+        if (valuesMatch(currentValue, siblingValue)) continue;
+        tendency = {
+          side: currentValue.amount < siblingValue.amount ? 'before' : 'after',
+          siblingSourcePath: document.sourcePath,
+          field,
+          currentText: `${currentValue.amount}${currentValue.unit}`,
+          siblingText: `${siblingValue.amount}${siblingValue.unit}`,
+        };
+        break outer;
+      }
     }
   }
 
@@ -186,9 +196,9 @@ export function resolveEvidence(
         : 'none';
 
   const basis = transactionSide
-    ? `注册资本 ${transactionSide.amount} 万元与“${transactionSide.anchorSourcePath}”记载的变更${transactionSide.side === 'before' ? '前' : '后'}值一致`
+    ? `${transactionSide.field} ${transactionSide.valueText} 与“${transactionSide.anchorSourcePath}”记载的变更${transactionSide.side === 'before' ? '前' : '后'}值一致`
     : tendency
-      ? `缺少交易文件佐证，仅按"投资项目多为增资、金额较低者形成较早"作倾向性推测（本文件 ${tendency.currentAmount} 万元，同类文件 ${tendency.siblingAmount} 万元）`
+      ? `缺少交易文件佐证，仅按"投资项目多为增资、数值较低者形成较早"作倾向性推测（本文件${tendency.field} ${tendency.currentText}，同类文件 ${tendency.siblingText}）`
       : strength === 'medium'
         ? '只有文件形成日期可用，缺少可比对的交易记录'
         : strength === 'low'
@@ -210,23 +220,24 @@ export function describeResolvedEvidence(resolved: ResolvedEvidence): string {
   const lines: string[] = [];
 
   if (resolved.transactionSide) {
-    const { side, anchorSourcePath, amount, evidence } = resolved.transactionSide;
+    const { side, anchorSourcePath, field, valueText, evidence } =
+      resolved.transactionSide;
     lines.push(
-      `【已由代码确定】本文件记载的注册资本 ${amount} 万元，与“${anchorSourcePath}”记载的变更${side === 'before' ? '前' : '后'}值一致，` +
+      `【已由代码确定】本文件记载的${field} ${valueText}，与“${anchorSourcePath}”记载的变更${side === 'before' ? '前' : '后'}值一致，` +
         `因此本文件形成于该笔交易${side === 'before' ? '之前' : '之后'}。原文依据：${evidence}`
     );
     lines.push(
-      '这条结论已经过确定性计算，请直接采用，不要再自行比较金额大小推断先后。'
+      '这条结论已经过确定性计算，请直接采用，不要再自行比较数值大小推断先后。'
     );
   } else if (resolved.tendency) {
-    const { side, siblingSourcePath, currentAmount, siblingAmount } =
+    const { side, siblingSourcePath, field, currentText, siblingText } =
       resolved.tendency;
     lines.push(
-      `项目里没有记载资本变更前后值的交易文件，无法确定先后。` +
-        `本文件注册资本 ${currentAmount} 万元，同类型文件“${siblingSourcePath}”为 ${siblingAmount} 万元。`
+      `项目里没有记载该字段变更前后值的交易文件，无法确定先后。` +
+        `本文件${field} ${currentText}，同类型文件“${siblingSourcePath}”为 ${siblingText}。`
     );
     lines.push(
-      `【倾向性推测，不是证据】投资项目中增资多于减资，金额较低者通常形成较早，` +
+      `【倾向性推测，不是证据】投资项目中增资多于减资，数值较低者通常形成较早，` +
         `据此本文件**倾向于**是交易${side === 'before' ? '前' : '后'}版本。` +
         '请据此给出默认建议，但必须在理由中写明这是缺少交易文件时的推测，并把 review 设为 true。' +
         '若本文件有明确的减资、回购或退出表述，则不适用此倾向，应据实判断。'

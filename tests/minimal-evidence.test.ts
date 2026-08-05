@@ -191,7 +191,7 @@ test('有交易锚点时提示模型直接采用代码结论', () => {
   );
   assert.match(text, /已由代码确定/);
   assert.match(text, /形成于该笔交易之前/);
-  assert.match(text, /不要再自行比较金额大小/);
+  assert.match(text, /不要再自行比较数值大小/);
 });
 
 test('既无数字也无日期时把握最低', () => {
