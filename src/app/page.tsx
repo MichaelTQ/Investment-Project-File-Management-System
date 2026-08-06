@@ -42,6 +42,7 @@ import {
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye,
   Pause, Play, Square, FolderUp
 } from 'lucide-react';
+import { parseSourceLocation } from '@/lib/archive-subpath';
 import {
   FOLDER_STRUCTURE,
   SYSTEM_ARCHIVE_FOLDERS,
@@ -201,12 +202,14 @@ interface ClassifyResult {
   /** 命名规范给出的候选阶段，供界面说明为什么这份文件要读内容。 */
   namingStages?: string[];
   /** 这份文件的归档位置最终是怎么定的。界面据此说明分析路径，省得去翻日志。 */
-  decidePath?: 'naming_rule' | 'batch' | 'single';
+  decidePath?: 'folder_rule' | 'naming_rule' | 'batch' | 'single';
+  /** 阶段文件夹之下的目录层级。来自上传时的文件夹结构，或人工指定。 */
+  subPath?: string[];
 }
 
 /** 批量分析的进度。phase 决定进度条上显示的是哪一步。 */
 interface BatchProgress {
-  phase: 'naming' | 'uploading' | 'extracting' | 'deciding';
+  phase: 'foldering' | 'naming' | 'uploading' | 'extracting' | 'deciding';
   total: number;
   done: number;
   currentFile: string;
@@ -214,6 +217,7 @@ interface BatchProgress {
 }
 
 const BATCH_PHASE_LABELS: Record<BatchProgress['phase'], string> = {
+  foldering: '按文件夹分流',
   naming: '按文件名分流',
   uploading: '上传规范已覆盖的文件',
   extracting: '抽取事实',
@@ -708,13 +712,16 @@ function ClassifyDetailsDialog({
                   </p>
                   <p className="break-words">
                     <span className="text-muted-foreground">归档位置来自：</span>
-                    {result.decidePath === 'naming_rule'
+                    {result.decidePath === 'folder_rule'
+                      ? '上传时所在的文件夹名，未读取文件内容'
+                      : result.decidePath === 'naming_rule'
                       ? '命名规范直接定位，未读取文件内容'
                       : result.decidePath === 'batch'
                         ? '整批一次判断（同批文件一起交给模型）'
                         : '逐份判断（这份文件单独交给模型）'}
                   </p>
-                  {result.decidePath === 'naming_rule' && (
+                  {(result.decidePath === 'folder_rule' ||
+                    result.decidePath === 'naming_rule') && (
                     <p className="break-words text-amber-700">
                       这份文件没有人和模型读过内容。右键可以要求提取事实并复核。
                     </p>
@@ -2083,11 +2090,15 @@ interface BatchReviewFile {
   fileSize: number;
   /** 当前选定的归档位置。null 表示模型没定下来，必须人工选。 */
   folder: ArchiveFolder | null;
+  /** 阶段文件夹之下用户自己的目录层级，原样保留。 */
+  subPath?: string[];
   /** 模型原本的建议，用来标出哪些被人工改过。 */
   suggestedFolderId: string | null;
   needsReview: boolean;
-  /** 纯按文件名定位、没读过内容。界面要标出来，因为这一类最该被人扫一眼。 */
+  /** 没读过内容（按文件名或按上传文件夹定位）。界面要标出来，这一类最该被人扫一眼。 */
   byNamingRule: boolean;
+  /** 来自上传时的文件夹，整个文件夹是一个单位。 */
+  byFolderRule?: boolean;
   namingTerm?: string | null;
   decidePath?: ClassifyResult['decidePath'];
   archiveStatus?: ClassifyResult['archiveStatus'];
@@ -2116,14 +2127,16 @@ function buildBatchTree(files: BatchReviewFile[]): BatchTreeNode[] {
   };
 
   for (const file of files) {
-    if (!file.folder) {
-      childNode(roots, '未确定归档位置', UNPLACED_KEY).files.push(file);
-      continue;
-    }
+    // 判不出阶段的也按来源文件夹分组，而不是堆成一片。这样"整个文件夹移动/ 取消"
+    // 在待办这一侧同样成立——而待办恰恰是最需要按文件夹批量处理的地方。
+    const basePath = file.folder
+      ? file.folder.folderPath
+      : ['未确定归档位置'];
     let siblings = roots;
     let node: BatchTreeNode | null = null;
-    let keyPrefix = '';
-    for (const segment of file.folder.folderPath) {
+    let keyPrefix = file.folder ? '' : UNPLACED_KEY;
+    // 阶段路径之后接上用户自己的层级，预览树长得和归档后一模一样。
+    for (const segment of [...basePath, ...(file.subPath ?? [])]) {
       keyPrefix = keyPrefix ? `${keyPrefix}/${segment}` : segment;
       node = childNode(siblings, segment, keyPrefix);
       siblings = node.children;
@@ -2144,10 +2157,35 @@ function countBatchTreeFiles(node: BatchTreeNode): number {
   );
 }
 
+/** 一个文件夹节点底下的全部文件，含更深层级。文件夹级操作都作用在这批上。 */
+function collectBatchTreeFiles(node: BatchTreeNode): BatchReviewFile[] {
+  return [
+    ...node.files,
+    ...node.children.flatMap(collectBatchTreeFiles),
+  ];
+}
+
+/**
+ * 这个文件夹节点对应到 subPath 里的第几段。
+ *
+ * 节点的 key 是从根拼起来的完整路径，前面若干段是阶段路径（或"未确定"这个占位），
+ * 之后才是用户自己的层级。返回 -1 表示这个节点还在阶段路径之内——那是系统预设的
+ * 目录，不允许改名，也不能整体挪走。
+ */
+function subPathIndexOfNode(node: BatchTreeNode, file: BatchReviewFile): number {
+  const depth = node.key.split('/').length;
+  const baseLength = file.folder ? file.folder.folderPath.length : 1;
+  return depth - baseLength - 1;
+}
+
 interface BatchTreeActions {
   onShowDetails: (clientId: string) => void;
   onExtractFacts: (clientId: string) => void;
   onMoveFile: (file: BatchReviewFile) => void;
+  /** 整个文件夹换位置。判错一个装了几十份文件的文件夹，代价就是这一次点击。 */
+  onMoveFolder: (node: BatchTreeNode) => void;
+  onRenameFolder: (node: BatchTreeNode) => void;
+  onDiscardFolder: (node: BatchTreeNode) => void;
   extractingClientId: string | null;
 }
 
@@ -2164,29 +2202,70 @@ function BatchTreeItem({
   const [isOpen, setIsOpen] = useState(true);
   const fileCount = countBatchTreeFiles(node);
   const isUnplaced = node.key === UNPLACED_KEY;
+  // 阶段路径之内的节点是系统预设目录，不能改名也不能整体挪走；
+  // 只有用户自己带进来的层级才允许文件夹级操作。
+  const firstFile = collectBatchTreeFiles(node)[0];
+  const isUserFolder =
+    !isUnplaced && Boolean(firstFile) && subPathIndexOfNode(node, firstFile) >= 0;
+
+  const folderRow = (
+    <div
+      className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+      style={{ paddingLeft: `${level * 12 + 6}px` }}
+      onClick={() => setIsOpen(!isOpen)}
+    >
+      {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+      {isUnplaced
+        ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+        : isOpen
+          ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" />
+          : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+      <span className={`text-xs font-medium truncate ${isUnplaced ? 'text-amber-700' : ''}`}>
+        {node.name}
+      </span>
+      {isUserFolder && (
+        <Badge
+          variant="outline"
+          className="shrink-0 border-slate-300 bg-slate-50 px-1 py-0 text-[10px] text-slate-500"
+          title="来自上传时的文件夹，右键可整体移动、改名或取消归档"
+        >
+          来源
+        </Badge>
+      )}
+      {fileCount > 0 && (
+        <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">
+          {fileCount}
+        </Badge>
+      )}
+    </div>
+  );
 
   return (
     <div className="select-none">
-      <div
-        className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
-        onClick={() => setIsOpen(!isOpen)}
-      >
-        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-        {isUnplaced
-          ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-          : isOpen
-            ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" />
-            : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-        <span className={`text-xs font-medium truncate ${isUnplaced ? 'text-amber-700' : ''}`}>
-          {node.name}
-        </span>
-        {fileCount > 0 && (
-          <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">
-            {fileCount}
-          </Badge>
-        )}
-      </div>
+      {isUserFolder ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>{folderRow}</ContextMenuTrigger>
+          <ContextMenuContent className="w-48">
+            <ContextMenuItem onSelect={() => actions.onMoveFolder(node)}>
+              <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />
+              移动整个文件夹（{fileCount} 份）
+            </ContextMenuItem>
+            <ContextMenuItem onSelect={() => actions.onRenameFolder(node)}>
+              <Pencil className="h-3.5 w-3.5 mr-2" />
+              重命名文件夹
+            </ContextMenuItem>
+            <ContextMenuItem
+              className="text-destructive"
+              onSelect={() => actions.onDiscardFolder(node)}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
+              取消归档整个文件夹
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
+      ) : (
+        folderRow
+      )}
       {isOpen && (
         <div>
           {node.children.map(child => (
@@ -2280,24 +2359,72 @@ function BatchTreeItem({
   );
 }
 
-/** 改归档位置。只允许选真实存在的阶段文件夹，避免造出归档接口不认识的 folderId。 */
+/**
+ * 把选中的完整路径拆成「阶段文件夹 + 阶段之下的子路径」。
+ *
+ * 归档接口只认预设的八个阶段 folderId，子路径单独传。所以不管用户在树上点到多深，
+ * 都要先找出它落在哪个阶段下面。点到"投资项目档案"或"基金投资及投资执行"这类
+ * 纯分组层时找不到阶段，返回 null——那些层不能直接放文件。
+ */
+function splitStageAndSubPath(
+  fullPath: string[]
+): { folder: ArchiveFolder; subPath: string[] } | null {
+  const folder = SYSTEM_ARCHIVE_FOLDERS.find(
+    candidate =>
+      candidate.folderPath.length <= fullPath.length &&
+      candidate.folderPath.every((segment, index) => fullPath[index] === segment)
+  );
+  if (!folder) return null;
+  return { folder, subPath: fullPath.slice(folder.folderPath.length) };
+}
+
+/**
+ * 改归档位置。
+ *
+ * 树上显示的是**这个项目真实的目录结构**——预设八阶段加上此前归档时建出来的所有
+ * 子文件夹，而不是机械地只列那八个。用户按自己的习惯建过什么层级，这里就能直接选到，
+ * 否则每次都得重新敲一遍子文件夹名。
+ */
 function BatchMoveDialog({
   file,
+  existingFiles,
   onConfirm,
   onCancel,
 }: {
   file: BatchReviewFile;
-  onConfirm: (folder: ArchiveFolder) => void;
+  /** 本项目已归档的文件，用来把真实子目录合并进选择树。 */
+  existingFiles: ArchivedFile[];
+  onConfirm: (folder: ArchiveFolder, subPath: string[]) => void;
   onCancel: () => void;
 }) {
-  const [selectedId, setSelectedId] = useState(file.folder?.folderId ?? '');
-  const target = SYSTEM_ARCHIVE_FOLDERS.find(
-    folder => folder.folderId === selectedId
+  const currentFullPath = file.folder
+    ? [...file.folder.folderPath, ...(file.subPath ?? [])]
+    : [];
+  const [selectedPath, setSelectedPath] = useState<string[]>(currentFullPath);
+  const [selectedId, setSelectedId] = useState(
+    file.subPath && file.subPath.length > 0
+      ? `custom-${currentFullPath.join('/')}`
+      : file.folder?.folderId ?? ''
   );
+  const [newSubfolder, setNewSubfolder] = useState('');
+
+  const mergedTree = useMemo(
+    () =>
+      mergeFolderStructure(
+        FOLDER_STRUCTURE,
+        existingFiles.map(item => item.folderPath).filter(path => path.length > 0)
+      ),
+    [existingFiles]
+  );
+
+  const subName = newSubfolder.trim();
+  const targetPath = subName ? [...selectedPath, subName] : selectedPath;
+  const target =
+    selectedPath.length > 0 ? splitStageAndSubPath(targetPath) : null;
 
   return (
     <Dialog open={true} onOpenChange={() => onCancel()}>
-      <DialogContent className="flex max-h-[80vh] max-w-lg flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[85vh] max-w-lg flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5" />
@@ -2305,28 +2432,58 @@ function BatchMoveDialog({
           </DialogTitle>
           <DialogDescription className="break-all">
             「<span className="font-medium text-foreground">{file.fileName}</span>」
-            当前位置：{file.folder ? file.folder.folderPath.join(' / ') : '未确定'}
+            当前位置：
+            {currentFullPath.length > 0 ? currentFullPath.join(' / ') : '未确定'}
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="h-[300px] rounded-lg border p-2">
+
+        <ScrollArea className="h-[280px] shrink-0 rounded-lg border p-2">
           <MoveFolderNode
-            node={FOLDER_STRUCTURE}
+            node={mergedTree}
             level={0}
             selectedId={selectedId}
-            onSelect={id => setSelectedId(id)}
+            onSelect={(id, _name, path) => {
+              setSelectedId(id);
+              setSelectedPath(path);
+              setNewSubfolder('');
+            }}
             path={[]}
           />
         </ScrollArea>
-        {selectedId && !target && (
-          <p className="text-xs text-amber-700">
+
+        {selectedPath.length > 0 && (
+          <div className="shrink-0 space-y-1.5">
+            <Label className="text-xs text-muted-foreground">
+              新建子文件夹（可选，建在选中的位置下面）
+            </Label>
+            <Input
+              placeholder="输入子文件夹名称，留空则直接放在选中位置"
+              value={newSubfolder}
+              onChange={event => setNewSubfolder(event.target.value)}
+              maxLength={100}
+              className="h-8 text-sm"
+            />
+          </div>
+        )}
+
+        {selectedPath.length > 0 && !target && (
+          <p className="shrink-0 text-xs text-amber-700">
             这一层只是分组，不能直接存放文件，请选择它下面的具体阶段。
           </p>
         )}
+        {target && (
+          <p className="shrink-0 break-all text-xs text-muted-foreground">
+            目标位置：{targetPath.join(' / ')}
+          </p>
+        )}
+
         <DialogFooter>
           <Button variant="outline" onClick={onCancel}>取消</Button>
           <Button
             disabled={!target}
-            onClick={() => { if (target) onConfirm(target); }}
+            onClick={() => {
+              if (target) onConfirm(target.folder, target.subPath);
+            }}
           >
             确认修改
           </Button>
@@ -2343,9 +2500,11 @@ function BatchReviewDialog({
   projectName,
   archiving,
   archiveProgress,
-  onChangeFolder,
+  onChangeLocations,
+  onDiscardFiles,
   onArchiveAll,
   onShowDetails,
+  existingFiles,
   detailsResult,
   onCloseDetails,
   onExtractFacts,
@@ -2357,9 +2516,14 @@ function BatchReviewDialog({
   projectName: string;
   archiving: boolean;
   archiveProgress: { done: number; total: number } | null;
-  onChangeFolder: (clientId: string, folder: ArchiveFolder) => void;
+  onChangeLocations: (
+    updates: Array<{ clientId: string; folder: ArchiveFolder; subPath: string[] }>
+  ) => void;
+  onDiscardFiles: (clientIds: string[]) => void;
   onArchiveAll: () => void;
   onShowDetails: (clientId: string) => void;
+  /** 本项目已归档的文件。选归档位置时要显示真实目录树，不能只列预设八阶段。 */
+  existingFiles: ArchivedFile[];
   /** 右键点开的那一份。详情弹窗嵌在本弹窗内部，不能做成并列的第二个模态。 */
   detailsResult: ClassifyResult | null;
   onCloseDetails: () => void;
@@ -2368,6 +2532,11 @@ function BatchReviewDialog({
   extractingClientId: string | null;
 }) {
   const [moveTarget, setMoveTarget] = useState<BatchReviewFile | null>(null);
+  const [folderMoveTarget, setFolderMoveTarget] = useState<BatchTreeNode | null>(
+    null
+  );
+  const [renameTarget, setRenameTarget] = useState<BatchTreeNode | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const tree = useMemo(() => buildBatchTree(files), [files]);
   const pathCounts = useMemo(
@@ -2377,7 +2546,7 @@ function BatchReviewDialog({
           if (file.decidePath) acc[file.decidePath] += 1;
           return acc;
         },
-        { naming_rule: 0, batch: 0, single: 0 }
+        { folder_rule: 0, naming_rule: 0, batch: 0, single: 0 }
       ),
     [files]
   );
@@ -2389,10 +2558,54 @@ function BatchReviewDialog({
     file => file.archiveStatus === 'error'
   ).length;
 
+  /**
+   * 把文件夹级操作换算成每份文件的新位置。
+   *
+   * 移动文件夹 F 到目标 T，意思是 F 连同它的名字挂到 T 下面；F 里面每份文件在 F
+   * 之下的相对层级原样不动。所以新 subPath = 目标子路径 + F 的名字 + 该文件在 F
+   * 之下剩余的层级。
+   */
+  const relocateFolder = (
+    node: BatchTreeNode,
+    folder: ArchiveFolder,
+    targetSubPath: string[]
+  ) => {
+    const updates = collectBatchTreeFiles(node).map(file => {
+      const index = subPathIndexOfNode(node, file);
+      const rest = (file.subPath ?? []).slice(index + 1);
+      return {
+        clientId: file.clientId,
+        folder,
+        subPath: [...targetSubPath, node.name, ...rest],
+      };
+    });
+    onChangeLocations(updates);
+  };
+
+  const renameFolder = (node: BatchTreeNode, newName: string) => {
+    const updates = collectBatchTreeFiles(node).flatMap(file => {
+      const index = subPathIndexOfNode(node, file);
+      if (index < 0) return [];
+      const subPath = [...(file.subPath ?? [])];
+      subPath[index] = newName;
+      // 判不出阶段的文件没有 folder，改名不该顺手把它归档到某处。
+      if (!file.folder) return [];
+      return [{ clientId: file.clientId, folder: file.folder, subPath }];
+    });
+    onChangeLocations(updates);
+  };
+
   const treeActions: BatchTreeActions = {
     onShowDetails,
     onExtractFacts,
     onMoveFile: setMoveTarget,
+    onMoveFolder: setFolderMoveTarget,
+    onRenameFolder: node => {
+      setRenameTarget(node);
+      setRenameValue(node.name);
+    },
+    onDiscardFolder: node =>
+      onDiscardFiles(collectBatchTreeFiles(node).map(file => file.clientId)),
     extractingClientId,
   };
 
@@ -2413,8 +2626,11 @@ function BatchReviewDialog({
         {/* 整批分流汇总。这些数字原先只在服务端日志里，用户看不到就等于没有。 */}
         <div className="shrink-0 rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5">
           <p className="break-words">
-            <span className="text-muted-foreground">按文件名分流：</span>
-            规范直接定位 <span className="font-medium">{pathCounts.naming_rule}</span> 份
+            <span className="text-muted-foreground">分流结果：</span>
+            按上传文件夹定位{' '}
+            <span className="font-medium">{pathCounts.folder_rule}</span> 份
+            {' · '}
+            按文件名规范定位 <span className="font-medium">{pathCounts.naming_rule}</span> 份
             {' · '}
             读内容后判断{' '}
             <span className="font-medium">
@@ -2431,9 +2647,9 @@ function BatchReviewDialog({
               </span>
             )}
           </p>
-          {pathCounts.naming_rule > 0 && (
+          {pathCounts.folder_rule + pathCounts.naming_rule > 0 && (
             <p className="mt-0.5 break-words text-muted-foreground">
-              「按规范」的 {pathCounts.naming_rule} 份没有读过内容，右键可要求提取事实并复核。
+              其中 {pathCounts.folder_rule + pathCounts.naming_rule} 份没有读过内容，右键可要求提取事实并复核。
             </p>
           )}
         </div>
@@ -2488,11 +2704,67 @@ function BatchReviewDialog({
           <BatchMoveDialog
             file={moveTarget}
             onCancel={() => setMoveTarget(null)}
-            onConfirm={folder => {
-              onChangeFolder(moveTarget.clientId, folder);
+            existingFiles={existingFiles}
+            onConfirm={(folder, subPath) => {
+              onChangeLocations([
+                { clientId: moveTarget.clientId, folder, subPath },
+              ]);
               setMoveTarget(null);
             }}
           />
+        )}
+
+        {folderMoveTarget && (
+          <BatchMoveDialog
+            file={{
+              ...collectBatchTreeFiles(folderMoveTarget)[0],
+              fileName: `文件夹「${folderMoveTarget.name}」及其中 ${countBatchTreeFiles(folderMoveTarget)} 份文件`,
+            }}
+            existingFiles={existingFiles}
+            onCancel={() => setFolderMoveTarget(null)}
+            onConfirm={(folder, subPath) => {
+              relocateFolder(folderMoveTarget, folder, subPath);
+              setFolderMoveTarget(null);
+            }}
+          />
+        )}
+
+        {renameTarget && (
+          <Dialog open={true} onOpenChange={() => setRenameTarget(null)}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Pencil className="h-5 w-5" />
+                  重命名文件夹
+                </DialogTitle>
+                <DialogDescription className="break-all">
+                  归档后这一层的目录名。里面 {countBatchTreeFiles(renameTarget)} 份文件的位置随之改变。
+                </DialogDescription>
+              </DialogHeader>
+              <Input
+                value={renameValue}
+                maxLength={100}
+                onChange={event => setRenameValue(event.target.value)}
+                placeholder="输入新的文件夹名"
+              />
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setRenameTarget(null)}>
+                  取消
+                </Button>
+                <Button
+                  disabled={
+                    !renameValue.trim() || renameValue.trim() === renameTarget.name
+                  }
+                  onClick={() => {
+                    renameFolder(renameTarget, renameValue.trim());
+                    setRenameTarget(null);
+                  }}
+                >
+                  确认重命名
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         )}
 
         {detailsResult && (
@@ -2636,7 +2908,7 @@ export default function Home() {
   const [batchReviewOpen, setBatchReviewOpen] = useState(false);
   /** 人工改过的归档位置，按 clientId 记。没有条目的沿用模型建议。 */
   const [batchFolderOverrides, setBatchFolderOverrides] = useState<
-    Record<string, ArchiveFolder>
+    Record<string, { folder: ArchiveFolder; subPath: string[] }>
   >({});
   const [batchArchiving, setBatchArchiving] = useState(false);
   const [batchArchiveProgress, setBatchArchiveProgress] = useState<
@@ -3424,6 +3696,8 @@ export default function Home() {
       clientId: crypto.randomUUID(),
       file,
       sourcePath: sourcePathOf(file),
+      // 顶层条目名 + 顶层之下的剩余层级。判断只发生在顶层，更深的原样保留。
+      location: parseSourceLocation(sourcePathOf(file)),
       storageKey: '',
       failed: false,
       /** 是否已产出待人工确认的建议。中断时只留下产出了建议的，其余一律清掉。 */
@@ -3486,12 +3760,147 @@ export default function Home() {
     };
 
     try {
-      // ---------- 第 0 步：按文件名分流 ----------
+      // ---------- 第 0 步之前：按顶层文件夹分流 ----------
+      // 用户拖进来的根目录之下，每个直接子项各自判一个阶段。装在文件夹里的文件
+      // **一份都不读**——文件夹名就是判断依据，里面的层级原样保留。这是这条流程
+      // 省时间的全部来源：56 份财务底稿判一次文件夹就够了。
+      const folderItems = items.filter(item => !item.location.isTopLevelFile);
+      const looseItems = items.filter(item => item.location.isTopLevelFile);
+      const folderNames = [
+        ...new Set(folderItems.map(item => item.location.topLevelName)),
+      ];
+      const stageByFolder = new Map<string, ArchiveFolder | null>();
+
+      if (folderNames.length > 0 && !abortRef.current) {
+        setBatchProgress({
+          phase: 'foldering',
+          total: folderNames.length,
+          done: 0,
+          currentFile: '',
+          paused: false,
+        });
+        try {
+          const response = await fetch('/api/folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folderNames }),
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => null);
+          if (response.ok && Array.isArray(data?.results)) {
+            data.results.forEach(
+              (entry: { name?: string; stage?: string | null }) => {
+                if (!entry?.name) return;
+                stageByFolder.set(
+                  entry.name,
+                  SYSTEM_ARCHIVE_FOLDERS.find(
+                    folder => folder.businessStage === entry.stage
+                  ) ?? null
+                );
+              }
+            );
+          }
+        } catch (error) {
+          if (!abortRef.current) {
+            console.warn('文件夹分流失败，全部转人工分类', error);
+          }
+        }
+        setBatchProgress(prev =>
+          prev ? { ...prev, done: folderNames.length } : prev
+        );
+      }
+
+      // 文件夹里的文件只上传，不读内容。判不出阶段的照样进预览，落在
+      // 「未确定归档位置」那一组，由人工指定或整个文件夹取消归档。
+      if (folderItems.length > 0 && !abortRef.current) {
+        setBatchProgress({
+          phase: 'uploading',
+          total: folderItems.length,
+          done: 0,
+          currentFile: '',
+          paused: false,
+        });
+        for (const [index, item] of folderItems.entries()) {
+          await waitWhilePaused();
+          if (abortRef.current) break;
+          setBatchProgress(prev =>
+            prev ? { ...prev, done: index, currentFile: item.file.name } : prev
+          );
+          setProcessingProgress(
+            Math.round((index / folderItems.length) * 40)
+          );
+
+          const folder = stageByFolder.get(item.location.topLevelName) ?? null;
+          try {
+            item.storageKey = await uploadToTemp(
+              item.file,
+              projectId,
+              controller.signal
+            );
+            item.suggested = true;
+            patch(item.clientId, {
+              batchStage: undefined,
+              targetFolder: folder,
+              // 顶层文件夹名本身也是一层——用户上传的「投资决策」文件夹归档后
+              // 就落在「投资决策/投资决策/」，保证每个顶层条目都被完整保留。
+              subPath: [
+                item.location.topLevelName,
+                ...item.location.innerPath,
+              ],
+              decidePath: 'folder_rule',
+              requiresArchiveConfirmation: true,
+              sourceStorageKey: item.storageKey,
+              sourceMimeType: item.file.type || 'application/octet-stream',
+              sourceProjectId: projectId,
+              archiveStatus: 'pending',
+              minimalPending: false,
+              reasoning: folder
+                ? `按上传时所在的文件夹「${item.location.topLevelName}」归入 ${folder.name}，未读取文件内容。`
+                : `文件夹「${item.location.topLevelName}」的名字看不出属于哪个阶段，需要人工指定。`,
+              process: {
+                finalDecision: folder
+                  ? {
+                      method: 'stage' as const,
+                      explanation: `按文件夹名归入“${folder.folderPath.slice(1).join(' / ')}”`,
+                    }
+                  : {
+                      method: 'none' as const,
+                      explanation: '文件夹名无法判断阶段，等待人工分类。',
+                    },
+              },
+            });
+          } catch (error) {
+            if (abortRef.current) break;
+            item.failed = true;
+            const message = error instanceof Error ? error.message : '未知错误';
+            if (item.storageKey) {
+              void deleteTemp(item.storageKey, projectId, item.sourcePath);
+              item.storageKey = '';
+            }
+            patch(item.clientId, {
+              batchStage: undefined,
+              minimalPending: false,
+              reasoning: `上传失败：${message}`,
+              process: {
+                finalDecision: {
+                  method: 'none' as const,
+                  explanation: `上传失败：${message}`,
+                },
+              },
+            });
+          }
+          setBatchProgress(prev =>
+            prev ? { ...prev, done: index + 1 } : prev
+          );
+        }
+      }
+
+      // ---------- 第 0 步：顶层散文件按文件名分流 ----------
       // 整批只调一次模型，把文件名归一到客户规范里的词条；词条到阶段的映射在服务端
       // 查表得出。归一失败不影响流程：全部按"未命中"处理，等于回到没有这一步之前。
       setBatchProgress({
         phase: 'naming',
-        total: items.length,
+        total: looseItems.length,
         done: 0,
         currentFile: '',
         paused: false,
@@ -3501,7 +3910,7 @@ export default function Home() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sourcePaths: items.map(item => item.sourcePath),
+            sourcePaths: looseItems.map(item => item.sourcePath),
           }),
           signal: controller.signal,
         });
@@ -3512,7 +3921,7 @@ export default function Home() {
               result: { kind?: string; term?: string | null; stages?: string[] },
               index: number
             ) => {
-              const item = items[index];
+              const item = looseItems[index];
               if (!item) return;
               item.namingTerm = result.term ?? null;
               item.namingStages = result.stages ?? [];
@@ -3531,7 +3940,7 @@ export default function Home() {
       // 规范已经给出答案，粗筛阶段没必要为它花 OCR 和模型调用。它们照样进归档预览的
       // 文件树，跟其余文件一起等一键归档；只是归档时来源记为"命名规范"，并在项目档案
       // 里标成"只读到文件名"，随时可以人工要求补抽事实。
-      const namedItems = items.filter(item => item.namingKind === 'unique');
+      const namedItems = looseItems.filter(item => item.namingKind === 'unique');
       if (namedItems.length > 0 && !abortRef.current) {
         setBatchProgress({
           phase: 'uploading',
@@ -3605,7 +4014,7 @@ export default function Home() {
       }
 
       // ---------- 第一阶段：抽取其余文件的事实 ----------
-      const needsFacts = items.filter(item => item.namingKind !== 'unique');
+      const needsFacts = looseItems.filter(item => item.namingKind !== 'unique');
       setBatchProgress({
         phase: 'extracting',
         total: needsFacts.length,
@@ -3985,10 +4394,14 @@ export default function Home() {
         clientId,
         fileName: result.fileName,
         fileSize: result.fileSize,
-        folder: batchFolderOverrides[clientId] ?? suggested,
+        folder: batchFolderOverrides[clientId]?.folder ?? suggested,
+        subPath:
+          batchFolderOverrides[clientId]?.subPath ?? result.subPath ?? [],
         suggestedFolderId: suggested?.folderId ?? null,
         needsReview: Boolean(result.minimalDecision?.requiresHumanReview),
-        byNamingRule: result.namingKind === 'unique',
+        byNamingRule:
+          result.namingKind === 'unique' || result.decidePath === 'folder_rule',
+        byFolderRule: result.decidePath === 'folder_rule',
         namingTerm: result.namingTerm,
         decidePath: result.decidePath,
         archiveStatus: result.archiveStatus,
@@ -4059,11 +4472,15 @@ export default function Home() {
               reasoning:
                 source.minimalDecision?.reasoning ?? source.reasoning,
               sourcePath: source.sourcePath || source.fileName,
+              // 阶段之下的目录层级。不传的话归档接口会把路径拍平成阶段根目录，
+              // 用户在预览里选的子文件夹等于白选。
+              subPath: entry.subPath ?? [],
               documentFacts: source.documentFacts,
               // 人改过位置的算人工确认；原样采纳命名规范建议的记成规范来源。
               // 冲突复核会区别对待这两者：对前者给面子，对后者主动质疑。
               stageSource:
-                source.namingKind === 'unique' &&
+                (source.namingKind === 'unique' ||
+                  source.decidePath === 'folder_rule') &&
                 folder.folderId === source.targetFolder?.folderId
                   ? 'naming_rule'
                   : 'human',
@@ -4221,6 +4638,36 @@ export default function Home() {
       setExtractingClientId(null);
     }
   }, [results]);
+
+  /**
+   * 放弃这一批里的某几份文件（通常是整个文件夹）。
+   *
+   * 和放弃整批走同一条清理路径：删临时文件、连带忘掉已抽的事实。判错一个装了几十份
+   * 文件的文件夹时，这就是"一次点击纠正"里的那一次。
+   */
+  const handleDiscardFiles = useCallback((clientIds: string[]) => {
+    const dropped = new Set(clientIds);
+    if (dropped.size === 0) return;
+    for (const target of results) {
+      if (!dropped.has(target.clientId)) continue;
+      if (target.sourceStorageKey && target.sourceProjectId) {
+        void deleteTemp(
+          target.sourceStorageKey,
+          target.sourceProjectId,
+          target.sourcePath || target.fileName
+        );
+      }
+    }
+    setResults(prev => prev.filter(result => !dropped.has(result.clientId)));
+    setBatchReviewIds(prev =>
+      prev ? prev.filter(clientId => !dropped.has(clientId)) : prev
+    );
+    setBatchFolderOverrides(current => {
+      const next = { ...current };
+      for (const clientId of dropped) delete next[clientId];
+      return next;
+    });
+  }, [results, deleteTemp]);
 
   /**
    * 放弃整批。
@@ -4937,14 +5384,22 @@ export default function Home() {
           projectName={selectedProject?.name ?? ''}
           archiving={batchArchiving}
           archiveProgress={batchArchiveProgress}
-          onChangeFolder={(clientId, folder) =>
-            setBatchFolderOverrides(current => ({
-              ...current,
-              [clientId]: folder,
-            }))
+          onChangeLocations={updates =>
+            setBatchFolderOverrides(current => {
+              const next = { ...current };
+              for (const item of updates) {
+                next[item.clientId] = {
+                  folder: item.folder,
+                  subPath: item.subPath,
+                };
+              }
+              return next;
+            })
           }
+          onDiscardFiles={handleDiscardFiles}
           onArchiveAll={() => void handleBatchArchiveAll()}
           onShowDetails={setBatchDetailsClientId}
+          existingFiles={visibleArchivedFiles}
           detailsResult={
             results.find(result => result.clientId === batchDetailsClientId) ??
             null
