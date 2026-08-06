@@ -30,6 +30,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
@@ -2092,17 +2098,23 @@ function countBatchTreeFiles(node: BatchTreeNode): number {
   );
 }
 
+interface BatchTreeActions {
+  onShowDetails: (clientId: string) => void;
+  onExtractFacts: (clientId: string) => void;
+  onMoveFile: (file: BatchReviewFile) => void;
+  extractingClientId: string | null;
+}
+
 function BatchTreeItem({
   node,
   level,
-  onFileContextMenu,
-  extractingClientId,
+  actions,
 }: {
   node: BatchTreeNode;
   level: number;
-  onFileContextMenu: (event: React.MouseEvent, file: BatchReviewFile) => void;
-  extractingClientId: string | null;
+  actions: BatchTreeActions;
 }) {
+  const { extractingClientId } = actions;
   const [isOpen, setIsOpen] = useState(true);
   const fileCount = countBatchTreeFiles(node);
   const isUnplaced = node.key === UNPLACED_KEY;
@@ -2136,8 +2148,7 @@ function BatchTreeItem({
               key={child.key}
               node={child}
               level={level + 1}
-              onFileContextMenu={onFileContextMenu}
-              extractingClientId={extractingClientId}
+              actions={actions}
             />
           ))}
           {node.files.map(file => {
@@ -2146,11 +2157,11 @@ function BatchTreeItem({
               file.suggestedFolderId !== null &&
               file.folder.folderId !== file.suggestedFolderId;
             return (
+              <ContextMenu key={file.clientId}>
+              <ContextMenuTrigger asChild>
               <div
-                key={file.clientId}
                 className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors"
                 style={{ paddingLeft: `${(level + 1) * 12 + 6}px` }}
-                onContextMenu={event => onFileContextMenu(event, file)}
                 title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
               >
                 {extractingClientId === file.clientId ? (
@@ -2188,6 +2199,33 @@ function BatchTreeItem({
                   {(file.fileSize / 1024).toFixed(0)} KB
                 </span>
               </div>
+              </ContextMenuTrigger>
+              {/* 用 Radix 的右键菜单而不是自己定位。
+                  自己写的那版在弹窗里必然失灵：DialogContent 上有 translate 变换，
+                  而带 transform 的祖先会让 position:fixed 相对该祖先定位而不是视口，
+                  于是 left/top 用 clientX/clientY 算出来的位置整个跑到弹窗外面去，
+                  看起来就像右键没反应。已归档文件树那份同样的代码能用，只是因为它
+                  不在弹窗里。 */}
+              <ContextMenuContent className="w-40">
+                <ContextMenuItem onSelect={() => actions.onShowDetails(file.clientId)}>
+                  <Eye className="h-3.5 w-3.5 mr-2" />
+                  分析详情
+                </ContextMenuItem>
+                {/* 只对没读过内容的出现，已经抽过事实的再抽一次没有意义 */}
+                {file.byNamingRule && (
+                  <ContextMenuItem
+                    onSelect={() => actions.onExtractFacts(file.clientId)}
+                  >
+                    <Brain className="h-3.5 w-3.5 mr-2" />
+                    提取事实并复核
+                  </ContextMenuItem>
+                )}
+                <ContextMenuItem onSelect={() => actions.onMoveFile(file)}>
+                  <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />
+                  修改归档位置
+                </ContextMenuItem>
+              </ContextMenuContent>
+              </ContextMenu>
             );
           })}
         </div>
@@ -2283,7 +2321,6 @@ function BatchReviewDialog({
   onExtractFacts: (clientId: string) => void;
   extractingClientId: string | null;
 }) {
-  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
   const [moveTarget, setMoveTarget] = useState<BatchReviewFile | null>(null);
 
   const tree = useMemo(() => buildBatchTree(files), [files]);
@@ -2295,35 +2332,11 @@ function BatchReviewDialog({
     file => file.archiveStatus === 'error'
   ).length;
 
-  const handleFileContextMenu = (
-    event: React.MouseEvent,
-    file: BatchReviewFile
-  ) => {
-    event.preventDefault();
-    setCtxMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        {
-          label: '分析详情',
-          icon: <Eye className="h-3.5 w-3.5 mr-2" />,
-          action: () => onShowDetails(file.clientId),
-        },
-        // 只对没读过内容的文件出现。已经抽过事实的再抽一次没有意义。
-        ...(file.byNamingRule
-          ? [{
-              label: '提取事实并复核',
-              icon: <Brain className="h-3.5 w-3.5 mr-2" />,
-              action: () => onExtractFacts(file.clientId),
-            }]
-          : []),
-        {
-          label: '修改归档位置',
-          icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />,
-          action: () => setMoveTarget(file),
-        },
-      ],
-    });
+  const treeActions: BatchTreeActions = {
+    onShowDetails,
+    onExtractFacts,
+    onMoveFile: setMoveTarget,
+    extractingClientId,
   };
 
   return (
@@ -2346,8 +2359,7 @@ function BatchReviewDialog({
               key={node.key}
               node={node}
               level={0}
-              onFileContextMenu={handleFileContextMenu}
-              extractingClientId={extractingClientId}
+              actions={treeActions}
             />
           ))}
         </div>
@@ -2386,30 +2398,6 @@ function BatchReviewDialog({
             </Button>
           </div>
         </DialogFooter>
-
-        {ctxMenu && (
-          <div
-            className="fixed inset-0 z-50"
-            onClick={() => setCtxMenu(null)}
-            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
-          >
-            <div
-              className="absolute bg-popover border rounded-md shadow-md py-1 min-w-[140px]"
-              style={{ left: ctxMenu.x, top: ctxMenu.y }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {ctxMenu.items.map((item, i) => (
-                <button
-                  key={i}
-                  className={`w-full flex items-center px-3 py-1.5 text-xs hover:bg-muted transition-colors ${item.destructive ? 'text-destructive' : ''}`}
-                  onClick={() => { item.action(); setCtxMenu(null); }}
-                >
-                  {item.icon}{item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {moveTarget && (
           <BatchMoveDialog
@@ -3622,29 +3610,109 @@ export default function Home() {
         );
       }
 
-      // ---------- 第二阶段：事实齐了，逐份判阶段 ----------
+      // ---------- 第二阶段：事实齐了，判阶段 ----------
       const ready = needsFacts.filter(item => item.storageKey && !item.failed);
-      if (!abortRef.current && ready.length > 0) {
+      // 先试整批一次判完：逐份判断每次都要重发同项目其他文件的事实和整条时间线，
+      // 17 份就是 17 次调用各驮 17 份上下文。一次判完把输入压回原来的几分之一，
+      // 而且模型能同时看到所有文件，本来就更适合"两份放一起才分得清"的情况。
+      // 失败或漏判的退回逐份判断，兜底必须留着。
+      let pendingDecide = ready;
+      if (!abortRef.current && ready.length > 1) {
         setBatchProgress({
           phase: 'deciding',
           total: ready.length,
+          done: 0,
+          currentFile: `整批一次判断（${ready.length} 份）`,
+          paused: pauseRef.current,
+        });
+        try {
+          const response = await fetch('/api/decide', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectId,
+              sourcePaths: ready.map(item => item.sourcePath),
+              namingTerms: ready.map(item => item.namingTerm),
+            }),
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => null);
+          if (response.ok && Array.isArray(data?.results)) {
+            const decidedPaths = new Set<string>();
+            data.results.forEach(
+              (
+                entry: { sourcePath?: string; decision?: MinimalDecisionResult | null },
+                index: number
+              ) => {
+                const item = ready[index];
+                if (!item || !entry?.decision) return;
+                const decision = entry.decision;
+                decidedPaths.add(item.sourcePath);
+                item.suggested = true;
+                patch(item.clientId, {
+                  targetFolder: decision.folder ?? null,
+                  businessStage: decision.stage,
+                  minimalDecision: decision,
+                  reasoning: decision.reasoning,
+                  documentType: item.namingTerm ?? undefined,
+                  namingTerm: item.namingTerm,
+                  namingKind: item.namingKind,
+                  requiresArchiveConfirmation: true,
+                  sourceStorageKey: item.storageKey,
+                  sourceMimeType: item.file.type || 'application/octet-stream',
+                  sourceProjectId: projectId,
+                  archiveStatus: 'pending',
+                  minimalPending: false,
+                  batchStage: undefined,
+                  process: {
+                    finalDecision: decision.folder
+                      ? {
+                          method: 'stage' as const,
+                          explanation: `整批判断建议归入“${decision.folder.folderPath.slice(1).join(' / ')}”`,
+                        }
+                      : {
+                          method: 'none' as const,
+                          explanation: '整批判断未能确定阶段，已退回逐份判断。',
+                        },
+                  },
+                });
+              }
+            );
+            // 模型漏掉的那几份退回逐份判断，不能让它们静默变成"未确定"。
+            pendingDecide = ready.filter(
+              item => !decidedPaths.has(item.sourcePath)
+            );
+          }
+        } catch (error) {
+          if (!abortRef.current) {
+            console.warn('整批判断失败，退回逐份判断', error);
+          }
+        }
+      }
+
+      if (!abortRef.current && pendingDecide.length > 0) {
+        setBatchProgress({
+          phase: 'deciding',
+          total: pendingDecide.length,
           done: 0,
           currentFile: '',
           paused: pauseRef.current,
         });
 
-        for (const [index, item] of ready.entries()) {
+        for (const [index, item] of pendingDecide.entries()) {
           await waitWhilePaused();
           if (abortRef.current) break;
 
           setBatchProgress({
             phase: 'deciding',
-            total: ready.length,
+            total: pendingDecide.length,
             done: index,
             currentFile: item.file.name,
             paused: false,
           });
-          setProcessingProgress(50 + Math.round((index / ready.length) * 50));
+          setProcessingProgress(
+            50 + Math.round((index / pendingDecide.length) * 50)
+          );
           patch(item.clientId, {
             batchStage: 'deciding',
             reasoning: '正在判断归档阶段…',
@@ -3713,7 +3781,7 @@ export default function Home() {
             prev ? { ...prev, done: index + 1 } : prev
           );
           setProcessingProgress(
-            50 + Math.round(((index + 1) / ready.length) * 50)
+            50 + Math.round(((index + 1) / pendingDecide.length) * 50)
           );
         }
       }

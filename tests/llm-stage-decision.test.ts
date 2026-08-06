@@ -4,7 +4,9 @@ import test from 'node:test';
 import type { DocumentFacts } from '../src/lib/classification/document-facts';
 import {
   buildDecisionFromParsed,
+  buildBatchStageDecisionPrompt,
   buildStageDecisionPrompt,
+  parseBatchStageDecisionResponse,
   parseLlmStageDecisionResponse,
 } from '../src/lib/classification/llm-stage-decision';
 
@@ -326,4 +328,50 @@ test('没有命名规范提示时，提示词里不出现规范相关内容', ()
     })[1].content
   );
   assert.equal(userPrompt.includes('命名规范'), false);
+});
+
+test('整批判断按序号回填，模型漏一条不会让后面集体错位', () => {
+  const parsed = parseBatchStageDecisionResponse(
+    `{"d":[{"i":3,"stage":"investment_execution","review":0,"why":"记载变更后的值"},
+           {"i":1,"stage":"investment_decision","review":1,"why":"记载变更前的值","ev":["注册资本 11.73624"],"cx":["签署状态不明"]}]}`,
+    3
+  );
+  assert.equal(parsed[0]?.stage, 'investment_decision');
+  assert.equal(parsed[0]?.review, true);
+  assert.deepEqual(parsed[0]?.contradictions, ['签署状态不明']);
+  // 第 2 份模型没给，必须留 null 交给调用方退回逐份判断，而不是错位成第 3 份的结论
+  assert.equal(parsed[1], null);
+  assert.equal(parsed[2]?.stage, 'investment_execution');
+  assert.equal(parsed[2]?.review, false);
+});
+
+test('整批判断忽略越界序号和非法阶段', () => {
+  const parsed = parseBatchStageDecisionResponse(
+    `{"d":[{"i":9,"stage":"investment_execution"},{"i":1,"stage":"不存在的阶段"}]}`,
+    2
+  );
+  // 越界的丢掉；阶段非法的降级为"未确定"，而不是整条作废
+  assert.equal(parsed[0]?.stage, null);
+  assert.equal(parsed[1], null);
+});
+
+test('整批判断的提示词要求每个序号都有结果', () => {
+  const messages = buildBatchStageDecisionPrompt({
+    items: [
+      { sourcePath: 'a.pdf', facts: healthyFacts() },
+      {
+        sourcePath: 'b.pdf',
+        facts: healthyFacts(),
+        namingHint: { term: '公司章程', stages: ['investment_decision', 'investment_execution'] },
+      },
+    ],
+  });
+  const systemPrompt = String(messages[0].content);
+  const userPrompt = String(messages[1].content);
+  assert.match(systemPrompt, /必须为每一个序号都输出一条结果/);
+  assert.match(systemPrompt, /不要因为它们一起提交就往同一个阶段归/);
+  // 软约束的措辞在整批版本里同样不能丢
+  assert.match(userPrompt, /仅供参考，不是限制/);
+  assert.match(userPrompt, /【1】a\.pdf/);
+  assert.match(userPrompt, /【2】b\.pdf/);
 });
