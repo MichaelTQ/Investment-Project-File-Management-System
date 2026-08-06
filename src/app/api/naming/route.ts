@@ -57,6 +57,17 @@ export async function POST(request: NextRequest) {
     console.log(
       `[naming] ${sourcePaths.length} 个文件：唯一命中 ${counts.unique}，歧义 ${counts.ambiguous}，未命中 ${counts.unmatched}`
     );
+    // 逐份打印归一结果。只看汇总数分不清"规范没覆盖"和"模型该认的没认出来"——
+    // 后者才是要修的，而它恰恰是这套方案最大的风险点（模型倾向于给答案，
+    // 提示词里那句"对不上就答无"到底管不管用，只有看逐份结果才知道）。
+    for (const item of results) {
+      const leaf = item.sourcePath.split(/[/\\]/).pop() ?? item.sourcePath;
+      console.log(
+        `[naming]   ${leaf} → ${
+          item.term ?? '无'
+        }（${item.kind}${item.stages.length > 0 ? '：' + item.stages.join('、') : ''}）`
+      );
+    }
 
     return NextResponse.json({
       results,
