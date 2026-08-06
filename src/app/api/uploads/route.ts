@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Readable } from "stream";
+import { forgetMinimalDocument } from "@/lib/classification/minimal/store";
 import {
   deleteStoredFile,
   getProject,
@@ -74,11 +75,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/uploads - 取消归档或分类失败时清理临时对象。
+// DELETE /api/uploads - 取消归档、分类失败或中断批量分析时清理临时对象。
 export async function DELETE(request: NextRequest) {
   try {
     const storageKey = request.nextUrl.searchParams.get("storageKey") || "";
     const projectId = request.nextUrl.searchParams.get("projectId") || "";
+    const sourcePath = request.nextUrl.searchParams.get("sourcePath") || "";
     const expectedPrefix = `uploads/${projectId}/`;
 
     if (!storageKey || !projectId || !storageKey.startsWith(expectedPrefix)) {
@@ -86,6 +88,17 @@ export async function DELETE(request: NextRequest) {
     }
 
     await deleteStoredFile(storageKey);
+
+    // 事实也要一起忘掉。调用方一直在传 sourcePath，但这里从来没用过它——于是
+    // 取消归档、中断批量分析之后，这份文件的事实仍留在项目档案里，继续作为
+    // "同项目其他文件"参与后续判断，还会进时间线。用户以为撤销了，其实没有。
+    if (sourcePath) {
+      await forgetMinimalDocument(projectId, sourcePath).catch(error => {
+        // 事实没删掉不该让临时文件的清理跟着失败——那样会同时留下两份垃圾。
+        console.error("Forget minimal document error:", error);
+      });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json(

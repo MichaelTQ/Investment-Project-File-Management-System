@@ -193,6 +193,9 @@ export async function rebuildMinimalArchive(
           timeline,
           projectName: options.projectName,
           stageDefinitions: STAGE_DEFINITIONS,
+          // 事后过滤保留在下面当兜底，但先让模型知道用户忽略过什么：否则同一条
+          // 误报每次都要重新生成一遍再被丢掉，白花钱，还会因为换了措辞绕过过滤。
+          dismissedFindings: archive.dismissedFindings,
           customHeaders: options.customHeaders,
         });
 

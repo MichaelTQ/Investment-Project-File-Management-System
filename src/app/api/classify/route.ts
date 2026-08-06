@@ -21,6 +21,10 @@ import {
   classifyWithMinimalPath,
   type MinimalClassifyResult,
 } from '@/lib/classification/minimal/pipeline';
+import {
+  loadMinimalArchive,
+  upsertMinimalDocument,
+} from '@/lib/classification/minimal/store';
 import { extractLocalPdfText } from '@/lib/classification/local-pdf-text';
 import {
   createClassificationDecisionRecord,
@@ -41,6 +45,20 @@ export const runtime = 'nodejs';
 
 /** 大文件阈值：超过此大小的 multipart 文件先上传 S3 临时目录，避免 Base64 膨胀导致 502 */
 const LARGE_FILE_THRESHOLD = 5 * 1024 * 1024; // 5 MB
+
+/**
+ * 这个接口有三种跑法。
+ *
+ * full   ——  单份文件的老流程：解析内容 → 抽事实 → 立刻判阶段，一次请求给出建议。
+ * facts  ——  批量流程的第一阶段：解析内容 → 抽事实 → 只入库，**不判阶段**。
+ * decide ——  批量流程的第二阶段：事实已在库里，只判阶段，跳过全部内容解析。
+ *
+ * 批量必须拆成两阶段，不能沿用 full 循环跑：判阶段时模型要看"同项目其他文件的事实"，
+ * 一份份来的话，第一份文件判断时项目里空无一物，最后一份才看得到全貌——同一批文件
+ * 得到的判断质量取决于它排在第几个。先把事实全抽完再统一判，每份文件看到的上下文
+ * 才是一样的。
+ */
+type ClassifyMode = 'full' | 'facts' | 'decide';
 
 interface PhaseTiming {
   phase: string;
@@ -267,10 +285,12 @@ export async function POST(request: NextRequest) {
     let persistFacts =
       globalThis.process.env.PERSIST_PROJECT_MEMORY_SHADOW === 'true' ||
       globalThis.process.env.PERSIST_DOCUMENT_FACTS_SHADOW === 'true';
-    const runMinimalPath = true;
+    let mode: ClassifyMode = 'full';
 
     if (isJsonRequest) {
       const body = await request.json();
+      mode =
+        body.mode === 'facts' || body.mode === 'decide' ? body.mode : 'full';
       storageKey = typeof body.storageKey === 'string' ? body.storageKey : '';
       fileName = typeof body.fileName === 'string' ? body.fileName : '';
       fileSize = Number(body.fileSize || 0);
@@ -330,10 +350,8 @@ export async function POST(request: NextRequest) {
 
     // 极简分类始终依赖结构化事实，并始终保留人工确认。
     autoArchive = false;
-    extractFacts =
-      extractFacts ||
-      persistFacts ||
-      runMinimalPath;
+    const runMinimalPath = mode !== 'facts';
+    extractFacts = extractFacts || persistFacts || runMinimalPath;
 
     const project = projectId
       ? await measurePhase('load_project', () => getProject(projectId))
@@ -341,6 +359,91 @@ export async function POST(request: NextRequest) {
 
     // 提取请求头
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+
+    // 批量第二阶段：事实是第一阶段抽好入库的，这里只判阶段。
+    // 必须在内容解析之前返回——重新解析一遍既白花时间，也可能因为临时文件已被
+    // 清理而直接失败。
+    if (mode === 'decide') {
+      if (!projectId) {
+        return NextResponse.json(
+          { error: '判断阶段需要有效的 projectId' },
+          { status: 400 }
+        );
+      }
+      const documentPath = sourcePath || fileName;
+      const archive = await measurePhase('load_minimal_archive', () =>
+        loadMinimalArchive(projectId)
+      );
+      const stored = archive.documents.find(
+        document => document.sourcePath === documentPath
+      );
+      if (!stored) {
+        return NextResponse.json(
+          { error: `未找到《${fileName}》已抽取的事实，请重新上传该文件` },
+          { status: 409 }
+        );
+      }
+
+      let decision: MinimalClassifyResult | undefined;
+      let decideError: string | undefined;
+      try {
+        decision = await measurePhase('minimal_path', () =>
+          classifyWithMinimalPath({
+            projectId,
+            projectName: project?.name,
+            sourcePath: documentPath,
+            facts: stored.facts,
+            fingerprint: stored.fingerprint,
+            customHeaders,
+          })
+        );
+        if (decision.modelCall) modelCalls.push(decision.modelCall);
+      } catch (error) {
+        decideError = error instanceof Error ? error.message : '未知错误';
+        console.error('Minimal path error:', error);
+      }
+
+      const decidedFolder = decision?.folder ?? null;
+      const decided: ClassifyResult = {
+        fileName,
+        fileSize,
+        targetFolder: decidedFolder,
+        reasoning:
+          decision?.reasoning ?? decideError ?? '未能形成分类建议。',
+        process: {
+          step0_minimalPath: {
+            enabled: true,
+            status: decision?.status ?? 'fallback',
+            error: decision?.error ?? decideError,
+            modelCall: decision?.modelCall,
+          },
+          finalDecision: decidedFolder
+            ? {
+                method: 'minimal',
+                explanation: `极简链路建议归入“${decidedFolder.folderPath
+                  .slice(1)
+                  .join(' / ')}”；请人工确认后归档`,
+              }
+            : {
+                method: 'none',
+                explanation: '极简链路未能唯一确定阶段，需要人工选择阶段文件夹',
+              },
+        },
+        classificationMode: 'minimal',
+        businessStage: decision?.stage,
+        documentType: stored.facts.documentType,
+        documentFacts: stored.facts,
+        suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
+        requiresArchiveConfirmation: true,
+        minimalDecision: decision,
+        performance: {
+          totalDurationMs: Date.now() - requestStartedAt,
+          phases: phaseTimings,
+          modelCalls,
+        },
+      };
+      return NextResponse.json(decided);
+    }
 
     let contentText = '';
     let contentPreview = '';
@@ -582,6 +685,52 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+
+    // 批量第一阶段到此为止：事实入库，不判阶段。
+    // 入库是必须的——第二阶段判每一份文件时都要读到同批其他文件的事实，事实不落盘
+    // 就等于没抽。中断时这些条目要连同临时文件一起清掉，清理走 DELETE /api/uploads。
+    if (mode === 'facts') {
+      if (documentFacts && projectId) {
+        await measurePhase('record_document_facts', () =>
+          upsertMinimalDocument({
+            projectId,
+            sourcePath: sourcePath || fileName,
+            facts: documentFacts!,
+            fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+          })
+        );
+      }
+      const factsOnly: ClassifyResult = {
+        fileName,
+        fileSize,
+        targetFolder: null,
+        reasoning: '事实已抽取，等待整批抽完后统一给出归档建议。',
+        contentPreview,
+        process: {
+          step0_factExtraction: factExtractionStep,
+          finalDecision: {
+            method: 'none',
+            explanation: '批量流程第一阶段：只抽事实，暂不判断阶段。',
+          },
+        },
+        classificationMode: 'minimal',
+        documentType: documentFacts?.documentType,
+        suggestedArchiveTitle: fileName.replace(/\.[^.]+$/, ''),
+        requiresArchiveConfirmation: false,
+        performance: {
+          totalDurationMs: Date.now() - requestStartedAt,
+          phases: phaseTimings,
+          modelCalls,
+        },
+      };
+      if (documentFacts) factsOnly.documentFacts = documentFacts;
+      console.log(
+        `[classify:facts] ${fileName} 合计 ${(
+          factsOnly.performance!.totalDurationMs / 1000
+        ).toFixed(1)}s`
+      );
+      return NextResponse.json(factsOnly);
     }
 
     // 极简链路是唯一的分类建议来源。
