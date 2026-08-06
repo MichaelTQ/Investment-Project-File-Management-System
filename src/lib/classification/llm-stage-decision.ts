@@ -70,6 +70,14 @@ export interface LlmStageDecisionParams {
   relatedDocuments?: Array<{ sourcePath: string; facts: DocumentFacts }>;
   /** 按日期排好的项目时间线文本。 */
   timeline?: string;
+  /**
+   * 命名规范给出的候选阶段。**只作提示，不作闸门。**
+   *
+   * 规范覆盖不全是常态，硬性限定候选会逼出必错的答案：君柔的《立项表决结果》按名称
+   * 对应规范里的"表决票"，而规范只把表决票列在投资决策和退出决策下——它实际属于
+   * 项目立项，正确答案根本不在候选里。所以提示词里明确允许模型选候选之外的阶段。
+   */
+  namingHint?: { term: string; stages: ArchiveBusinessStage[] };
   customHeaders?: Record<string, string>;
 }
 
@@ -181,8 +189,17 @@ ${STAGE_DEFINITIONS}
   "cx": ["存疑或与该阶段不符之处，每条不超过60字，最多2条，没有则输出 []"]
 }`;
 
+  const namingHintBlock = params.namingHint
+    ? `
+
+【命名规范的提示（仅供参考，不是限制）】
+这份文件的名称对应归档规范里的「${params.namingHint.term}」，该条目在规范中出现在：${params.namingHint.stages.join('、')}。
+规范只说明"通常叫这个名字的文件放在哪里"，它可能没有覆盖本项目的实际情况。
+先看这几个候选是否与文件内容相符；**如果文件自身记载的事实指向别的阶段，就选别的阶段**，并在理由里说明为什么与规范提示不同。不要为了迁就规范而选一个与内容不符的阶段。`
+    : '';
+
   const userPrompt = `【待归档文件名】
-${leafName(params.sourcePath)}
+${leafName(params.sourcePath)}${namingHintBlock}
 
 【该文件的文档事实】
 ${factsBrief(params.facts)}

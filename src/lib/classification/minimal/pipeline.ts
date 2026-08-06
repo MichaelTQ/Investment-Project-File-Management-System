@@ -16,6 +16,11 @@ import {
 } from './conflict-review';
 import { buildTimeline, describeTimeline, type TimelineEntry } from './evidence';
 import {
+  checkValueTimepointConflicts,
+  suggestDocumentsToDeepen,
+  type DeepenSuggestion,
+} from './rule-checks';
+import {
   loadMinimalArchive,
   upsertMinimalDocument,
   type MinimalDocument,
@@ -41,6 +46,8 @@ export interface MinimalClassifyParams {
   sourcePath: string;
   facts: DocumentFacts;
   fingerprint?: string;
+  /** 命名规范给出的候选阶段，软提示。见 LlmStageDecisionParams.namingHint。 */
+  namingHint?: { term: string; stages: ArchiveBusinessStage[] };
   customHeaders?: Record<string, string>;
 }
 
@@ -76,6 +83,7 @@ export async function classifyWithMinimalPath(
     // 带上各文件的归档位置：归档必须人工确认，所以这是人工确认过的事实，
     // 是这套系统里最硬的信号。提示词里同时约束它不能成为唯一依据。
     timeline: describeTimeline(buildTimeline(others), { showStage: true }),
+    namingHint: params.namingHint,
     customHeaders: params.customHeaders,
   });
 
@@ -120,6 +128,10 @@ export interface MinimalRebuildReport {
   timeline: TimelineEntry[];
   findings: ConflictFinding[];
   dismissedCount: number;
+  /** 确定性检查的结果。不调模型，常开。 */
+  ruleFindings: ConflictFinding[];
+  /** 建议人工深挖的文件。系统只标记，不自动执行。 */
+  deepenSuggestions: DeepenSuggestion[];
   /** 冲突复核失败时的说明。为空表示复核正常完成。 */
   reviewError?: string;
   modelCall?: ModelCallDiagnostics;
@@ -137,10 +149,12 @@ export async function rebuildMinimalArchive(
     projectName?: string;
     customHeaders?: Record<string, string>;
     /**
-     * 是否跑冲突复核。默认跑。
+     * 是否跑**模型**冲突复核。默认跑。
      *
      * 只是想看已存事实和时间线时必须关掉——复核要调模型，切换项目、刷新页面
      * 都触发的话，成本和等待时间都白花。时间线和事实本来就是纯读取。
+     *
+     * 确定性检查不受这个开关影响，它不调模型也不会误报，任何时候都跑。
      */
     reviewConflicts?: boolean;
   } = {}
@@ -168,7 +182,16 @@ export async function rebuildMinimalArchive(
         : undefined) ?? archivedByName.get(leaf);
     const stage = archived ? getFolderBusinessStage(archived.folderId) : null;
 
-    const withCurrentStage = { ...document, stage };
+    // 阶段以文件实际所在目录为准，但"是谁定的"要沿用档案里记的。
+    // 归档后被人手动移动过的，来源应当升级为人工。
+    const movedByHuman = Boolean(
+      stage && document.stage && stage !== document.stage
+    );
+    const withCurrentStage: MinimalDocument = {
+      ...document,
+      stage,
+      stageSource: movedByHuman ? 'human' : document.stageSource,
+    };
     withStage.push(withCurrentStage);
     if (stage) {
       archivedDocuments.push(withCurrentStage);
@@ -204,6 +227,11 @@ export async function rebuildMinimalArchive(
     finding => !dismissed.has(conflictKey(finding))
   );
 
+  // 确定性检查不受 reviewConflicts 开关影响：不调模型、不会误报，没有关掉的理由。
+  const ruleFindings = checkValueTimepointConflicts(archivedDocuments).filter(
+    finding => !dismissed.has(conflictKey(finding))
+  );
+
   return {
     documentCount: archive.documents.length,
     checkedCount: archivedDocuments.length,
@@ -211,6 +239,8 @@ export async function rebuildMinimalArchive(
     documents,
     timeline,
     findings,
+    ruleFindings,
+    deepenSuggestions: suggestDocumentsToDeepen(withStage),
     dismissedCount: review.findings.length - findings.length,
     reviewError: review.error,
     modelCall: review.modelCall,

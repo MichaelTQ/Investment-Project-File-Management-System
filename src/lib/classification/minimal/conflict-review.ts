@@ -6,7 +6,11 @@ import {
 } from '../chat-completions';
 import { extractFirstJsonObject } from '../document-facts';
 import { leafName } from '../source-path';
-import { describeTimeline, type TimelineEntry } from './evidence';
+import {
+  describeStagePlacement,
+  describeTimeline,
+  type TimelineEntry,
+} from './evidence';
 import type { MinimalDocument } from './store';
 
 /**
@@ -67,9 +71,7 @@ function documentsBrief(documents: MinimalDocument[]): string {
         .join('；');
       return [
         `- ${leafName(document.sourcePath)}`,
-        document.stage
-          ? `  人工确认归入：${document.stage}`
-          : '  当前：尚未归档',
+        `  ${describeStagePlacement(document.stage, document.stageSource)}`,
         `  类型：${facts.documentType}（原文表述：${facts.rawDocumentType}），标题：${facts.title}`,
         changes ? `  记载的字段变化：${changes}` : '',
         facts.evidenceQuotes.length > 0
@@ -131,11 +133,15 @@ ${params.stageDefinitions}
 【复核要求】
 1. 只依据下面给出的事实。不要假设项目里应当存在某份没有出现的文件，也不要因为
    某类文件"通常"归在某个阶段就判定当前归档有误。
-2. 【已归档位置是人工逐份确认的结果】每份文件归在哪个阶段，是人工点确认后落定的，
-   不是系统自动放进去的。它可能与你的看法不同，但那不等于它错了——推翻它需要文件
-   自身记载的互斥事实；"我认为这份文件更像属于某阶段"不是矛盾，不要报。
-   注意这个信号也不是铁证：确认时下拉框的默认值就是系统建议，一路点确认的话它仍是
-   系统的猜测。所以它只提高你报矛盾的门槛，**不得**用来推断别的文件该归哪里。
+2. 【看清楚归档位置是谁定的，两种要区别对待】
+   标着"人工确认归入"的，是人点确认后落定的。它可能与你的看法不同，但那不等于它
+   错了——推翻它需要文件自身记载的互斥事实；"我认为这份文件更像属于某阶段"不是
+   矛盾，不要报。注意它也不是铁证：确认时下拉框的默认值就是系统建议，一路点确认的话
+   仍是系统的猜测。
+   标着"按命名规范归入、未经人工确认"的，只是按文件名落位的，**没有任何人读过内容**。
+   这一类最容易错，尤其是名称在多个阶段都出现的那些。对它们你应当主动核对：文件自身
+   记载的事实如果指向别的阶段，就报出来。
+   无论哪一种，都**不得**用来推断别的文件该归哪里。
 3. 【数值不同不等于矛盾】不同文件形成于不同时点，同一字段的数值本来就会变化。
    一份文件写 A、另一份写 B，只说明它们记载的是不同时点的状态。只有当两份文件
    对**同一时点**的同一事实给出互斥的说法时，才是矛盾。

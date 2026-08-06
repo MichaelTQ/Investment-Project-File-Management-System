@@ -299,3 +299,31 @@ test('提示词要求优先做数值对照，且措辞不含业务词汇', () =>
     );
   }
 });
+
+test('命名规范提示是软约束，明确允许模型选候选之外的阶段', () => {
+  const userPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '君柔科技_立项表决结果(1).pdf',
+      facts: healthyFacts(),
+      namingHint: {
+        term: '表决票',
+        stages: ['investment_decision', 'exit_decision'],
+      },
+    })[1].content
+  );
+
+  assert.match(userPrompt, /仅供参考，不是限制/);
+  assert.match(userPrompt, /指向别的阶段，就选别的阶段/);
+  assert.match(userPrompt, /不要为了迁就规范而选一个与内容不符的阶段/);
+  assert.match(userPrompt, /表决票/);
+});
+
+test('没有命名规范提示时，提示词里不出现规范相关内容', () => {
+  const userPrompt = String(
+    buildStageDecisionPrompt({
+      sourcePath: '君柔信用报告.pdf',
+      facts: healthyFacts(),
+    })[1].content
+  );
+  assert.equal(userPrompt.includes('命名规范'), false);
+});

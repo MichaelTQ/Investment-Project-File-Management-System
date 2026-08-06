@@ -14,10 +14,15 @@ import {
   type ArchivedFile,
 } from "@/lib/storage";
 import { getArchiveFolder } from "@/lib/folder-structure";
-import { DocumentFactsSchema, type DocumentFacts } from "@/lib/classification/document-facts";
+import {
+  createFallbackDocumentFacts,
+  DocumentFactsSchema,
+  type DocumentFacts,
+} from "@/lib/classification/document-facts";
 import {
   forgetMinimalDocumentsByArchivedFile,
   upsertMinimalDocument,
+  type StageSource,
 } from "@/lib/classification/minimal/store";
 
 export const runtime = "nodejs";
@@ -51,6 +56,8 @@ export async function POST(request: NextRequest) {
     let folderPath: string[] = [];
     let sourcePath = "";
     let documentFacts: DocumentFacts | null = null;
+    // 默认按人工确认算：这个接口原本只有人点"确认归档"才会调到。
+    let stageSource: StageSource = "human";
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -64,6 +71,7 @@ export async function POST(request: NextRequest) {
       reasoning = String(body.reasoning || "");
       parsedConfidence = Number(body.confidence || 0);
       sourcePath = String(body.sourcePath || originalName);
+      if (body.stageSource === "naming_rule") stageSource = "naming_rule";
       const parsedFacts = DocumentFactsSchema.safeParse(body.documentFacts);
       documentFacts = parsedFacts.success ? parsedFacts.data : null;
     } else {
@@ -79,6 +87,9 @@ export async function POST(request: NextRequest) {
       reasoning = String(formData.get("reasoning") ?? "");
       parsedConfidence = Number(formData.get("confidence") ?? 0);
       sourcePath = String(formData.get("sourcePath") ?? originalName);
+      if (formData.get("stageSource") === "naming_rule") {
+        stageSource = "naming_rule";
+      }
       try {
         const parsedFacts = DocumentFactsSchema.safeParse(
           JSON.parse(String(formData.get("documentFacts") ?? "null"))
@@ -148,15 +159,23 @@ export async function POST(request: NextRequest) {
         })
     );
 
-    if (documentFacts) {
-      await upsertMinimalDocument({
-        projectId,
-        sourcePath: sourcePath || originalName,
-        facts: documentFacts,
-        stage: targetFolder.businessStage,
-        archivedFileId: archived.id,
-      });
-    }
+    // 没抽过事实的文件也要进项目档案，只是标成"只读到文件名"。
+    // 不入库的话它对时间线和冲突复核完全不存在——按命名规范直接归档的那一批全都
+    // 没有事实，等于复核只看得见一小半文件，基于残缺信息下结论；而且"提取事实"
+    // 这个动作也没有条目可以挂。
+    await upsertMinimalDocument({
+      projectId,
+      sourcePath: sourcePath || originalName,
+      facts:
+        documentFacts ??
+        createFallbackDocumentFacts(
+          originalName,
+          '按命名规范直接归档，未读取文件内容。'
+        ),
+      stage: targetFolder.businessStage,
+      stageSource,
+      archivedFileId: archived.id,
+    });
 
     return NextResponse.json({
       success: true,

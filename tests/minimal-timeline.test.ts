@@ -319,7 +319,7 @@ test('冲突复核里每份文件的归档阶段只出现一次', () => {
     1,
     `归档阶段在提示词里出现了 ${occurrences} 次，应只在文件事实块里出现一次`
   );
-  assert.match(userPrompt, /人工确认归入：investment_decision/);
+  assert.match(userPrompt, /人工确认归入 investment_decision/);
   assert.match(userPrompt, /各文件归在哪个阶段见上一节/);
 });
 

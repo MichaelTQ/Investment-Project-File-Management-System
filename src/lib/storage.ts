@@ -940,6 +940,37 @@ export async function getFileDownloadUrl(id: string): Promise<{
   return { url, fileName: data.archived_name };
 }
 
+/**
+ * 已归档文件在 S3 里的位置和基本信息。
+ *
+ * 用于"对已归档文件补抽事实"：归档时文件已经从 uploads/ 临时目录搬走，要重新读它
+ * 的内容就得先拿到归档后的 storage_key。ArchivedFile 里不带这个字段（它是给界面用
+ * 的），所以单开一个。
+ */
+export async function getArchivedFileSource(id: string): Promise<{
+  storageKey: string;
+  projectId: string;
+  originalName: string;
+  fileSize: number;
+  mimeType: string;
+} | null> {
+  const db = getDb();
+  const { data, error } = await db
+    .from("archived_files")
+    .select("storage_key, project_id, original_name, file_size, mime_type")
+    .eq("id", id)
+    .single();
+
+  if (error || !data || !data.storage_key) return null;
+  return {
+    storageKey: data.storage_key,
+    projectId: data.project_id,
+    originalName: data.original_name,
+    fileSize: Number(data.file_size ?? 0),
+    mimeType: data.mime_type ?? "application/octet-stream",
+  };
+}
+
 export async function getFileDownloadStream(
   id: string
 ): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
