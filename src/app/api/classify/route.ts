@@ -351,7 +351,12 @@ export async function POST(request: NextRequest) {
     // 极简分类始终依赖结构化事实，并始终保留人工确认。
     autoArchive = false;
     const runMinimalPath = mode !== 'facts';
-    extractFacts = extractFacts || persistFacts || runMinimalPath;
+    // 三种模式都要抽事实，facts 模式尤其——它存在的意义就是抽事实。
+    // 这里曾经写成 `extractFacts || persistFacts || runMinimalPath`，在只有 full
+    // 一种模式时恒为 true 所以看不出问题；加上 facts 模式后 runMinimalPath 变成
+    // false，两个环境变量默认也是 false，于是第一阶段静默跳过抽取、什么都没入库，
+    // 第二阶段每份文件都拿 409。
+    extractFacts = true;
 
     const project = projectId
       ? await measurePhase('load_project', () => getProject(projectId))
@@ -691,16 +696,33 @@ export async function POST(request: NextRequest) {
     // 入库是必须的——第二阶段判每一份文件时都要读到同批其他文件的事实，事实不落盘
     // 就等于没抽。中断时这些条目要连同临时文件一起清掉，清理走 DELETE /api/uploads。
     if (mode === 'facts') {
-      if (documentFacts && projectId) {
-        await measurePhase('record_document_facts', () =>
-          upsertMinimalDocument({
-            projectId,
-            sourcePath: sourcePath || fileName,
-            facts: documentFacts!,
-            fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
-          })
+      // 这一步没抽到事实就必须报错，不能返回 200。上一版在这里静默放过，结果是
+      // 第一阶段"成功"跑完 35 份、第二阶段每份都 409，排查时看不出源头在哪。
+      if (!projectId) {
+        return NextResponse.json(
+          { error: '抽取事实需要有效的 projectId' },
+          { status: 400 }
         );
       }
+      if (!documentFacts) {
+        return NextResponse.json(
+          {
+            error: `未能抽取《${fileName}》的文档事实`,
+            details: factExtractionStep?.error,
+          },
+          { status: 500 }
+        );
+      }
+      // documentFacts 是 let，闭包里 TS 收不住它已经非空的窄化，绑一个常量给回调用。
+      const factsToRecord = documentFacts;
+      await measurePhase('record_document_facts', () =>
+        upsertMinimalDocument({
+          projectId,
+          sourcePath: sourcePath || fileName,
+          facts: factsToRecord,
+          fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+        })
+      );
       const factsOnly: ClassifyResult = {
         fileName,
         fileSize,
