@@ -10,6 +10,7 @@ import {
   buildTimeline,
   describeTimeline,
 } from '@/lib/classification/minimal/evidence';
+import type { MinimalClassifyResult } from '@/lib/classification/minimal/pipeline';
 import { loadMinimalArchive } from '@/lib/classification/minimal/store';
 import { getProject } from '@/lib/storage';
 
@@ -114,9 +115,27 @@ export async function POST(request: NextRequest) {
       // 按传入的 sourcePaths 原样对齐，缺事实的位置补 null，前端不必再对表。
       results: sourcePaths.map(sourcePath => {
         const index = resolvedPaths.indexOf(sourcePath);
+        const decision = index >= 0 ? result.decisions[index] : null;
         return {
           sourcePath,
-          decision: index >= 0 ? result.decisions[index] : null,
+          // 必须转成与逐份判断（classifyWithMinimalPath）一致的字段名。
+          // 内部结构用的是 selectedFolder / businessStage，前端读的是 folder / stage，
+          // 直接把内部结构丢出去的话每一份都会变成"没有归档位置"，而且不报错——
+          // 界面只会显示"暂未形成唯一分类建议"，看不出是字段名对不上。
+          decision: decision
+            ? ({
+                sourcePath,
+                stage: decision.businessStage,
+                folder: decision.selectedFolder,
+                reasoning: decision.reasoning,
+                evidence: decision.evidence,
+                contradictions: decision.contradictions,
+                requiresHumanReview: decision.requiresHumanReview,
+                status: 'success',
+                // 标上类型，让编译器守住这个边界。之前这里直接把内部结构丢出去，
+                // 字段名对不上却一路静默传到界面，只表现为"暂未形成唯一分类建议"。
+              } satisfies MinimalClassifyResult)
+            : null,
         };
       }),
       missing,

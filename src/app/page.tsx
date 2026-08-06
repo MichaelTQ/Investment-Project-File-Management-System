@@ -3654,7 +3654,8 @@ export default function Home() {
                   businessStage: decision.stage,
                   minimalDecision: decision,
                   reasoning: decision.reasoning,
-                  documentType: item.namingTerm ?? undefined,
+                  // 不要动 documentType：它来自抽事实那一步，是文件自己说的类型；
+                  // 规范词条是另一回事，覆盖它会把真实类型冲掉。
                   namingTerm: item.namingTerm,
                   namingKind: item.namingKind,
                   requiresArchiveConfirmation: true,

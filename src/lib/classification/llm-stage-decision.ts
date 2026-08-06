@@ -231,7 +231,15 @@ ${params.timeline || '项目里还没有带日期的文件。'}`;
  * 都变粗。所以调用方必须保留逐份判断作为兜底，两条路都在，可以直接对照。
  */
 const BATCH_STAGE_DECISION_MIN_OUTPUT_TOKENS = 800;
-const BATCH_STAGE_DECISION_TOKENS_PER_FILE = 140;
+/**
+ * 每份文件的输出预算。
+ *
+ * 按提示词允许的上限算：理由 60 字 + 证据 2×40 字 + 存疑 40 字 = 180 个汉字，
+ * 加上 JSON 键名和阶段枚举，一份接近 260 token。之前按 140 估是照"模型会写得简短"
+ * 拍的，撞上限的后果又特别重——整段 JSON 不完整就解析不了，全批作废。
+ * 宁可多留一倍余量：这是输出上限不是实际用量，没撞到就不花钱。
+ */
+const BATCH_STAGE_DECISION_TOKENS_PER_FILE = 260;
 const BATCH_STAGE_DECISION_MAX_OUTPUT_TOKENS = 8_000;
 const BATCH_STAGE_DECISION_TIMEOUT_MS = 180_000;
 
@@ -411,6 +419,17 @@ export async function decideStagesForBatchWithModel(params: {
       response.content,
       items.length
     );
+    const decidedCount = parsed.filter(Boolean).length;
+    // 模型给的条数少于文件数时必须叫出来。缺的那几份会退回逐份判断，流程不会断，
+    // 但如果每次都缺，说明输出预算或提示词有问题——不打日志就只能靠用户发现。
+    if (decidedCount < items.length) {
+      console.warn(
+        `[batch-stage] 模型只给了 ${decidedCount}/${items.length} 份结论` +
+          (modelCall?.finishReason === 'length'
+            ? `，输出撞上 ${modelCall.maxOutputTokens} token 上限被截断`
+            : '，未截断，是模型自己漏写的')
+      );
+    }
     return {
       status: 'success',
       decisions: parsed.map((item, index) =>
