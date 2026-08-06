@@ -216,6 +216,223 @@ ${params.timeline || '项目里还没有带日期的文件。'}`;
   ];
 }
 
+/* ==================== 整批一次判断 ==================== */
+
+/**
+ * 逐份判断时，每一次调用都要把**同项目其他文件的事实和整条时间线**重发一遍。
+ * 17 份文件就是 17 次调用、每次都驮着 17 份文件的上下文——输入量是 O(N²)，
+ * 而其中 N-1 份的内容在每次调用里几乎一模一样。
+ *
+ * 整批一次判断把它压回 O(N)：上下文只发一遍，模型一次给出全部文件的归属。
+ * 附带的好处是它能同时看到所有文件，君柔那对公司章程这类"必须两份放一起比才分得清"
+ * 的情况，本来就更适合一次看完，而不是各判各的。
+ *
+ * 代价是风险集中：一次失败就全批没有结论，而且文件多时长上下文可能让每一份的判断
+ * 都变粗。所以调用方必须保留逐份判断作为兜底，两条路都在，可以直接对照。
+ */
+const BATCH_STAGE_DECISION_MIN_OUTPUT_TOKENS = 800;
+const BATCH_STAGE_DECISION_TOKENS_PER_FILE = 140;
+const BATCH_STAGE_DECISION_MAX_OUTPUT_TOKENS = 8_000;
+const BATCH_STAGE_DECISION_TIMEOUT_MS = 180_000;
+
+export interface BatchStageDecisionItem {
+  sourcePath: string;
+  facts: DocumentFacts;
+  namingHint?: { term: string; stages: ArchiveBusinessStage[] };
+}
+
+export function buildBatchStageDecisionPrompt(params: {
+  items: BatchStageDecisionItem[];
+  projectName?: string;
+  /** 本项目此前已归档文件的事实，作为背景。不参与本次判断。 */
+  archivedDocuments?: Array<{ sourcePath: string; facts: DocumentFacts }>;
+  timeline?: string;
+}): Message[] {
+  const systemPrompt = `你是投资项目档案归档专家。下面会一次给出同一个项目里的多份文件，请为**每一份**判断它应当归入哪个业务阶段。
+
+【可选阶段及其含义】
+${STAGE_DEFINITIONS}
+
+【判断要求】
+1. 只依据下面给出的事实和时间线。文件名可能不含任何阶段信息，不要单凭文件名判断。
+2. 不要假设项目里应当存在某份没有出现的文件，也不要因为某类文件"通常"归在某个阶段就照此归档。判断依据必须来自这份文件自身记载的内容。
+3. 项目已经走到哪一步，不代表某份文件属于哪一步——较早形成的文件依然属于更早的阶段。
+4. 【逐份独立判断，但要互相参照】这批文件属于同一个项目，可能分属不同阶段，不要因为它们一起提交就往同一个阶段归。同时，一份文件记载的事实可以用来给另一份定位。
+5. 【数值对照是判断先后最直接的依据，必须优先检查】如果某份文件记载了"某字段由 X 变为 Y"，而另一份记载的同一字段数值等于 X，说明后者形成于这次变更之前；等于 Y 则说明形成于变更之后。存在这种对应关系时，它优先于其他一切线索，并且必须在理由中写明比对结果。
+6. 【时间线里标注的归档位置】标着"人工确认归入"的是人工结论，可信度较高；标着"按命名规范归入、未经人工确认"的只是按文件名落位、没有人读过内容，不要把它当作依据。两者都不能单独用来推断本批文件的归属。
+7. ev 必须引用上面提供的事实原文，不得编造。
+8. 事实不足以判断时该文件输出 unknown，并在 why 里说明是哪些信息读不到。不要为了给出结论而猜测。
+9. 存在任何存疑之处时把 review 设为 1。
+10. **必须为每一个序号都输出一条结果，一条都不能少**，顺序不限但序号必须对应。
+
+【输出格式】
+只输出一个 JSON 对象，不要输出 Markdown 或说明文字：
+{
+  "d": [
+    {
+      "i": 文件序号,
+      "stage": "上述阶段枚举值之一，或 unknown",
+      "review": 1或0，是否建议人工复核,
+      "why": "判断理由，不超过60字",
+      "ev": ["支持该阶段的事实，每条不超过40字，最多2条"],
+      "cx": ["存疑或与该阶段不符之处，不超过40字，最多1条，没有则省略"]
+    }
+  ]
+}`;
+
+  const archivedBrief =
+    params.archivedDocuments && params.archivedDocuments.length > 0
+      ? params.archivedDocuments
+          .map(item => `- ${leafName(item.sourcePath)}\n${indent(factsBrief(item.facts))}`)
+          .join('\n')
+      : '项目里还没有其他已归档文件。';
+
+  const itemsBrief = params.items
+    .map((item, index) => {
+      const hint = item.namingHint
+        ? `\n  命名规范提示（仅供参考，不是限制）：名称对应「${item.namingHint.term}」，规范把它列在 ${item.namingHint.stages.join('、')}；文件内容指向别的阶段时就选别的阶段。`
+        : '';
+      return `【${index + 1}】${leafName(item.sourcePath)}${hint}\n${indent(factsBrief(item.facts))}`;
+    })
+    .join('\n\n');
+
+  const userPrompt = `【项目】
+${params.projectName || '未提供'}
+
+【本项目此前已归档文件的事实（背景，不需要为它们输出结论）】
+${archivedBrief}
+
+【按日期排列的项目时间线】
+${params.timeline || '项目里还没有带日期的文件。'}
+
+【待判断的文件，共 ${params.items.length} 份】
+${itemsBrief}`;
+
+  return [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+}
+
+function indent(value: string): string {
+  return value
+    .split('\n')
+    .map(line => `  ${line}`)
+    .join('\n');
+}
+
+/**
+ * 解析整批结果，按序号回填。
+ *
+ * 必须按序号而不是按数组顺序：模型少给一条或多给一条时，按顺序对齐会让后面所有文件
+ * **集体错位**——那种错误比少认几份严重得多，而且从界面上完全看不出来。
+ * 没拿到结论的位置留 null，由调用方决定是退回逐份判断还是标为未确定。
+ */
+export function parseBatchStageDecisionResponse(
+  value: string,
+  expectedCount: number
+): Array<ParsedModelStage | null> {
+  const json = extractFirstJsonObject(value);
+  if (!json) throw new Error('模型响应中没有合法 JSON 对象');
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error('模型响应中的 JSON 无法解析');
+  }
+  const entries = (parsed as Record<string, unknown> | null)?.d;
+  if (!Array.isArray(entries)) throw new Error('模型响应里没有 d 数组');
+
+  const results = new Array<ParsedModelStage | null>(expectedCount).fill(null);
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const index = Number(record.i) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= expectedCount) continue;
+
+    const rawStage = typeof record.stage === 'string' ? record.stage.trim() : '';
+    const stage = STAGE_VALUES.includes(rawStage as ArchiveBusinessStage)
+      ? (rawStage as ArchiveBusinessStage)
+      : null;
+
+    results[index] = {
+      stage,
+      // 整批输出用 1/0 更省 token，同时兼容布尔。
+      review: record.review === 1 || record.review === true,
+      reasoning:
+        typeof record.why === 'string' && record.why.trim()
+          ? record.why.trim().slice(0, 200)
+          : '模型未给出理由。',
+      evidence: stringList(record.ev, 2),
+      contradictions: stringList(record.cx, 1),
+    };
+  }
+  return results;
+}
+
+export interface BatchStageDecisionResult {
+  status: 'success' | 'fallback';
+  /** 与传入 items 一一对应；null 表示模型没给这一份的结论。 */
+  decisions: Array<ContextClassificationDecision | null>;
+  modelCall?: ModelCallDiagnostics;
+  error?: string;
+}
+
+export async function decideStagesForBatchWithModel(params: {
+  items: BatchStageDecisionItem[];
+  projectName?: string;
+  archivedDocuments?: Array<{ sourcePath: string; facts: DocumentFacts }>;
+  timeline?: string;
+  customHeaders?: Record<string, string>;
+}): Promise<BatchStageDecisionResult> {
+  const { items } = params;
+  if (items.length === 0) return { status: 'success', decisions: [] };
+
+  let modelCall: ModelCallDiagnostics | undefined;
+  try {
+    const response = await invokeChatCompletion({
+      messages: buildBatchStageDecisionPrompt(params),
+      model: LLM_STAGE_DECISION_MODEL,
+      temperature: 0.1,
+      maxOutputTokens: Math.min(
+        BATCH_STAGE_DECISION_MAX_OUTPUT_TOKENS,
+        Math.max(
+          BATCH_STAGE_DECISION_MIN_OUTPUT_TOKENS,
+          items.length * BATCH_STAGE_DECISION_TOKENS_PER_FILE
+        )
+      ),
+      customHeaders: params.customHeaders,
+      responseFormat: 'json_object',
+      timeoutMs: BATCH_STAGE_DECISION_TIMEOUT_MS,
+    });
+    modelCall = response.diagnostics;
+    const parsed = parseBatchStageDecisionResponse(
+      response.content,
+      items.length
+    );
+    return {
+      status: 'success',
+      decisions: parsed.map((item, index) =>
+        item ? buildDecisionFromParsed(item, items[index].facts) : null
+      ),
+      modelCall,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误';
+    console.error('Batch stage decision error:', error);
+    const truncated = modelCall?.finishReason === 'length';
+    return {
+      status: 'fallback',
+      decisions: new Array(items.length).fill(null),
+      modelCall,
+      error: truncated
+        ? `整批阶段判断失败：输出被截断（${message}）`
+        : `整批阶段判断失败：${message}`,
+    };
+  }
+}
+
 export interface ParsedModelStage {
   stage: ArchiveBusinessStage | null;
   review: boolean;
