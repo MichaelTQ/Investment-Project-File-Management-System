@@ -198,6 +198,10 @@ interface ClassifyResult {
   namingTerm?: string | null;
   /** unique 表示纯按命名规范定位、没读过内容。归档时据此记录来源。 */
   namingKind?: 'unique' | 'ambiguous' | 'unmatched';
+  /** 命名规范给出的候选阶段，供界面说明为什么这份文件要读内容。 */
+  namingStages?: string[];
+  /** 这份文件的归档位置最终是怎么定的。界面据此说明分析路径，省得去翻日志。 */
+  decidePath?: 'naming_rule' | 'batch' | 'single';
 }
 
 /** 批量分析的进度。phase 决定进度条上显示的是哪一步。 */
@@ -683,6 +687,41 @@ function ClassifyDetailsDialog({
         </DialogHeader>
         <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
           <div className="space-y-4 pb-4">
+
+            {/* 分析路径：这份文件是怎么被处理的。
+                以前这些只在服务端日志里，等于没有——出了问题没法判断是哪一环。 */}
+            {result.decidePath && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">分析路径</h4>
+                <div className="space-y-1.5 rounded-lg border p-3 text-xs leading-5">
+                  <p className="break-words">
+                    <span className="text-muted-foreground">按文件名对照归档规范：</span>
+                    {result.namingTerm
+                      ? <>对应「{result.namingTerm}」
+                          {result.namingKind === 'unique'
+                            ? '，规范只把它列在一个阶段'
+                            : `，规范把它列在 ${(result.namingStages ?? [])
+                                .map(stage => PROJECT_STAGE_LABELS[stage] ?? stage)
+                                .join('、')}，需要读内容才能定`}
+                        </>
+                      : '没有对应词条，规范未覆盖这类文件'}
+                  </p>
+                  <p className="break-words">
+                    <span className="text-muted-foreground">归档位置来自：</span>
+                    {result.decidePath === 'naming_rule'
+                      ? '命名规范直接定位，未读取文件内容'
+                      : result.decidePath === 'batch'
+                        ? '整批一次判断（同批文件一起交给模型）'
+                        : '逐份判断（这份文件单独交给模型）'}
+                  </p>
+                  {result.decidePath === 'naming_rule' && (
+                    <p className="break-words text-amber-700">
+                      这份文件没有人和模型读过内容。右键可以要求提取事实并复核。
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 极简分类结论：批量流程里结果卡片不展开，这里是唯一能看到判断理由的地方 */}
             {result.minimalDecision && (
@@ -2044,6 +2083,7 @@ interface BatchReviewFile {
   /** 纯按文件名定位、没读过内容。界面要标出来，因为这一类最该被人扫一眼。 */
   byNamingRule: boolean;
   namingTerm?: string | null;
+  decidePath?: ClassifyResult['decidePath'];
   archiveStatus?: ClassifyResult['archiveStatus'];
   archiveError?: string;
 }
@@ -2324,6 +2364,17 @@ function BatchReviewDialog({
   const [moveTarget, setMoveTarget] = useState<BatchReviewFile | null>(null);
 
   const tree = useMemo(() => buildBatchTree(files), [files]);
+  const pathCounts = useMemo(
+    () =>
+      files.reduce(
+        (acc, file) => {
+          if (file.decidePath) acc[file.decidePath] += 1;
+          return acc;
+        },
+        { naming_rule: 0, batch: 0, single: 0 }
+      ),
+    [files]
+  );
   const unplacedCount = files.filter(file => !file.folder).length;
   const pendingCount = files.filter(
     file => file.archiveStatus !== 'archived'
@@ -2352,6 +2403,34 @@ function BatchReviewDialog({
             共 {files.length} 个文件，按建议的归档位置排列。右键单个文件可查看分析详情或修改位置。
           </DialogDescription>
         </DialogHeader>
+
+        {/* 整批分流汇总。这些数字原先只在服务端日志里，用户看不到就等于没有。 */}
+        <div className="shrink-0 rounded-md border bg-muted/30 px-3 py-2 text-xs leading-5">
+          <p className="break-words">
+            <span className="text-muted-foreground">按文件名分流：</span>
+            规范直接定位 <span className="font-medium">{pathCounts.naming_rule}</span> 份
+            {' · '}
+            读内容后判断{' '}
+            <span className="font-medium">
+              {pathCounts.batch + pathCounts.single}
+            </span>{' '}
+            份
+            {pathCounts.batch + pathCounts.single > 0 && (
+              <span className="text-muted-foreground">
+                （整批一次判 {pathCounts.batch} 份
+                {pathCounts.single > 0
+                  ? `，退回逐份判 ${pathCounts.single} 份`
+                  : ''}
+                ）
+              </span>
+            )}
+          </p>
+          {pathCounts.naming_rule > 0 && (
+            <p className="mt-0.5 break-words text-muted-foreground">
+              「按规范」的 {pathCounts.naming_rule} 份没有读过内容，右键可要求提取事实并复核。
+            </p>
+          )}
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2">
           {tree.map(node => (
@@ -3260,6 +3339,8 @@ export default function Home() {
               clientId,
               sourcePath: uploadedSourcePath,
               requiresArchiveConfirmation: true,
+              namingTerm,
+              decidePath: 'single' as const,
               sourceStorageKey: uploadedStorageKey,
               sourceMimeType: file.type || 'application/octet-stream',
               sourceProjectId: projectId,
@@ -3475,6 +3556,8 @@ export default function Home() {
               targetFolder: folder,
               namingTerm: item.namingTerm,
               namingKind: 'unique',
+              namingStages: item.namingStages,
+              decidePath: 'naming_rule',
               requiresArchiveConfirmation: true,
               sourceStorageKey: item.storageKey,
               sourceMimeType: item.file.type || 'application/octet-stream',
@@ -3658,6 +3741,8 @@ export default function Home() {
                   // 规范词条是另一回事，覆盖它会把真实类型冲掉。
                   namingTerm: item.namingTerm,
                   namingKind: item.namingKind,
+                  namingStages: item.namingStages,
+                  decidePath: 'batch',
                   requiresArchiveConfirmation: true,
                   sourceStorageKey: item.storageKey,
                   sourceMimeType: item.file.type || 'application/octet-stream',
@@ -3754,6 +3839,8 @@ export default function Home() {
               sourcePath: item.sourcePath,
               namingTerm: item.namingTerm,
               namingKind: item.namingKind,
+              namingStages: item.namingStages,
+              decidePath: 'single',
               requiresArchiveConfirmation: true,
               sourceStorageKey: item.storageKey,
               sourceMimeType: item.file.type || 'application/octet-stream',
@@ -3897,6 +3984,7 @@ export default function Home() {
         needsReview: Boolean(result.minimalDecision?.requiresHumanReview),
         byNamingRule: result.namingKind === 'unique',
         namingTerm: result.namingTerm,
+        decidePath: result.decidePath,
         archiveStatus: result.archiveStatus,
         archiveError: result.archiveError,
       }];
