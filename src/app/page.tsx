@@ -307,6 +307,29 @@ async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<File[]> 
 const UPLOAD_ACCEPT =
   '.pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg';
 
+/**
+ * 操作系统塞在文件夹里的东西，一律不当作档案。
+ *
+ * 拖一个文件夹进来必然会带上 .DS_Store：它没有内容可读，却要完整走一遍上传、
+ * OCR、抽事实、判阶段，白花钱和时间，还会作为"同项目其他文件"混进判断依据里。
+ */
+const IGNORED_UPLOAD_NAMES = new Set([
+  '.DS_Store',
+  'Thumbs.db',
+  'desktop.ini',
+  '.localized',
+]);
+
+function isIgnorableUpload(file: File): boolean {
+  const name = file.name;
+  if (IGNORED_UPLOAD_NAMES.has(name)) return true;
+  // macOS 拷到非 HFS 卷时留下的资源分叉副本。
+  if (name.startsWith('._')) return true;
+  // 其余隐藏文件同样不是用户想归档的东西。
+  if (name.startsWith('.')) return true;
+  return false;
+}
+
 function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: File[]) => void; disabled: boolean }) {
   const [isDragging, setIsDragging] = useState(false);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -612,6 +635,127 @@ function ConsistencyPanel({
   );
 }
 
+// ============ 分类详情弹窗 ============
+/**
+ * 单份文件的分析详情。
+ *
+ * 单份上传的结果卡片和批量归档预览里的右键菜单共用同一个组件——两处排版必须一致，
+ * 各写一份迟早会长歪。
+ */
+function ClassifyDetailsDialog({
+  result,
+  open,
+  onOpenChange,
+}: {
+  result: ClassifyResult;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[85dvh] max-h-[760px] max-w-3xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
+          <DialogDescription>
+            查看归档判断依据与文件内容摘要
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
+          <div className="space-y-4 pb-4">
+
+            {/* 极简分类结论：批量流程里结果卡片不展开，这里是唯一能看到判断理由的地方 */}
+            {result.minimalDecision && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">归档判断</h4>
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="break-words text-sm">
+                    建议归入：
+                    <span className="font-medium">
+                      {result.minimalDecision.folder
+                        ? result.minimalDecision.folder.folderPath.join(' / ')
+                        : '未能唯一确定'}
+                    </span>
+                  </p>
+                  <p className="break-words text-xs leading-5 text-muted-foreground">
+                    业务阶段：{PROJECT_STAGE_LABELS[
+                      result.minimalDecision.stage ?? 'unknown'
+                    ] ?? '待确认'}
+                    {' · '}
+                    文件类型：{result.documentType ?? '待识别'}
+                    {result.documentFacts?.rawDocumentType &&
+                      result.documentFacts.rawDocumentType !== '未知' &&
+                      `（原文表述：${result.documentFacts.rawDocumentType}）`}
+                  </p>
+                  <p className="break-words text-xs leading-5">
+                    {result.minimalDecision.reasoning ||
+                      result.minimalDecision.error ||
+                      '模型未给出理由。'}
+                  </p>
+                  {result.minimalDecision.evidence.length > 0 && (
+                    <ul className="space-y-1 border-t pt-2 text-xs leading-5 text-green-800">
+                      {result.minimalDecision.evidence.map(item => (
+                        <li key={item} className="break-words">✓ {item}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {result.minimalDecision.contradictions.length > 0 && (
+                    <ul className="space-y-1 border-t pt-2 text-xs leading-5 text-amber-800">
+                      {result.minimalDecision.contradictions.map(item => (
+                        <li key={item} className="break-words">⚠ {item}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 各阶段耗时：数据一直在采集，之前从没渲染过，排查慢在哪只能靠猜 */}
+            {(result.performance?.phases?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">
+                  各阶段耗时（合计{' '}
+                  {((result.performance?.totalDurationMs ?? 0) / 1000).toFixed(1)} 秒）
+                </h4>
+                <div className="space-y-1 rounded-lg border p-3">
+                  {[...(result.performance?.phases ?? [])]
+                    .sort((left, right) => right.durationMs - left.durationMs)
+                    .map(phase => (
+                      <div
+                        key={`${phase.parentPhase ?? ''}-${phase.phase}`}
+                        className="flex items-baseline justify-between gap-3 text-xs"
+                      >
+                        <span className="min-w-0 break-all font-mono text-muted-foreground">
+                          {phase.parentPhase ? `${phase.parentPhase} / ` : ''}
+                          {phase.phase}
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          {(phase.durationMs / 1000).toFixed(1)} 秒
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <p className="text-[11px] leading-4 text-muted-foreground">
+                  子阶段耗时已包含在父阶段内，直接相加会重复计算。
+                </p>
+              </div>
+            )}
+
+            {result.contentPreview && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium">文件内容摘要</h4>
+                <div className="whitespace-pre-wrap break-words rounded-lg border p-3 text-sm text-muted-foreground">
+                  {result.contentPreview}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============ 分类结果项 ============
 function ClassifyResultItem({
   result,
@@ -858,61 +1002,11 @@ function ClassifyResultItem({
         </Button>
       </div>
 
-      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="flex h-[85dvh] max-h-[760px] max-w-3xl flex-col overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="break-all pr-6">分类详情：{result.fileName}</DialogTitle>
-            <DialogDescription>
-              查看归档判断依据与文件内容摘要
-            </DialogDescription>
-          </DialogHeader>
-          <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
-            <div className="space-y-4 pb-4">
-
-              {/* 各阶段耗时：数据一直在采集，之前从没渲染过，排查慢在哪只能靠猜 */}
-              {(result.performance?.phases?.length ?? 0) > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">
-                    各阶段耗时（合计{' '}
-                    {((result.performance?.totalDurationMs ?? 0) / 1000).toFixed(1)} 秒）
-                  </h4>
-                  <div className="space-y-1 rounded-lg border p-3">
-                    {[...(result.performance?.phases ?? [])]
-                      .sort((left, right) => right.durationMs - left.durationMs)
-                      .map(phase => (
-                        <div
-                          key={`${phase.parentPhase ?? ''}-${phase.phase}`}
-                          className="flex items-baseline justify-between gap-3 text-xs"
-                        >
-                          <span className="min-w-0 break-all font-mono text-muted-foreground">
-                            {phase.parentPhase ? `${phase.parentPhase} / ` : ''}
-                            {phase.phase}
-                          </span>
-                          <span className="shrink-0 tabular-nums">
-                            {(phase.durationMs / 1000).toFixed(1)} 秒
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                  <p className="text-[11px] leading-4 text-muted-foreground">
-                    子阶段耗时已包含在父阶段内，直接相加会重复计算。
-                  </p>
-                </div>
-              )}
-
-              {result.contentPreview && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">文件内容摘要</h4>
-                  <div className="whitespace-pre-wrap break-words rounded-lg border p-3 text-sm text-muted-foreground">
-                    {result.contentPreview}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
+      <ClassifyDetailsDialog
+        result={result}
+        open={detailsOpen}
+        onOpenChange={setDetailsOpen}
+      />
     </div>
   );
 }
@@ -1798,6 +1892,391 @@ function removeFileFromTree(nodes: ArchiveTreeNode[], fileId: string): ArchiveTr
     .filter(n => n.type === 'file' || (n.children && n.children.length > 0));
 }
 
+// ============ 批量归档预览 ============
+/**
+ * 批量分析完之后的归档预览。
+ *
+ * 18 份文件铺成 18 张结果卡片没法看，也看不出"这一批最后会长成什么样"。这里改成
+ * 和「已归档文件」同一套树形显示：按最终归档位置分组，右键改位置或看详情，最后
+ * 一键把整棵树并进档案。单份上传仍走原来的结果卡片，不进这个弹窗。
+ */
+interface BatchReviewFile {
+  clientId: string;
+  fileName: string;
+  fileSize: number;
+  /** 当前选定的归档位置。null 表示模型没定下来，必须人工选。 */
+  folder: ArchiveFolder | null;
+  /** 模型原本的建议，用来标出哪些被人工改过。 */
+  suggestedFolderId: string | null;
+  needsReview: boolean;
+  archiveStatus?: ClassifyResult['archiveStatus'];
+  archiveError?: string;
+}
+
+interface BatchTreeNode {
+  name: string;
+  key: string;
+  children: BatchTreeNode[];
+  files: BatchReviewFile[];
+}
+
+const UNPLACED_KEY = '__unplaced__';
+
+/** 按归档位置把这一批文件组成一棵树。没有位置的单独归到一个待办分组。 */
+function buildBatchTree(files: BatchReviewFile[]): BatchTreeNode[] {
+  const roots: BatchTreeNode[] = [];
+
+  const childNode = (siblings: BatchTreeNode[], name: string, key: string) => {
+    const existing = siblings.find(node => node.key === key);
+    if (existing) return existing;
+    const created: BatchTreeNode = { name, key, children: [], files: [] };
+    siblings.push(created);
+    return created;
+  };
+
+  for (const file of files) {
+    if (!file.folder) {
+      childNode(roots, '未确定归档位置', UNPLACED_KEY).files.push(file);
+      continue;
+    }
+    let siblings = roots;
+    let node: BatchTreeNode | null = null;
+    let keyPrefix = '';
+    for (const segment of file.folder.folderPath) {
+      keyPrefix = keyPrefix ? `${keyPrefix}/${segment}` : segment;
+      node = childNode(siblings, segment, keyPrefix);
+      siblings = node.children;
+    }
+    node?.files.push(file);
+  }
+
+  // 待办分组永远排最前面：有它就说明还不能一键归档。
+  return roots.sort((left, right) =>
+    left.key === UNPLACED_KEY ? -1 : right.key === UNPLACED_KEY ? 1 : 0
+  );
+}
+
+function countBatchTreeFiles(node: BatchTreeNode): number {
+  return (
+    node.files.length +
+    node.children.reduce((sum, child) => sum + countBatchTreeFiles(child), 0)
+  );
+}
+
+function BatchTreeItem({
+  node,
+  level,
+  onFileContextMenu,
+}: {
+  node: BatchTreeNode;
+  level: number;
+  onFileContextMenu: (event: React.MouseEvent, file: BatchReviewFile) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(true);
+  const fileCount = countBatchTreeFiles(node);
+  const isUnplaced = node.key === UNPLACED_KEY;
+
+  return (
+    <div className="select-none">
+      <div
+        className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
+        style={{ paddingLeft: `${level * 12 + 6}px` }}
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+        {isUnplaced
+          ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+          : isOpen
+            ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" />
+            : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+        <span className={`text-xs font-medium truncate ${isUnplaced ? 'text-amber-700' : ''}`}>
+          {node.name}
+        </span>
+        {fileCount > 0 && (
+          <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">
+            {fileCount}
+          </Badge>
+        )}
+      </div>
+      {isOpen && (
+        <div>
+          {node.children.map(child => (
+            <BatchTreeItem
+              key={child.key}
+              node={child}
+              level={level + 1}
+              onFileContextMenu={onFileContextMenu}
+            />
+          ))}
+          {node.files.map(file => {
+            const moved =
+              file.folder !== null &&
+              file.suggestedFolderId !== null &&
+              file.folder.folderId !== file.suggestedFolderId;
+            return (
+              <div
+                key={file.clientId}
+                className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors"
+                style={{ paddingLeft: `${(level + 1) * 12 + 6}px` }}
+                onContextMenu={event => onFileContextMenu(event, file)}
+                title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
+              >
+                {file.archiveStatus === 'archiving' ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                ) : file.archiveStatus === 'archived' ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                ) : file.archiveStatus === 'error' ? (
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                ) : (
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-primary" />
+                )}
+                <p className="min-w-0 flex-1 truncate text-xs">{file.fileName}</p>
+                {moved && (
+                  <Badge variant="outline" className="shrink-0 border-sky-300 bg-sky-50 px-1 py-0 text-[10px] text-sky-700">
+                    已改
+                  </Badge>
+                )}
+                {file.needsReview && !moved && (
+                  <Badge variant="outline" className="shrink-0 border-amber-300 bg-amber-50 px-1 py-0 text-[10px] text-amber-700">
+                    待复核
+                  </Badge>
+                )}
+                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                  {(file.fileSize / 1024).toFixed(0)} KB
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 改归档位置。只允许选真实存在的阶段文件夹，避免造出归档接口不认识的 folderId。 */
+function BatchMoveDialog({
+  file,
+  onConfirm,
+  onCancel,
+}: {
+  file: BatchReviewFile;
+  onConfirm: (folder: ArchiveFolder) => void;
+  onCancel: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState(file.folder?.folderId ?? '');
+  const target = SYSTEM_ARCHIVE_FOLDERS.find(
+    folder => folder.folderId === selectedId
+  );
+
+  return (
+    <Dialog open={true} onOpenChange={() => onCancel()}>
+      <DialogContent className="flex max-h-[80vh] max-w-lg flex-col overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowRightLeft className="h-5 w-5" />
+            修改归档位置
+          </DialogTitle>
+          <DialogDescription className="break-all">
+            「<span className="font-medium text-foreground">{file.fileName}</span>」
+            当前位置：{file.folder ? file.folder.folderPath.join(' / ') : '未确定'}
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="h-[300px] rounded-lg border p-2">
+          <MoveFolderNode
+            node={FOLDER_STRUCTURE}
+            level={0}
+            selectedId={selectedId}
+            onSelect={id => setSelectedId(id)}
+            path={[]}
+          />
+        </ScrollArea>
+        {selectedId && !target && (
+          <p className="text-xs text-amber-700">
+            这一层只是分组，不能直接存放文件，请选择它下面的具体阶段。
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>取消</Button>
+          <Button
+            disabled={!target}
+            onClick={() => { if (target) onConfirm(target); }}
+          >
+            确认修改
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BatchReviewDialog({
+  open,
+  onOpenChange,
+  files,
+  projectName,
+  archiving,
+  archiveProgress,
+  onChangeFolder,
+  onArchiveAll,
+  onShowDetails,
+  detailsResult,
+  onCloseDetails,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  files: BatchReviewFile[];
+  projectName: string;
+  archiving: boolean;
+  archiveProgress: { done: number; total: number } | null;
+  onChangeFolder: (clientId: string, folder: ArchiveFolder) => void;
+  onArchiveAll: () => void;
+  onShowDetails: (clientId: string) => void;
+  /** 右键点开的那一份。详情弹窗嵌在本弹窗内部，不能做成并列的第二个模态。 */
+  detailsResult: ClassifyResult | null;
+  onCloseDetails: () => void;
+}) {
+  const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
+  const [moveTarget, setMoveTarget] = useState<BatchReviewFile | null>(null);
+
+  const tree = useMemo(() => buildBatchTree(files), [files]);
+  const unplacedCount = files.filter(file => !file.folder).length;
+  const pendingCount = files.filter(
+    file => file.archiveStatus !== 'archived'
+  ).length;
+  const failedCount = files.filter(
+    file => file.archiveStatus === 'error'
+  ).length;
+
+  const handleFileContextMenu = (
+    event: React.MouseEvent,
+    file: BatchReviewFile
+  ) => {
+    event.preventDefault();
+    setCtxMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        {
+          label: '分析详情',
+          icon: <Eye className="h-3.5 w-3.5 mr-2" />,
+          action: () => onShowDetails(file.clientId),
+        },
+        {
+          label: '修改归档位置',
+          icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />,
+          action: () => setMoveTarget(file),
+        },
+      ],
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex h-[85dvh] max-h-[820px] max-w-2xl flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Archive className="h-5 w-5 text-primary" />
+            批量归档预览
+          </DialogTitle>
+          <DialogDescription>
+            {projectName ? `${projectName} — ` : ''}
+            共 {files.length} 个文件，按建议的归档位置排列。右键单个文件可查看分析详情或修改位置。
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2">
+          {tree.map(node => (
+            <BatchTreeItem
+              key={node.key}
+              node={node}
+              level={0}
+              onFileContextMenu={handleFileContextMenu}
+            />
+          ))}
+        </div>
+
+        {unplacedCount > 0 && (
+          <p className="shrink-0 text-xs text-amber-700">
+            还有 {unplacedCount} 个文件没有归档位置，请右键逐个指定后再归档。
+          </p>
+        )}
+        {failedCount > 0 && (
+          <p className="shrink-0 text-xs text-destructive">
+            有 {failedCount} 个文件归档失败，可重新点击一键归档只重试它们。
+          </p>
+        )}
+
+        <DialogFooter className="shrink-0 gap-2 sm:justify-between">
+          <span className="text-xs text-muted-foreground">
+            {archiving && archiveProgress
+              ? `正在归档 ${archiveProgress.done}/${archiveProgress.total}…`
+              : `待归档 ${pendingCount} 个`}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={archiving}
+            >
+              稍后处理
+            </Button>
+            <Button
+              onClick={onArchiveAll}
+              disabled={archiving || unplacedCount > 0 || pendingCount === 0}
+            >
+              {archiving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              一键归档（{pendingCount}）
+            </Button>
+          </div>
+        </DialogFooter>
+
+        {ctxMenu && (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          >
+            <div
+              className="absolute bg-popover border rounded-md shadow-md py-1 min-w-[140px]"
+              style={{ left: ctxMenu.x, top: ctxMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {ctxMenu.items.map((item, i) => (
+                <button
+                  key={i}
+                  className={`w-full flex items-center px-3 py-1.5 text-xs hover:bg-muted transition-colors ${item.destructive ? 'text-destructive' : ''}`}
+                  onClick={() => { item.action(); setCtxMenu(null); }}
+                >
+                  {item.icon}{item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {moveTarget && (
+          <BatchMoveDialog
+            file={moveTarget}
+            onCancel={() => setMoveTarget(null)}
+            onConfirm={folder => {
+              onChangeFolder(moveTarget.clientId, folder);
+              setMoveTarget(null);
+            }}
+          />
+        )}
+
+        {detailsResult && (
+          <ClassifyDetailsDialog
+            result={detailsResult}
+            open={true}
+            onOpenChange={open => { if (!open) onCloseDetails(); }}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ============ 分析记录面板 ============
 interface AnalysisRecord {
   id: string;
@@ -1921,6 +2400,21 @@ export default function Home() {
   const pauseRef = useRef(false);
   const abortRef = useRef(false);
   const batchAbortControllerRef = useRef<AbortController | null>(null);
+
+  /** 批量归档预览。为空表示这一轮不是批量，或者用户已经处理完了。 */
+  const [batchReviewIds, setBatchReviewIds] = useState<string[] | null>(null);
+  const [batchReviewOpen, setBatchReviewOpen] = useState(false);
+  /** 人工改过的归档位置，按 clientId 记。没有条目的沿用模型建议。 */
+  const [batchFolderOverrides, setBatchFolderOverrides] = useState<
+    Record<string, ArchiveFolder>
+  >({});
+  const [batchArchiving, setBatchArchiving] = useState(false);
+  const [batchArchiveProgress, setBatchArchiveProgress] = useState<
+    { done: number; total: number } | null
+  >(null);
+  const [batchDetailsClientId, setBatchDetailsClientId] = useState<string | null>(
+    null
+  );
 
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
@@ -2916,6 +3410,14 @@ export default function Home() {
       }
 
       if (abortRef.current) await cleanupUnfinished();
+
+      // 有结果就把整批摊成文件树给用户过目。18 张结果卡片没法看，也看不出
+      // "这一批最后会长成什么样"。
+      const reviewable = items.filter(item => item.suggested);
+      if (reviewable.length > 0) {
+        setBatchReviewIds(reviewable.map(item => item.clientId));
+        setBatchReviewOpen(true);
+      }
     } finally {
       // 控制器不置空的话，这一批的 AbortController 会一直被 ref 攥着，
       // 连同它内部登记的监听器一起留到下一批。
@@ -2940,14 +3442,32 @@ export default function Home() {
     }
     if (files.length === 0) return;
 
+    // 拖文件夹必然带上 .DS_Store 这类系统文件。它们没有内容可读，却要完整走一遍
+    // 上传、OCR、抽事实、判阶段，白花钱和时间，还会混进"同项目其他文件"里。
+    const uploadable = files.filter(file => !isIgnorableUpload(file));
+    const skippedCount = files.length - uploadable.length;
+    if (uploadable.length === 0) {
+      alert(
+        skippedCount > 0
+          ? `选中的 ${skippedCount} 个文件都是系统文件（如 .DS_Store），没有可归档的内容`
+          : '没有可上传的文件'
+      );
+      return;
+    }
+    if (skippedCount > 0) {
+      console.log(`[upload] 跳过 ${skippedCount} 个系统文件`);
+    }
+
     setIsProcessing(true);
     setProcessingProgress(0);
     setResults([]);
+    setBatchReviewIds(null);
+    setBatchFolderOverrides({});
 
     // 单份文件没有"同批其他文件"可等，拆两阶段只会多一次往返。
-    if (files.length === 1) {
+    if (uploadable.length === 1) {
       try {
-        await runSingleFile(files[0], selectedProjectId);
+        await runSingleFile(uploadable[0], selectedProjectId);
       } finally {
         setProcessingProgress(100);
         setIsProcessing(false);
@@ -2956,7 +3476,7 @@ export default function Home() {
       return;
     }
 
-    await runBatchFlow(files, selectedProjectId);
+    await runBatchFlow(uploadable, selectedProjectId);
   }, [
     selectedProjectId,
     results,
@@ -2980,6 +3500,202 @@ export default function Home() {
     batchAbortControllerRef.current?.abort();
     setBatchProgress(prev => (prev ? { ...prev, paused: false } : prev));
   }, []);
+
+  /** 批量预览里每份文件的当前状态。人工改过位置的以人工为准。 */
+  const batchReviewFiles = useMemo<BatchReviewFile[]>(() => {
+    if (!batchReviewIds) return [];
+    const byId = new Map(results.map(result => [result.clientId, result]));
+    return batchReviewIds.flatMap(clientId => {
+      const result = byId.get(clientId);
+      if (!result) return [];
+      const suggested =
+        result.minimalDecision?.folder ?? result.targetFolder ?? null;
+      return [{
+        clientId,
+        fileName: result.fileName,
+        fileSize: result.fileSize,
+        folder: batchFolderOverrides[clientId] ?? suggested,
+        suggestedFolderId: suggested?.folderId ?? null,
+        needsReview: Boolean(result.minimalDecision?.requiresHumanReview),
+        archiveStatus: result.archiveStatus,
+        archiveError: result.archiveError,
+      }];
+    });
+  }, [batchReviewIds, results, batchFolderOverrides]);
+
+  /**
+   * 一键归档：把预览里的整棵树并进已归档文件。
+   *
+   * 逐份调归档接口，但**只在全部结束后重建一次项目上下文**——重建要跑冲突复核，
+   * 每份一次的话 18 个文件就是 18 次模型调用，光等待就不可接受。
+   */
+  const handleBatchArchiveAll = useCallback(async () => {
+    const sourceById = new Map(results.map(result => [result.clientId, result]));
+    const pending = batchReviewFiles.filter(
+      entry => entry.folder && entry.archiveStatus !== 'archived'
+    );
+    if (pending.length === 0) return;
+
+    setBatchArchiving(true);
+    setBatchArchiveProgress({ done: 0, total: pending.length });
+    let archivedAny = false;
+    let lastProjectId = '';
+
+    try {
+      for (const [index, entry] of pending.entries()) {
+        const source = sourceById.get(entry.clientId);
+        const folder = entry.folder;
+        if (!source || !folder) continue;
+        if (!source.sourceStorageKey || !source.sourceProjectId) {
+          setResults(prev => prev.map(result =>
+            result.clientId === entry.clientId
+              ? {
+                  ...result,
+                  archiveStatus: 'error' as const,
+                  archiveError: '待归档文件信息已丢失，请重新上传',
+                }
+              : result
+          ));
+          setBatchArchiveProgress({ done: index + 1, total: pending.length });
+          continue;
+        }
+        lastProjectId = source.sourceProjectId;
+
+        setResults(prev => prev.map(result =>
+          result.clientId === entry.clientId
+            ? { ...result, archiveStatus: 'archiving' as const, archiveError: undefined }
+            : result
+        ));
+
+        try {
+          const response = await fetch('/api/archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              storageKey: source.sourceStorageKey,
+              originalName: source.fileName,
+              fileSize: source.fileSize,
+              mimeType: source.sourceMimeType,
+              projectId: source.sourceProjectId,
+              folderId: folder.folderId,
+              archiveTitle:
+                source.suggestedArchiveTitle ||
+                source.fileName.replace(/\.[^.]+$/, ''),
+              confidence: 0,
+              reasoning:
+                source.minimalDecision?.reasoning ?? source.reasoning,
+              sourcePath: source.sourcePath || source.fileName,
+              documentFacts: source.documentFacts,
+            }),
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !data?.archived) {
+            throw new Error(data?.error || '归档失败，请重试');
+          }
+          archivedAny = true;
+          setResults(prev => prev.map(result =>
+            result.clientId === entry.clientId
+              ? {
+                  ...result,
+                  targetFolder: folder,
+                  requiresArchiveConfirmation: false,
+                  archiveStatus: 'archived' as const,
+                  archiveError: undefined,
+                  sourceFile: undefined,
+                  sourceStorageKey: undefined,
+                  archived: data.archived,
+                }
+              : result
+          ));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : '归档失败';
+          setResults(prev => prev.map(result =>
+            result.clientId === entry.clientId
+              ? { ...result, archiveStatus: 'error' as const, archiveError: message }
+              : result
+          ));
+        }
+
+        setBatchArchiveProgress({ done: index + 1, total: pending.length });
+      }
+    } finally {
+      setBatchArchiving(false);
+      setBatchArchiveProgress(null);
+    }
+
+    if (archivedAny) {
+      setArchiveRefreshKey(prev => prev + 1);
+      setContextRefreshKey(prev => prev + 1);
+      fetch('/api/projects')
+        .then(response => response.json())
+        .then(data => setProjects(data.projects || []))
+        .catch(() => undefined);
+
+      if (lastProjectId) {
+        setProjectContextError(null);
+        void fetch('/api/project-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: lastProjectId }),
+        })
+          .then(async rebuildResponse => {
+            const rebuildData = await rebuildResponse.json().catch(() => null);
+            if (!rebuildResponse.ok) {
+              throw new Error(
+                rebuildData?.error || '归档成功，但后台 Context 更新失败'
+              );
+            }
+            setConsistencyReport(rebuildData?.consistency ?? null);
+            setMinimalReport(rebuildData?.minimal ?? null);
+          })
+          .catch(error => {
+            setProjectContextError(
+              error instanceof Error
+                ? error.message
+                : '归档成功，但后台 Context 更新失败'
+            );
+          });
+      }
+    }
+  }, [results, batchReviewFiles]);
+
+  /**
+   * 放弃整批。
+   *
+   * 必须有这个出口：没归档的结果会一直占着"待确认"，而待确认状态会锁住上传区。
+   * 关掉预览之后如果没有别的入口，用户就卡死了——只能刷新页面，而刷新会把临时文件
+   * 和事实一起留成孤儿。
+   */
+  const handleDiscardBatch = useCallback(() => {
+    const ids = new Set(batchReviewIds ?? []);
+    for (const target of results) {
+      if (!ids.has(target.clientId)) continue;
+      if (target.sourceStorageKey && target.sourceProjectId) {
+        void deleteTemp(
+          target.sourceStorageKey,
+          target.sourceProjectId,
+          target.sourcePath || target.fileName
+        );
+      }
+    }
+    setResults(prev => prev.filter(result => !ids.has(result.clientId)));
+    setBatchReviewIds(null);
+    setBatchReviewOpen(false);
+    setBatchFolderOverrides({});
+    setBatchDetailsClientId(null);
+  }, [batchReviewIds, results, deleteTemp]);
+
+  // 全部归档完就收掉预览，别让用户对着一棵已经并进档案的树发呆。
+  // 同时清掉批次标记，右侧面板回到结果卡片列表，上传区也随之解锁。
+  useEffect(() => {
+    if (batchArchiving || batchReviewFiles.length === 0) return;
+    if (batchReviewFiles.every(entry => entry.archiveStatus === 'archived')) {
+      setBatchReviewOpen(false);
+      setBatchReviewIds(null);
+      setBatchFolderOverrides({});
+      setBatchDetailsClientId(null);
+    }
+  }, [batchArchiving, batchReviewFiles]);
 
   // 组件卸载时把还在跑的批次掐掉，否则它会继续 setState 到已经没了的组件上。
   useEffect(() => () => {
@@ -3394,7 +4110,33 @@ export default function Home() {
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">
                 <div className="h-[320px] overflow-y-auto overflow-x-hidden pr-1 md:h-[400px] lg:h-[440px]">
-                  {results.length > 0 ? (
+                  {batchReviewFiles.length > 0 ? (
+                    // 批量结果只在预览弹窗里操作。这里再铺一遍结果卡片的话，
+                    // 会出现两套确认入口，可能对同一份文件发出两次归档请求。
+                    <div className="space-y-3 py-6 text-center">
+                      <Archive className="mx-auto h-8 w-8 text-primary/40" />
+                      <p className="text-sm">
+                        本批 {batchReviewFiles.length} 个文件已分析完成
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        在归档预览里按文件树查看、调整位置，然后一键归档
+                      </p>
+                      <div className="flex justify-center gap-2">
+                        <Button size="sm" onClick={() => setBatchReviewOpen(true)}>
+                          <Archive className="mr-1 h-4 w-4" />
+                          打开归档预览
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleDiscardBatch}
+                        >
+                          <X className="mr-1 h-4 w-4" />
+                          放弃这一批
+                        </Button>
+                      </div>
+                    </div>
+                  ) : results.length > 0 ? (
                     <div className="w-full min-w-0 space-y-3 pb-2">
                       {results.map((result) => (
                         <ClassifyResultItem
@@ -3581,6 +4323,31 @@ export default function Home() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* 批量归档预览：只在一次上传多份文件时出现 */}
+      {batchReviewFiles.length > 0 && (
+        <BatchReviewDialog
+          open={batchReviewOpen}
+          onOpenChange={setBatchReviewOpen}
+          files={batchReviewFiles}
+          projectName={selectedProject?.name ?? ''}
+          archiving={batchArchiving}
+          archiveProgress={batchArchiveProgress}
+          onChangeFolder={(clientId, folder) =>
+            setBatchFolderOverrides(current => ({
+              ...current,
+              [clientId]: folder,
+            }))
+          }
+          onArchiveAll={() => void handleBatchArchiveAll()}
+          onShowDetails={setBatchDetailsClientId}
+          detailsResult={
+            results.find(result => result.clientId === batchDetailsClientId) ??
+            null
+          }
+          onCloseDetails={() => setBatchDetailsClientId(null)}
+        />
+      )}
     </div>
   );
 }
