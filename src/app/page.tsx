@@ -1742,7 +1742,11 @@ function ArchivedFilesList({
       const decided = await decideResponse.json().catch(() => null);
       const suggested: string[] | undefined =
         decided?.targetFolder?.folderPath?.slice(1);
-      const currentPath = node.folderPath?.slice(1) ?? [];
+      // 当前位置要从归档记录里取，不能读树节点的 folderPath——buildArchiveTree 只给
+      // 文件夹节点填这个字段，文件节点是空的，于是"当前归在"永远显示成空括号，
+      // 而且和建议位置的比较永远判定为"不一致"。
+      const currentPath =
+        files.find(item => item.id === id)?.folderPath.slice(1) ?? [];
       const differs =
         Array.isArray(suggested) &&
         suggested.join(' / ') !== currentPath.join(' / ');
@@ -1752,9 +1756,11 @@ function ArchivedFilesList({
         status: 'done',
         message: !decideResponse.ok || !decided
           ? '事实已抽取并加入项目上下文，但重新判断阶段失败。'
-          : differs
-            ? `事实已加入项目上下文。按内容判断它更像属于「${suggested!.join(' / ')}」，当前归在「${currentPath.join(' / ')}」，请人工确认是否需要移动。`
-            : '事实已加入项目上下文，按内容判断与当前归档位置一致。',
+          : !suggested || suggested.length === 0
+            ? '事实已加入项目上下文，但按内容仍未能确定应归入哪个阶段，维持当前位置。'
+            : differs
+              ? `事实已加入项目上下文。按内容判断它更像属于「${suggested.join(' / ')}」，当前归在「${currentPath.join(' / ') || '未知位置'}」，请人工确认是否需要移动。`
+              : '事实已加入项目上下文，按内容判断与当前归档位置一致。',
       });
     } catch (error) {
       setExtractResult({

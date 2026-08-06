@@ -330,3 +330,18 @@ test('时间线不再重复日期出处，只保留日期含义', () => {
   // meaning 已经说清是什么日期，出处对判断没有增量。
   assert.equal(text.includes('原文：'), false);
 });
+
+test('冲突复核禁止把一份文件和它自己做数值比对', () => {
+  // 起因：一份投委会决议记载"投前估值由5亿元变为4.7亿元"，模型拿它自己的原文摘录
+  // （5亿元）和它自己的字段变化做比对，报成"吻合变更前值却归在决策阶段"。
+  // 记录变更的文件正文里当然两个数都有，这不构成矛盾。
+  const systemPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter],
+      timeline: buildTimeline([charter]),
+      stageDefinitions: '',
+    })[0].content
+  );
+  assert.match(systemPrompt, /数值比对必须发生在两份不同的文件之间/);
+  assert.match(systemPrompt, /不得拿一份\s*文件自己的原文摘录去和它自己记载的字段变化做比对/);
+});
