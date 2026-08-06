@@ -141,11 +141,38 @@ test('事实抽取 Prompt 明确禁止执行归档分类并限制正文长度', 
   });
 
   assert.match(String(messages[0].content), /不要选择归档目录/);
-  assert.match(String(messages[0].content), /最小事实集合/);
   assert.match(String(messages[0].content), /同一事实只能出现一次/);
   assert.match(String(messages[0].content), /短字段协议/);
   assert.ok(String(messages[1].content).length < 6_000);
-  assert.equal(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS, 900);
+});
+
+/**
+ * 事实的完整性优先于精简。
+ *
+ * 旧版给每个字段定了条数上限（日期 2 条、字段变化 3 条…），那些数字没有依据，
+ * 而且丢哪几条由模型自己决定，事后不可知——信息量大的文件正好最容易被削掉
+ * 决定性的那条日期或那处变更。现在只约束 JSON 总长度。
+ */
+test('抽取提示要求写全事实，不再限制每个字段几条', () => {
+  const systemPrompt = String(
+    buildDocumentFactsPrompt({
+      fileName: '公司章程.pdf',
+      contentText: '章程正文',
+      projectName: '君柔',
+    })[0].content
+  );
+
+  assert.match(systemPrompt, /能核实的事实都写下来/);
+  assert.match(systemPrompt, /日期有几个写几个/);
+  assert.match(systemPrompt, /1000 个字符以内/);
+  // 不得再出现"最多输出 d N 项"这类逐字段条数上限。
+  assert.equal(/最多输出 d \d/.test(systemPrompt), false);
+  assert.equal(systemPrompt.includes('最小事实集合'), false);
+});
+
+test('输出上限留足余量，避免放宽条数后撞顶截断', () => {
+  // 撞顶时 JSON 不完整、解析失败，整份事实退化成只含文件名的空壳。
+  assert.ok(DOCUMENT_FACTS_MAX_OUTPUT_TOKENS >= 1_400);
 });
 
 // 回归：上限曾设为 600，而实测正常输出约 590 tokens。撞顶会让 JSON 截断、
