@@ -67,7 +67,9 @@ function documentsBrief(documents: MinimalDocument[]): string {
         .join('；');
       return [
         `- ${leafName(document.sourcePath)}`,
-        `  当前归档阶段：${document.stage ?? '未归档'}`,
+        document.stage
+          ? `  人工确认归入：${document.stage}`
+          : '  当前：尚未归档',
         `  类型：${facts.documentType}（原文表述：${facts.rawDocumentType}），标题：${facts.title}`,
         changes ? `  记载的字段变化：${changes}` : '',
         facts.evidenceQuotes.length > 0
@@ -80,11 +82,46 @@ function documentsBrief(documents: MinimalDocument[]): string {
     .join('\n');
 }
 
+/**
+ * 用户已忽略的提示，摊开给模型看。
+ *
+ * 此前这些只在事后过滤（pipeline 拿 conflictKey 比对），模型每次照样把同一条误报
+ * 重新生成一遍，花了钱和等待时间再被静默丢掉；而且键里带着描述文本，模型换个说法
+ * 就绕过过滤又冒出来，用户会觉得"我明明忽略过"。
+ *
+ * 这是这套系统里唯一合法的"学用户口径"的入口之一：忽略是用户明确表达过的意见，
+ * 不是代码替他猜的业务规则。
+ *
+ * 只带最近若干条：这个列表只增不减，全带上迟早把提示词撑爆。
+ */
+const DISMISSED_FINDINGS_PROMPT_LIMIT = 20;
+
+function dismissedBrief(dismissedFindings: string[] | undefined): string {
+  if (!dismissedFindings || dismissedFindings.length === 0) {
+    return '用户还没有忽略过任何提示。';
+  }
+  return dismissedFindings
+    .slice(-DISMISSED_FINDINGS_PROMPT_LIMIT)
+    .map(key => {
+      // conflictKey 的格式是 `文件1|文件2::描述`。拆不开就整条原样列出。
+      const separator = key.indexOf('::');
+      if (separator < 0) return `- ${key}`;
+      const files = key.slice(0, separator).split('|').filter(Boolean);
+      const description = key.slice(separator + 2);
+      return files.length > 0
+        ? `- 涉及 ${files.join('、')}：${description}`
+        : `- ${description}`;
+    })
+    .join('\n');
+}
+
 export function buildConflictReviewPrompt(params: {
   documents: MinimalDocument[];
   timeline: TimelineEntry[];
   projectName?: string;
   stageDefinitions: string;
+  /** 用户点过"忽略"的提示，格式见 conflictKey。 */
+  dismissedFindings?: string[];
 }): Message[] {
   const systemPrompt = `你在复核一个投资项目的归档结果，任务是找出**自相矛盾**的地方。
 
@@ -94,23 +131,33 @@ ${params.stageDefinitions}
 【复核要求】
 1. 只依据下面给出的事实。不要假设项目里应当存在某份没有出现的文件，也不要因为
    某类文件"通常"归在某个阶段就判定当前归档有误。
-2. 【数值不同不等于矛盾】不同文件形成于不同时点，同一字段的数值本来就会变化。
+2. 【已归档位置是人工逐份确认的结果】每份文件归在哪个阶段，是人工点确认后落定的，
+   不是系统自动放进去的。它可能与你的看法不同，但那不等于它错了——推翻它需要文件
+   自身记载的互斥事实；"我认为这份文件更像属于某阶段"不是矛盾，不要报。
+   注意这个信号也不是铁证：确认时下拉框的默认值就是系统建议，一路点确认的话它仍是
+   系统的猜测。所以它只提高你报矛盾的门槛，**不得**用来推断别的文件该归哪里。
+3. 【数值不同不等于矛盾】不同文件形成于不同时点，同一字段的数值本来就会变化。
    一份文件写 A、另一份写 B，只说明它们记载的是不同时点的状态。只有当两份文件
    对**同一时点**的同一事实给出互斥的说法时，才是矛盾。
-3. 【一份文件记录了变更前后值时，别的文件与其中之一吻合是正常的】它恰好说明那份
+4. 【一份文件记录了变更前后值时，别的文件与其中之一吻合是正常的】它恰好说明那份
    文件形成于变更之前或之后，这是相互印证，不是冲突。
    但要接着往下推一步：吻合的是变更**前**值，说明该文件形成于变更之前，那它就
    不应归在变更之后的阶段；吻合的是变更**后**值同理。数值吻合本身不是矛盾，
    吻合所指向的时点与它当前归档的阶段对不上，才是矛盾——这种情况必须报出来。
-4. 【文件里约定的将来期限，不是文件的形成时点】某个日期如果是文件约定的、尚未到来的
-   期限或截止时点，它说明的是文件约定了什么，而不是文件何时形成，因此不能用它判断
-   归档阶段是否正确。日期的含义已在时间线里如实标出，请自行分辨。
-5. 【同一条依据不能同时否定两种相反的归档】如果你要用某条事实说明 A 文件归得太晚，
+5. 【日期先后本身不构成矛盾】一份文件里出现的日期，未必都是这份文件形成的时点——
+   它可能是文件记载的某件事发生或将要发生的时点，也可能来自打印导出等制作痕迹。
+   每个日期在原文里是什么角色，时间线里已如实标出，请自行分辨，不要默认最早或最晚
+   的那个就是文件的形成时点。更不要用"按常理甲应当早于乙"去判定矛盾——那是你补的
+   推测，不是文件记载的事实。只有文件自身给出互斥的表述时，才算矛盾。
+6. 【同一条依据不能同时否定两种相反的归档】如果你要用某条事实说明 A 文件归得太晚，
    就不能用同一条事实说明 B 文件归得太早。发现自己在这样做时，说明这条依据不成立。
-6. 判断不了就不要报。宁可一条都不报，也不要把"我不确定"或"看起来不太一致"写成矛盾。
-7. 每条矛盾必须指名涉及哪些文件，引用支持它的原文事实，并说清为什么它是互斥的、
+7. 【用户已判定不是问题的，不要再报】用户已忽略的提示会在下面单独列出。不要重复
+   这些判断，也不要换个说法再报一次。用户这样判定，说明你对这一点的理解与他们的
+   归档口径不一致，以用户为准。
+8. 判断不了就不要报。宁可一条都不报，也不要把"我不确定"或"看起来不太一致"写成矛盾。
+9. 每条矛盾必须指名涉及哪些文件，引用支持它的原文事实，并说清为什么它是互斥的、
    而不只是不同。说不清就不要报。
-8. 没有发现矛盾时输出空数组。这是正常结果，不是失职。
+10. 没有发现矛盾时输出空数组。这是正常结果，不是失职。
 
 【输出格式】
 只输出一个 JSON 对象，不要输出 Markdown 或说明文字：
@@ -131,7 +178,10 @@ ${params.projectName || '未提供'}
 ${documentsBrief(params.documents)}
 
 【按日期排列的项目时间线】（各文件归在哪个阶段见上一节，此处不再重复）
-${describeTimeline(params.timeline)}`;
+${describeTimeline(params.timeline)}
+
+【用户已看过并判定不是问题的提示】
+${dismissedBrief(params.dismissedFindings)}`;
 
   return [
     { role: 'system', content: systemPrompt },
@@ -189,6 +239,7 @@ export async function reviewConflictsWithModel(params: {
   timeline: TimelineEntry[];
   projectName?: string;
   stageDefinitions: string;
+  dismissedFindings?: string[];
   customHeaders?: Record<string, string>;
 }): Promise<ConflictReviewResult> {
   // 只有一份文件时没有可比对的对象，省掉一次模型调用。

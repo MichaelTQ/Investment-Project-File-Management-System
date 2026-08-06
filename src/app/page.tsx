@@ -33,7 +33,8 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
-  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye
+  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye,
+  Pause, Play, Square, FolderUp
 } from 'lucide-react';
 import {
   FOLDER_STRUCTURE,
@@ -181,6 +182,17 @@ interface ClassifyResult {
   archived?: { id: string; archivedName: string; projectName: string; folderPath: string[]; };
   performance?: ProcessingPerformance;
   contextRebuildPending?: boolean;
+  /** 批量流程里这份文件走到哪一步了。单份上传时不用。 */
+  batchStage?: 'queued' | 'extracting' | 'extracted' | 'deciding' | 'aborted';
+}
+
+/** 批量分析的进度。phase 决定进度条说的是"抽事实"还是"判阶段"。 */
+interface BatchProgress {
+  phase: 'extracting' | 'deciding';
+  total: number;
+  done: number;
+  currentFile: string;
+  paused: boolean;
 }
 
 const PROJECT_STAGE_LABELS: Record<string, string> = {
@@ -230,30 +242,137 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
 }
 
 // ============ 上传区域 ============
-function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: FileList) => void; disabled: boolean }) {
+/**
+ * 批量上传走文件夹，不走压缩包。
+ *
+ * 压缩包看着省事，实际三个坑：中文文件名在 zip 里没有统一编码（GBK/UTF-8 混着来，
+ * 解出来经常是乱码）；要先整包传完才知道里面有几个文件，进度条和逐份暂停无从谈起；
+ * 服务端还得引入解压依赖并防解压炸弹。文件夹这条路上，浏览器已经把目录结构摊平好了，
+ * 而且原有链路本来就在用 webkitRelativePath 当 sourcePath，等于没有新增概念。
+ */
+type UploadFile = File & { archiveSourcePath?: string };
+
+/** 文件在原始目录里的相对路径。拖进来的目录用自定义字段，选择目录用浏览器给的字段。 */
+function sourcePathOf(file: File): string {
+  return (
+    (file as UploadFile).archiveSourcePath || file.webkitRelativePath || file.name
+  );
+}
+
+/**
+ * 把拖进来的东西摊平成文件列表。
+ *
+ * 拖文件夹时 dataTransfer.files 是空的——目录内容只能靠 webkitGetAsEntry 递归取。
+ * 少了这段，用户拖一个文件夹进来会毫无反应，而这恰恰是最自然的手势。
+ */
+async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<File[]> {
+  const entries = Array.from(dataTransfer.items)
+    .map(item => item.webkitGetAsEntry?.() ?? null)
+    .filter((entry): entry is FileSystemEntry => entry !== null);
+
+  // 浏览器不支持 entry API 时退回平铺文件，至少多选文件仍然可用。
+  if (entries.length === 0) return Array.from(dataTransfer.files);
+
+  const files: File[] = [];
+  const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+    if (entry.isFile) {
+      const file = await new Promise<File | null>(resolve =>
+        (entry as FileSystemFileEntry).file(resolve, () => resolve(null))
+      );
+      if (!file) return;
+      // webkitRelativePath 是只读的，改不了，把目录路径挂到自定义字段上。
+      Object.defineProperty(file, 'archiveSourcePath', {
+        value: `${prefix}${file.name}`,
+        configurable: true,
+      });
+      files.push(file);
+      return;
+    }
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    // readEntries 每次最多给 100 条，必须循环读到返回空数组为止，
+    // 否则超过 100 个文件的目录会被静默截断。
+    for (;;) {
+      const batch = await new Promise<FileSystemEntry[]>(resolve =>
+        reader.readEntries(resolve, () => resolve([]))
+      );
+      if (batch.length === 0) break;
+      for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+    }
+  };
+
+  await Promise.all(entries.map(entry => walk(entry, '')));
+  return files;
+}
+
+const UPLOAD_ACCEPT =
+  '.pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg';
+
+function UploadZone({ onFileUpload, disabled }: { onFileUpload: (files: File[]) => void; disabled: boolean }) {
   const [isDragging, setIsDragging] = useState(false);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div
       className={`relative border-2 border-dashed rounded-lg p-4 md:p-8 text-center transition-all ${disabled ? 'opacity-50 pointer-events-none' : ''} ${isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
-      onDrop={(e) => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length > 0) onFileUpload(e.dataTransfer.files); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        void collectDroppedFiles(e.dataTransfer).then(files => {
+          if (files.length > 0) onFileUpload(files);
+        });
+      }}
     >
       <input
         type="file" multiple
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg"
+        accept={UPLOAD_ACCEPT}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        onChange={(e) => { if (e.target.files && e.target.files.length > 0) onFileUpload(e.target.files); }}
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            onFileUpload(Array.from(e.target.files));
+          }
+          // 清空，否则连续选同一个文件夹不会再触发 change。
+          e.target.value = '';
+        }}
+      />
+      {/* 目录选择框需要单独一个 input：webkitdirectory 一旦打开就只能选目录。 */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            onFileUpload(Array.from(e.target.files));
+          }
+          e.target.value = '';
+        }}
       />
       <div className="flex flex-col items-center gap-3">
         <div className={`p-4 rounded-full ${isDragging ? 'bg-primary/10' : 'bg-muted'}`}>
           <Upload className={`h-8 w-8 ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
         </div>
         <div>
-          <p className="font-medium">拖拽文件到此处或点击上传</p>
+          <p className="font-medium">拖拽文件或整个文件夹到此处</p>
           <p className="text-sm text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、TXT、图片（JPG/PNG/GIF/WebP/SVG）等格式</p>
+          <p className="text-xs text-muted-foreground mt-1">多个文件会先全部抽取事实，再统一给出归档建议</p>
         </div>
+        {/* 这个按钮浮在透明 input 之上，所以要自己挡住冒泡，否则会打开选文件对话框。 */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="relative z-10"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            folderInputRef.current?.click();
+          }}
+        >
+          <FolderUp className="h-4 w-4 mr-1" />
+          选择文件夹
+        </Button>
       </div>
     </div>
   );
@@ -1792,6 +1911,17 @@ export default function Home() {
   const [processingProgress, setProcessingProgress] = useState(0);
   // 'abstract' 版阶段说明不含文件类型清单，用来验证清单是否在替模型答题。
 
+  /**
+   * 批量分析的进度与控制。
+   *
+   * 暂停和中断都必须用 ref 而不是 state：循环体是一个长跑的 async 函数，它闭包捕获
+   * 的是点上传那一刻的 state 快照，中途 setState 它读不到，按钮会像失灵一样。
+   */
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const pauseRef = useRef(false);
+  const abortRef = useRef(false);
+  const batchAbortControllerRef = useRef<AbortController | null>(null);
+
   // 项目管理
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -2255,7 +2385,551 @@ export default function Home() {
     ));
   };
 
-  const handleFileUpload = useCallback(async (files: FileList) => {
+  /**
+   * 把一份文件传进 S3 临时目录，返回 storageKey。
+   * 分片上传中途失败时负责回收自己已经传上去的分片，不在桶里留半份文件。
+   */
+  const uploadToTemp = useCallback(async (
+    file: File,
+    projectId: string,
+    signal?: AbortSignal
+  ): Promise<string> => {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
+
+    if (file.size <= CHUNK_SIZE) {
+      const uploadResponse = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'x-project-id': projectId,
+          'x-file-name': encodeURIComponent(file.name),
+        },
+        body: file,
+        signal,
+      });
+      const uploadData = await uploadResponse.json().catch(() => null);
+      if (!uploadResponse.ok || !uploadData?.storageKey) {
+        throw new Error(
+          uploadData?.error || `上传到 S3 失败（HTTP ${uploadResponse.status}）`
+        );
+      }
+      return String(uploadData.storageKey);
+    }
+
+    // 大文件：每个 2MB 分片立即存入 S3，最后无状态合并。
+    const chunkUploadId = crypto.randomUUID();
+    try {
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+      const chunkKeys = new Array<string>(totalChunks);
+      // 12.6MB 的文件切 7 片，3 并发要跑 3 批、6 并发只要 2 批，省约 2 秒。
+      // 单片仍是 2MB，失败重传的代价不变。
+      const CHUNK_UPLOAD_CONCURRENCY = 6;
+
+      for (
+        let batchStart = 0;
+        batchStart < totalChunks;
+        batchStart += CHUNK_UPLOAD_CONCURRENCY
+      ) {
+        const indexes = Array.from(
+          {
+            length: Math.min(
+              CHUNK_UPLOAD_CONCURRENCY,
+              totalChunks - batchStart
+            ),
+          },
+          (_, offset) => batchStart + offset
+        );
+        const uploaded = await Promise.all(indexes.map(async index => {
+          const start = index * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunkRes = await fetch('/api/uploads/chunk', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'x-upload-id': chunkUploadId,
+              'x-chunk-index': String(index),
+              'x-chunk-total': String(totalChunks),
+              'x-project-id': projectId,
+              'x-file-name': encodeURIComponent(file.name),
+            },
+            body: file.slice(start, end),
+            signal,
+          });
+          const chunkData = await chunkRes.json().catch(() => null);
+          if (!chunkRes.ok) {
+            throw new Error(
+              chunkData?.error ||
+              `分片 ${index + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
+            );
+          }
+          if (!chunkData?.chunkKey) {
+            throw new Error(`分片 ${index + 1}/${totalChunks} 未返回 S3 地址`);
+          }
+          return { index, chunkKey: String(chunkData.chunkKey) };
+        }));
+        for (const item of uploaded) chunkKeys[item.index] = item.chunkKey;
+      }
+
+      const completeResponse = await fetch('/api/uploads/chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'complete',
+          uploadId: chunkUploadId,
+          projectId,
+          fileName: encodeURIComponent(file.name),
+          mimeType: file.type || 'application/octet-stream',
+          chunkKeys,
+        }),
+        signal,
+      });
+      const completeData = await completeResponse.json().catch(() => null);
+      if (!completeResponse.ok || !completeData?.storageKey) {
+        throw new Error(
+          completeData?.error ||
+          `合并上传文件失败（HTTP ${completeResponse.status}）`
+        );
+      }
+      return String(completeData.storageKey);
+    } catch (error) {
+      // 收掉已经传上去的分片。这次清理不能带 signal——中断时它自己会被一起取消，
+      // 那就等于没清。
+      await fetch('/api/uploads/chunk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'abort',
+          uploadId: chunkUploadId,
+          projectId,
+        }),
+      }).catch(() => null);
+      throw error;
+    }
+  }, []);
+
+  /**
+   * 删掉临时文件，并让服务端连带忘掉这份文件的事实。
+   *
+   * 两件事必须一起做：只删临时文件的话，事实还留在项目档案里继续参与后续判断，
+   * 用户以为撤销了其实没有。
+   */
+  const deleteTemp = useCallback((
+    storageKey: string,
+    projectId: string,
+    sourcePath: string
+  ) => {
+    const params = new URLSearchParams({ storageKey, projectId, sourcePath });
+    return fetch(`/api/uploads?${params}`, { method: 'DELETE' }).catch(
+      () => null
+    );
+  }, []);
+
+  const refreshAfterUpload = useCallback(() => {
+    setArchiveRefreshKey(prev => prev + 1);
+    // 刷新项目列表以更新文件计数
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then(data => setProjects(data.projects || []))
+      .catch(() => undefined);
+  }, []);
+
+  /** 单份上传：解析、抽事实、判阶段一次做完，和以前一样。 */
+  const runSingleFile = useCallback(async (file: File, projectId: string) => {
+    const clientId = crypto.randomUUID();
+    const uploadedSourcePath = sourcePathOf(file);
+    setResults([
+      {
+        clientId,
+        fileName: file.name,
+        sourcePath: uploadedSourcePath,
+        fileSize: file.size,
+        targetFolder: null,
+        reasoning: '文件上传完成后将运行极简分类。',
+        process: {
+          finalDecision: {
+            method: 'none',
+            explanation: '正在抽取事实并运行极简分类。',
+          },
+        },
+        classificationMode: 'minimal',
+        requiresArchiveConfirmation: false,
+        minimalPending: true,
+      },
+    ]);
+
+    let uploadedStorageKey = '';
+    try {
+      uploadedStorageKey = await uploadToTemp(file, projectId);
+
+      const response = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storageKey: uploadedStorageKey,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || 'application/octet-stream',
+          projectId,
+          autoArchive: false,
+          minimalPath: true,
+          sourcePath: uploadedSourcePath,
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        const statusHint = response.status === 413
+          ? '文件超过当前服务允许的上传大小'
+          : response.status === 504
+            ? '文件处理超时'
+            : `请求失败（HTTP ${response.status}）`;
+        const serverMessage = [result?.error, result?.details]
+          .filter(Boolean)
+          .join('：');
+        throw new Error(serverMessage || statusHint);
+      }
+      if (!result) {
+        throw new Error('服务器没有返回有效的分类结果');
+      }
+
+      setResults(prev => prev.map(existing =>
+        existing.clientId === clientId
+          ? {
+              ...result,
+              clientId,
+              sourcePath: uploadedSourcePath,
+              requiresArchiveConfirmation: true,
+              sourceStorageKey: uploadedStorageKey,
+              sourceMimeType: file.type || 'application/octet-stream',
+              sourceProjectId: projectId,
+              archiveStatus: 'pending' as const,
+              minimalPending: false,
+            }
+          : existing
+      ));
+
+      if (result.contextRebuildPending) {
+        setProjectContextError(null);
+        void fetch('/api/project-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId }),
+        })
+          .then(async rebuildResponse => {
+            const rebuildData = await rebuildResponse.json().catch(() => null);
+            if (!rebuildResponse.ok) {
+              throw new Error(
+                rebuildData?.error || '分类成功，但后台 Context 更新失败'
+              );
+            }
+            setConsistencyReport(rebuildData?.consistency ?? null);
+            setMinimalReport(rebuildData?.minimal ?? null);
+          })
+          .catch(error => {
+            setProjectContextError(
+              error instanceof Error
+                ? error.message
+                : '分类成功，但后台 Context 更新失败'
+            );
+          });
+      }
+    } catch (error) {
+      if (uploadedStorageKey) {
+        void deleteTemp(uploadedStorageKey, projectId, uploadedSourcePath);
+      }
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      setResults(prev => prev.map(existing =>
+        existing.clientId === clientId
+          ? {
+              ...existing,
+              targetFolder: null,
+              minimalPending: false,
+              reasoning: `文件处理失败：${errorMessage}`,
+              process: {
+                finalDecision: {
+                  method: 'none' as const,
+                  explanation: `文件处理失败：${errorMessage}`,
+                },
+              },
+            }
+          : existing
+      ));
+    }
+  }, [uploadToTemp, deleteTemp]);
+
+  /**
+   * 批量上传：先把整批的事实全抽出来，再逐份判阶段。
+   *
+   * 不能沿用单份流程一个个跑完——判阶段时模型要看"同项目其他文件的事实"，一份份来的话
+   * 第一份判断时项目里空无一物、最后一份才看得到全貌，同一批文件的判断质量取决于它排在
+   * 第几个。先抽后判，每份文件看到的上下文才是一样的。
+   */
+  const runBatchFlow = useCallback(async (files: File[], projectId: string) => {
+    const controller = new AbortController();
+    batchAbortControllerRef.current = controller;
+    pauseRef.current = false;
+    abortRef.current = false;
+
+    // 每份文件在这一轮里的状态。放闭包里而不是 state：中断清理要读最新值，
+    // 而长跑循环里读 state 拿到的是点上传那一刻的旧快照。
+    const items = files.map(file => ({
+      clientId: crypto.randomUUID(),
+      file,
+      sourcePath: sourcePathOf(file),
+      storageKey: '',
+      failed: false,
+      /** 是否已产出待人工确认的建议。中断时只留下产出了建议的，其余一律清掉。 */
+      suggested: false,
+    }));
+
+    // 先把整批列出来，用户一眼能看到队列有多长、卡在哪一份。
+    setResults(items.map(item => ({
+      clientId: item.clientId,
+      fileName: item.file.name,
+      sourcePath: item.sourcePath,
+      fileSize: item.file.size,
+      targetFolder: null,
+      reasoning: '排队中，等待抽取事实。',
+      process: {
+        finalDecision: { method: 'none' as const, explanation: '排队中。' },
+      },
+      classificationMode: 'minimal' as const,
+      requiresArchiveConfirmation: false,
+      minimalPending: true,
+      batchStage: 'queued' as const,
+    })));
+
+    const patch = (clientId: string, changes: Partial<ClassifyResult>) =>
+      setResults(prev =>
+        prev.map(item =>
+          item.clientId === clientId ? { ...item, ...changes } : item
+        )
+      );
+
+    /** 暂停闸门。停在两份文件之间，不打断正在跑的这一份。 */
+    const waitWhilePaused = async () => {
+      while (pauseRef.current && !abortRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    };
+
+    /**
+     * 中断后的清理：凡是没产出建议的，临时文件和已抽的事实一起删掉。
+     *
+     * 事实必须删——它已经写进项目档案了，留着会继续作为"同项目其他文件"参与
+     * 以后每一次判断，而用户从没见过这份文件的结果。
+     */
+    const cleanupUnfinished = async () => {
+      await Promise.all(
+        items
+          .filter(item => item.storageKey && !item.suggested)
+          .map(item => deleteTemp(item.storageKey, projectId, item.sourcePath))
+      );
+      const droppedIds = new Set(
+        items.filter(item => !item.suggested).map(item => item.clientId)
+      );
+      // 没产出建议的行留着只会让用户以为还能确认。
+      setResults(prev => prev.filter(item => !droppedIds.has(item.clientId)));
+    };
+
+    try {
+      // ---------- 第一阶段：抽取全部文件的事实 ----------
+      setBatchProgress({
+        phase: 'extracting',
+        total: items.length,
+        done: 0,
+        currentFile: '',
+        paused: false,
+      });
+
+      for (const [index, item] of items.entries()) {
+        await waitWhilePaused();
+        if (abortRef.current) break;
+
+        setBatchProgress({
+          phase: 'extracting',
+          total: items.length,
+          done: index,
+          currentFile: item.file.name,
+          paused: false,
+        });
+        // 抽事实占整体进度的前一半。
+        setProcessingProgress(Math.round((index / items.length) * 50));
+        patch(item.clientId, {
+          batchStage: 'extracting',
+          reasoning: '正在读取文件并抽取事实…',
+        });
+
+        try {
+          item.storageKey = await uploadToTemp(
+            item.file,
+            projectId,
+            controller.signal
+          );
+          const response = await fetch('/api/classify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'facts',
+              storageKey: item.storageKey,
+              fileName: item.file.name,
+              fileSize: item.file.size,
+              mimeType: item.file.type || 'application/octet-stream',
+              projectId,
+              sourcePath: item.sourcePath,
+            }),
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok) {
+            const serverMessage = [data?.error, data?.details]
+              .filter(Boolean)
+              .join('：');
+            throw new Error(
+              serverMessage || `请求失败（HTTP ${response.status}）`
+            );
+          }
+          patch(item.clientId, {
+            batchStage: 'extracted',
+            documentFacts: data?.documentFacts,
+            documentType: data?.documentType,
+            contentPreview: data?.contentPreview,
+            performance: data?.performance,
+            reasoning: '事实已抽取，等整批抽完后统一给出归档建议。',
+          });
+        } catch (error) {
+          if (abortRef.current) break;
+          item.failed = true;
+          const message = error instanceof Error ? error.message : '未知错误';
+          // 这一份没抽成，临时文件立刻收掉，不用等到整批结束。
+          if (item.storageKey) {
+            void deleteTemp(item.storageKey, projectId, item.sourcePath);
+            item.storageKey = '';
+          }
+          patch(item.clientId, {
+            batchStage: undefined,
+            minimalPending: false,
+            reasoning: `抽取事实失败：${message}`,
+            process: {
+              finalDecision: {
+                method: 'none' as const,
+                explanation: `抽取事实失败：${message}`,
+              },
+            },
+          });
+        }
+
+        setBatchProgress(prev =>
+          prev ? { ...prev, done: index + 1 } : prev
+        );
+        setProcessingProgress(Math.round(((index + 1) / items.length) * 50));
+      }
+
+      // ---------- 第二阶段：事实齐了，逐份判阶段 ----------
+      const ready = items.filter(item => item.storageKey && !item.failed);
+      if (!abortRef.current && ready.length > 0) {
+        setBatchProgress({
+          phase: 'deciding',
+          total: ready.length,
+          done: 0,
+          currentFile: '',
+          paused: pauseRef.current,
+        });
+
+        for (const [index, item] of ready.entries()) {
+          await waitWhilePaused();
+          if (abortRef.current) break;
+
+          setBatchProgress({
+            phase: 'deciding',
+            total: ready.length,
+            done: index,
+            currentFile: item.file.name,
+            paused: false,
+          });
+          setProcessingProgress(50 + Math.round((index / ready.length) * 50));
+          patch(item.clientId, {
+            batchStage: 'deciding',
+            reasoning: '正在判断归档阶段…',
+          });
+
+          try {
+            const response = await fetch('/api/classify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                mode: 'decide',
+                storageKey: item.storageKey,
+                fileName: item.file.name,
+                fileSize: item.file.size,
+                mimeType: item.file.type || 'application/octet-stream',
+                projectId,
+                sourcePath: item.sourcePath,
+              }),
+              signal: controller.signal,
+            });
+            const result = await response.json().catch(() => null);
+            if (!response.ok || !result) {
+              const serverMessage = [result?.error, result?.details]
+                .filter(Boolean)
+                .join('：');
+              throw new Error(
+                serverMessage || `请求失败（HTTP ${response.status}）`
+              );
+            }
+
+            item.suggested = true;
+            patch(item.clientId, {
+              ...result,
+              clientId: item.clientId,
+              sourcePath: item.sourcePath,
+              requiresArchiveConfirmation: true,
+              sourceStorageKey: item.storageKey,
+              sourceMimeType: item.file.type || 'application/octet-stream',
+              sourceProjectId: projectId,
+              archiveStatus: 'pending' as const,
+              minimalPending: false,
+              batchStage: undefined,
+            });
+          } catch (error) {
+            if (abortRef.current) break;
+            const message = error instanceof Error ? error.message : '未知错误';
+            patch(item.clientId, {
+              batchStage: undefined,
+              minimalPending: false,
+              reasoning: `判断阶段失败：${message}`,
+              process: {
+                finalDecision: {
+                  method: 'none' as const,
+                  explanation: `判断阶段失败：${message}`,
+                },
+              },
+            });
+          }
+
+          setBatchProgress(prev =>
+            prev ? { ...prev, done: index + 1 } : prev
+          );
+          setProcessingProgress(
+            50 + Math.round(((index + 1) / ready.length) * 50)
+          );
+        }
+      }
+
+      if (abortRef.current) await cleanupUnfinished();
+    } finally {
+      // 控制器不置空的话，这一批的 AbortController 会一直被 ref 攥着，
+      // 连同它内部登记的监听器一起留到下一批。
+      batchAbortControllerRef.current = null;
+      pauseRef.current = false;
+      abortRef.current = false;
+      setBatchProgress(null);
+      setProcessingProgress(100);
+      setIsProcessing(false);
+      refreshAfterUpload();
+    }
+  }, [uploadToTemp, deleteTemp, refreshAfterUpload]);
+
+  const handleFileUpload = useCallback(async (files: File[]) => {
     if (!selectedProjectId) {
       alert('请先选择或创建一个项目');
       return;
@@ -2264,265 +2938,55 @@ export default function Home() {
       alert('请先确认或取消当前待归档文件，再上传新一批文件');
       return;
     }
+    if (files.length === 0) return;
 
     setIsProcessing(true);
     setProcessingProgress(0);
     setResults([]);
 
-    const totalFiles = files.length;
-    let processedFiles = 0;
-
-    for (const file of Array.from(files)) {
-      const clientId = crypto.randomUUID();
-      const uploadedSourcePath = file.webkitRelativePath || file.name;
-      setResults(prev => [
-        ...prev,
-        {
-          clientId,
-          fileName: file.name,
-          sourcePath: uploadedSourcePath,
-          fileSize: file.size,
-          targetFolder: null,
-          confidence: 0,
-          reasoning: '文件上传完成后将运行极简分类。',
-          process: {
-            finalDecision: {
-              method: 'none',
-              explanation: '正在抽取事实并运行极简分类。',
-            },
-          },
-          classificationMode: 'minimal',
-          requiresArchiveConfirmation: false,
-          minimalPending: true,
-        },
-      ]);
-      let uploadedStorageKey = '';
-      let chunkUploadId = '';
+    // 单份文件没有"同批其他文件"可等，拆两阶段只会多一次往返。
+    if (files.length === 1) {
       try {
-        const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk
-
-        if (file.size > CHUNK_SIZE) {
-          // 大文件：每个 2MB 分片立即存入 S3，最后无状态合并。
-          chunkUploadId = crypto.randomUUID();
-          const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-          const chunkKeys = new Array<string>(totalChunks);
-          // 12.6MB 的文件切 7 片，3 并发要跑 3 批、6 并发只要 2 批，省约 2 秒。
-          // 单片仍是 2MB，失败重传的代价不变。
-          const CHUNK_UPLOAD_CONCURRENCY = 6;
-
-          for (
-            let batchStart = 0;
-            batchStart < totalChunks;
-            batchStart += CHUNK_UPLOAD_CONCURRENCY
-          ) {
-            const indexes = Array.from(
-              {
-                length: Math.min(
-                  CHUNK_UPLOAD_CONCURRENCY,
-                  totalChunks - batchStart
-                ),
-              },
-              (_, offset) => batchStart + offset
-            );
-            const uploaded = await Promise.all(indexes.map(async index => {
-              const start = index * CHUNK_SIZE;
-              const end = Math.min(start + CHUNK_SIZE, file.size);
-              const chunk = file.slice(start, end);
-              const chunkRes = await fetch('/api/uploads/chunk', {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': 'application/octet-stream',
-                  'x-upload-id': chunkUploadId,
-                  'x-chunk-index': String(index),
-                  'x-chunk-total': String(totalChunks),
-                  'x-project-id': selectedProjectId,
-                  'x-file-name': encodeURIComponent(file.name),
-                },
-                body: chunk,
-              });
-              const chunkData = await chunkRes.json().catch(() => null);
-              if (!chunkRes.ok) {
-                throw new Error(
-                  chunkData?.error ||
-                  `分片 ${index + 1}/${totalChunks} 上传失败（HTTP ${chunkRes.status}）`
-                );
-              }
-              if (!chunkData?.chunkKey) {
-                throw new Error(
-                  `分片 ${index + 1}/${totalChunks} 未返回 S3 地址`
-                );
-              }
-              return { index, chunkKey: String(chunkData.chunkKey) };
-            }));
-            for (const item of uploaded) chunkKeys[item.index] = item.chunkKey;
-          }
-
-          const completeResponse = await fetch('/api/uploads/chunk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'complete',
-              uploadId: chunkUploadId,
-              projectId: selectedProjectId,
-              fileName: encodeURIComponent(file.name),
-              mimeType: file.type || 'application/octet-stream',
-              chunkKeys,
-            }),
-          });
-          const completeData = await completeResponse.json().catch(() => null);
-          if (!completeResponse.ok || !completeData?.storageKey) {
-            throw new Error(
-              completeData?.error ||
-              `合并上传文件失败（HTTP ${completeResponse.status}）`
-            );
-          }
-          uploadedStorageKey = completeData.storageKey;
-          chunkUploadId = '';
-        } else {
-          // 小文件：直接上传
-          const uploadResponse = await fetch('/api/uploads', {
-            method: 'POST',
-            headers: {
-              'Content-Type': file.type || 'application/octet-stream',
-              'x-project-id': selectedProjectId,
-              'x-file-name': encodeURIComponent(file.name),
-            },
-            body: file,
-          });
-          const uploadData = await uploadResponse.json().catch(() => null);
-          if (!uploadResponse.ok || !uploadData?.storageKey) {
-            throw new Error(
-              uploadData?.error ||
-              `上传到 S3 失败（HTTP ${uploadResponse.status}）`
-            );
-          }
-          uploadedStorageKey = uploadData.storageKey;
-        }
-
-        const response = await fetch('/api/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            storageKey: uploadedStorageKey,
-            fileName: file.name,
-            fileSize: file.size,
-            mimeType: file.type || 'application/octet-stream',
-            projectId: selectedProjectId,
-            autoArchive: false,
-            minimalPath: true,
-            sourcePath: file.webkitRelativePath || file.name,
-          }),
-        });
-        const result = await response.json().catch(() => null);
-        if (!response.ok) {
-          const statusHint = response.status === 413
-            ? '文件超过当前服务允许的上传大小'
-            : response.status === 504
-              ? '文件处理超时'
-              : `请求失败（HTTP ${response.status}）`;
-          const serverMessage = [result?.error, result?.details]
-            .filter(Boolean)
-            .join('：');
-          throw new Error(serverMessage || statusHint);
-        }
-        if (!result) {
-          throw new Error('服务器没有返回有效的分类结果');
-        }
-
-        setResults(prev => {
-          const completed: ClassifyResult = {
-            ...result,
-            clientId,
-            sourcePath: uploadedSourcePath,
-            requiresArchiveConfirmation: true,
-            sourceStorageKey: uploadedStorageKey,
-            sourceMimeType: file.type || 'application/octet-stream',
-            sourceProjectId: selectedProjectId,
-            archiveStatus: 'pending',
-            minimalPending: false,
-          };
-          return prev.map(existing => {
-            if (existing.clientId === clientId) return completed;
-            return existing;
-          });
-        });
-
-        if (result.contextRebuildPending && selectedProjectId) {
-          setProjectContextError(null);
-          void fetch('/api/project-context', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId: selectedProjectId }),
-          })
-            .then(async rebuildResponse => {
-              const rebuildData = await rebuildResponse.json().catch(() => null);
-              if (!rebuildResponse.ok) {
-                throw new Error(
-                  rebuildData?.error || '分类成功，但后台 Context 更新失败'
-                );
-              }
-              setConsistencyReport(rebuildData?.consistency ?? null);
-              setMinimalReport(rebuildData?.minimal ?? null);
-            })
-            .catch(error => {
-              setProjectContextError(
-                error instanceof Error
-                  ? error.message
-                  : '分类成功，但后台 Context 更新失败'
-              );
-            });
-        }
-      } catch (error) {
-        if (chunkUploadId) {
-          await fetch('/api/uploads/chunk', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'abort',
-              uploadId: chunkUploadId,
-              projectId: selectedProjectId,
-            }),
-          }).catch(() => null);
-        }
-        if (uploadedStorageKey) {
-          const params = new URLSearchParams({
-            storageKey: uploadedStorageKey,
-            projectId: selectedProjectId,
-            sourcePath: file.webkitRelativePath || file.name,
-          });
-          void fetch(`/api/uploads?${params}`, { method: 'DELETE' });
-        }
-        const errorMessage = error instanceof Error
-          ? error.message
-          : '未知错误';
-        setResults(prev => prev.map(existing =>
-          existing.clientId === clientId
-            ? {
-                ...existing,
-                targetFolder: null,
-                confidence: 0,
-                reasoning: `文件处理失败：${errorMessage}`,
-                process: {
-                  finalDecision: {
-                    method: 'none' as const,
-                    explanation: `文件处理失败：${errorMessage}`,
-                  },
-                },
-              }
-            : existing
-        ));
+        await runSingleFile(files[0], selectedProjectId);
+      } finally {
+        setProcessingProgress(100);
+        setIsProcessing(false);
+        refreshAfterUpload();
       }
-      processedFiles++;
-      setProcessingProgress(Math.round((processedFiles / totalFiles) * 100));
+      return;
     }
 
-    setIsProcessing(false);
-    setArchiveRefreshKey(prev => prev + 1);
-    // 刷新项目列表以更新文件计数
-    fetch('/api/projects')
-      .then(r => r.json())
-      .then(data => setProjects(data.projects || []));
-  }, [selectedProjectId, results]);
+    await runBatchFlow(files, selectedProjectId);
+  }, [
+    selectedProjectId,
+    results,
+    runSingleFile,
+    runBatchFlow,
+    refreshAfterUpload,
+  ]);
+
+  /** 暂停：跑完当前这一份就停在原地，不取消已经发出去的请求。 */
+  const handleTogglePause = useCallback(() => {
+    pauseRef.current = !pauseRef.current;
+    setBatchProgress(prev =>
+      prev ? { ...prev, paused: pauseRef.current } : prev
+    );
+  }, []);
+
+  /** 中断：连同正在跑的这一份一起停掉，随后清理没产出结果的文件。 */
+  const handleAbortBatch = useCallback(() => {
+    abortRef.current = true;
+    pauseRef.current = false;
+    batchAbortControllerRef.current?.abort();
+    setBatchProgress(prev => (prev ? { ...prev, paused: false } : prev));
+  }, []);
+
+  // 组件卸载时把还在跑的批次掐掉，否则它会继续 setState 到已经没了的组件上。
+  useEffect(() => () => {
+    abortRef.current = true;
+    batchAbortControllerRef.current?.abort();
+    batchAbortControllerRef.current = null;
+  }, []);
 
   const selectedProject = projects.find(p => p.id === selectedProjectId);
   const archiveDataMatchesSelection =
@@ -2802,11 +3266,63 @@ export default function Home() {
                 )}
                 {isProcessing && (
                   <div className="mt-4 space-y-2">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      <span className="text-sm">正在处理文件...</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {batchProgress?.paused ? (
+                          <Pause className="h-4 w-4 shrink-0 text-amber-600" />
+                        ) : (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
+                        )}
+                        <span className="truncate text-sm">
+                          {batchProgress
+                            ? `${
+                                batchProgress.phase === 'extracting'
+                                  ? '第 1/2 步 抽取事实'
+                                  : '第 2/2 步 判断归档阶段'
+                              }（${batchProgress.done}/${batchProgress.total}）${
+                                batchProgress.paused ? ' — 已暂停' : ''
+                              }`
+                            : '正在处理文件...'}
+                        </span>
+                      </div>
+                      {batchProgress && (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleTogglePause}
+                          >
+                            {batchProgress.paused ? (
+                              <><Play className="h-3.5 w-3.5 mr-1" />继续</>
+                            ) : (
+                              <><Pause className="h-3.5 w-3.5 mr-1" />暂停</>
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={handleAbortBatch}
+                          >
+                            <Square className="h-3.5 w-3.5 mr-1" />
+                            中断
+                          </Button>
+                        </div>
+                      )}
                     </div>
                     <Progress value={processingProgress} className="h-2" />
+                    {batchProgress?.currentFile && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        当前文件：{batchProgress.currentFile}
+                      </p>
+                    )}
+                    {batchProgress?.paused && (
+                      <p className="text-xs text-amber-700">
+                        当前文件会分析完，之后暂不继续下一个。
+                      </p>
+                    )}
                   </div>
                 )}
               </CardContent>
