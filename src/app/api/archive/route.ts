@@ -14,6 +14,7 @@ import {
   type ArchivedFile,
 } from "@/lib/storage";
 import { getArchiveFolder } from "@/lib/folder-structure";
+import { sanitizeSubPath } from "@/lib/archive-subpath";
 import {
   createFallbackDocumentFacts,
   DocumentFactsSchema,
@@ -55,6 +56,8 @@ export async function POST(request: NextRequest) {
     let parsedConfidence = 0;
     let folderPath: string[] = [];
     let sourcePath = "";
+    // 阶段文件夹之下用户自己的目录层级，原样保留。
+    let subPath: string[] = [];
     let documentFacts: DocumentFacts | null = null;
     // 默认按人工确认算：这个接口原本只有人点"确认归档"才会调到。
     let stageSource: StageSource = "human";
@@ -71,6 +74,7 @@ export async function POST(request: NextRequest) {
       reasoning = String(body.reasoning || "");
       parsedConfidence = Number(body.confidence || 0);
       sourcePath = String(body.sourcePath || originalName);
+      subPath = sanitizeSubPath(body.subPath);
       if (body.stageSource === "naming_rule") stageSource = "naming_rule";
       const parsedFacts = DocumentFactsSchema.safeParse(body.documentFacts);
       documentFacts = parsedFacts.success ? parsedFacts.data : null;
@@ -87,6 +91,7 @@ export async function POST(request: NextRequest) {
       reasoning = String(formData.get("reasoning") ?? "");
       parsedConfidence = Number(formData.get("confidence") ?? 0);
       sourcePath = String(formData.get("sourcePath") ?? originalName);
+      subPath = sanitizeSubPath(formData.get("subPath"));
       if (formData.get("stageSource") === "naming_rule") {
         stageSource = "naming_rule";
       }
@@ -120,7 +125,9 @@ export async function POST(request: NextRequest) {
     if (!targetFolder) {
       return NextResponse.json({ error: "无效的目标文件夹" }, { status: 400 });
     }
-    folderPath = targetFolder.folderPath;
+    // 阶段仍然必须是预设八个之一，只允许在它下面追加用户给的层级——
+    // 这样不会凭空冒出新阶段，而用户的整理也不会被拍平。
+    folderPath = [...targetFolder.folderPath, ...subPath];
 
     const project = await measurePhase("load_project", () => getProject(projectId));
     if (!project) {
