@@ -139,6 +139,10 @@ interface MinimalRebuildReport {
     evidence: string;
   }>;
   findings: ConflictFinding[];
+  /** 确定性检查的结果：不调模型、不会误报，所以常开。 */
+  ruleFindings?: ConflictFinding[];
+  /** 系统建议人工深挖的文件。只标记，不自动执行。 */
+  deepenSuggestions?: Array<{ sourcePath: string; reason: string }>;
   dismissedCount: number;
   reviewError?: string;
 }
@@ -184,16 +188,27 @@ interface ClassifyResult {
   contextRebuildPending?: boolean;
   /** 批量流程里这份文件走到哪一步了。单份上传时不用。 */
   batchStage?: 'queued' | 'extracting' | 'extracted' | 'deciding' | 'aborted';
+  /** 文件名归一到的规范词条，null 表示规范没覆盖。 */
+  namingTerm?: string | null;
+  /** unique 表示纯按命名规范定位、没读过内容。归档时据此记录来源。 */
+  namingKind?: 'unique' | 'ambiguous' | 'unmatched';
 }
 
-/** 批量分析的进度。phase 决定进度条说的是"抽事实"还是"判阶段"。 */
+/** 批量分析的进度。phase 决定进度条上显示的是哪一步。 */
 interface BatchProgress {
-  phase: 'extracting' | 'deciding';
+  phase: 'naming' | 'uploading' | 'extracting' | 'deciding';
   total: number;
   done: number;
   currentFile: string;
   paused: boolean;
 }
+
+const BATCH_PHASE_LABELS: Record<BatchProgress['phase'], string> = {
+  naming: '按文件名分流',
+  uploading: '上传规范已覆盖的文件',
+  extracting: '抽取事实',
+  deciding: '判断归档阶段',
+};
 
 const PROJECT_STAGE_LABELS: Record<string, string> = {
   pre_initiation: '立项前',
@@ -1311,10 +1326,11 @@ function collectNodeFileIds(node: ArchiveTreeNode): string[] {
   return node.children?.flatMap(collectNodeFileIds) || [];
 }
 
-function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, onRenameNode, setCtxMenu }: {
+function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, onRenameNode, onExtractFacts, setCtxMenu }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
+  onExtractFacts: (node: ArchiveTreeNode) => void;
   onDeleteNode: (node: ArchiveTreeNode) => void;
   onMoveNode: (node: ArchiveTreeNode) => void;
   onRenameNode: (node: ArchiveTreeNode) => void;
@@ -1331,6 +1347,8 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
       { label: '重命名', icon: <Pencil className="h-3.5 w-3.5 mr-2" />, action: () => onRenameNode(node) },
       { label: '移动', icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />, action: () => onMoveNode(node) },
       { label: '下载', icon: <Download className="h-3.5 w-3.5 mr-2" />, action: () => onDownload(fileId) },
+      // 归档之后仍然可以要求读内容：粗筛时按文件名归的位置，事后想核实随时能挖。
+      { label: '提取事实并复核', icon: <Brain className="h-3.5 w-3.5 mr-2" />, action: () => onExtractFacts(node) },
       { label: '删除', icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />, action: () => onDeleteNode(node), destructive: true },
     ];
     return (
@@ -1416,6 +1434,7 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
               onDeleteNode={onDeleteNode}
               onMoveNode={onMoveNode}
               onRenameNode={onRenameNode}
+              onExtractFacts={onExtractFacts}
               setCtxMenu={setCtxMenu}
             />
           ))}
@@ -1449,6 +1468,11 @@ function ArchivedFilesList({
   const [tree, setTree] = useState<ArchiveTreeNode[]>(archiveTree);
   const [files, setFiles] = useState<ArchivedFile[]>(archivedFiles);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [extractResult, setExtractResult] = useState<{
+    fileName: string;
+    status: 'running' | 'done' | 'error';
+    message: string;
+  } | null>(null);
   const [moveTarget, setMoveTarget] = useState<ArchiveOperationTarget | null>(null);
   const [moving, setMoving] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
@@ -1626,6 +1650,76 @@ function ArchivedFilesList({
     }
   };
 
+  /**
+   * 对已归档文件补抽事实。
+   *
+   * 粗筛时按文件名归位的文件没读过内容，事后想核实随时可以从这里挖。抽完会拿全项目
+   * 的上下文重判一次阶段，但**只把结论说给人听，不自动挪文件**——归档位置是人的
+   * 决定，读到新证据不构成替他改的理由。
+   */
+  const handleExtractArchivedFacts = async (node: ArchiveTreeNode) => {
+    if (!node.file) return;
+    const { id, originalName } = node.file;
+    setExtractResult({
+      fileName: originalName,
+      status: 'running',
+      message: '正在读取文件内容并抽取事实…',
+    });
+    try {
+      const factsResponse = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'facts',
+          archivedFileId: id,
+          projectId,
+          sourcePath: originalName,
+        }),
+      });
+      const factsData = await factsResponse.json().catch(() => null);
+      if (!factsResponse.ok) {
+        throw new Error(
+          [factsData?.error, factsData?.details].filter(Boolean).join('：') ||
+            `抽取失败（HTTP ${factsResponse.status}）`
+        );
+      }
+
+      const decideResponse = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'decide',
+          archivedFileId: id,
+          projectId,
+          sourcePath: originalName,
+        }),
+      });
+      const decided = await decideResponse.json().catch(() => null);
+      const suggested: string[] | undefined =
+        decided?.targetFolder?.folderPath?.slice(1);
+      const currentPath = node.folderPath?.slice(1) ?? [];
+      const differs =
+        Array.isArray(suggested) &&
+        suggested.join(' / ') !== currentPath.join(' / ');
+
+      setExtractResult({
+        fileName: originalName,
+        status: 'done',
+        message: !decideResponse.ok || !decided
+          ? '事实已抽取并加入项目上下文，但重新判断阶段失败。'
+          : differs
+            ? `事实已加入项目上下文。按内容判断它更像属于「${suggested!.join(' / ')}」，当前归在「${currentPath.join(' / ')}」，请人工确认是否需要移动。`
+            : '事实已加入项目上下文，按内容判断与当前归档位置一致。',
+      });
+    } catch (error) {
+      setExtractResult({
+        fileName: originalName,
+        status: 'error',
+        message: error instanceof Error ? error.message : '提取事实失败',
+      });
+    }
+  };
+
   const handleDownloadAll = () => {
     setDownloadingAll(true);
     window.open(`/api/archive/download-all?projectId=${projectId}`, '_blank');
@@ -1653,6 +1747,37 @@ function ArchivedFilesList({
 
   return (
     <div>
+      {extractResult && (
+        <div
+          className={`mb-2 rounded-md border p-2 text-xs ${
+            extractResult.status === 'error'
+              ? 'border-destructive/40 bg-destructive/5 text-destructive'
+              : 'border-violet-200 bg-violet-50 text-violet-800'
+          }`}
+        >
+          <div className="flex items-start gap-1.5">
+            {extractResult.status === 'running' ? (
+              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : extractResult.status === 'error' ? (
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Brain className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="break-all font-medium">{extractResult.fileName}</p>
+              <p className="mt-0.5 break-words leading-4">{extractResult.message}</p>
+            </div>
+            {extractResult.status !== 'running' && (
+              <button
+                className="shrink-0 opacity-60 hover:opacity-100"
+                onClick={() => setExtractResult(null)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <span className="text-xs text-muted-foreground">共 {files.length} 个文件</span>
         <Button
@@ -1680,6 +1805,7 @@ function ArchivedFilesList({
             onDeleteNode={handleDelete}
             onMoveNode={handleMoveRequest}
             onRenameNode={handleRenameRequest}
+            onExtractFacts={handleExtractArchivedFacts}
             setCtxMenu={setCtxMenu}
           />
         ))}
@@ -1909,6 +2035,9 @@ interface BatchReviewFile {
   /** 模型原本的建议，用来标出哪些被人工改过。 */
   suggestedFolderId: string | null;
   needsReview: boolean;
+  /** 纯按文件名定位、没读过内容。界面要标出来，因为这一类最该被人扫一眼。 */
+  byNamingRule: boolean;
+  namingTerm?: string | null;
   archiveStatus?: ClassifyResult['archiveStatus'];
   archiveError?: string;
 }
@@ -1967,10 +2096,12 @@ function BatchTreeItem({
   node,
   level,
   onFileContextMenu,
+  extractingClientId,
 }: {
   node: BatchTreeNode;
   level: number;
   onFileContextMenu: (event: React.MouseEvent, file: BatchReviewFile) => void;
+  extractingClientId: string | null;
 }) {
   const [isOpen, setIsOpen] = useState(true);
   const fileCount = countBatchTreeFiles(node);
@@ -2006,6 +2137,7 @@ function BatchTreeItem({
               node={child}
               level={level + 1}
               onFileContextMenu={onFileContextMenu}
+              extractingClientId={extractingClientId}
             />
           ))}
           {node.files.map(file => {
@@ -2021,7 +2153,9 @@ function BatchTreeItem({
                 onContextMenu={event => onFileContextMenu(event, file)}
                 title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
               >
-                {file.archiveStatus === 'archiving' ? (
+                {extractingClientId === file.clientId ? (
+                  <Brain className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-600" />
+                ) : file.archiveStatus === 'archiving' ? (
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                 ) : file.archiveStatus === 'archived' ? (
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" />
@@ -2036,7 +2170,16 @@ function BatchTreeItem({
                     已改
                   </Badge>
                 )}
-                {file.needsReview && !moved && (
+                {file.byNamingRule && !moved && (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-slate-300 bg-slate-50 px-1 py-0 text-[10px] text-slate-600"
+                    title={`按文件名对应规范里的「${file.namingTerm}」，未读取文件内容`}
+                  >
+                    按规范
+                  </Badge>
+                )}
+                {file.needsReview && !moved && !file.byNamingRule && (
                   <Badge variant="outline" className="shrink-0 border-amber-300 bg-amber-50 px-1 py-0 text-[10px] text-amber-700">
                     待复核
                   </Badge>
@@ -2121,6 +2264,8 @@ function BatchReviewDialog({
   onShowDetails,
   detailsResult,
   onCloseDetails,
+  onExtractFacts,
+  extractingClientId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -2134,6 +2279,9 @@ function BatchReviewDialog({
   /** 右键点开的那一份。详情弹窗嵌在本弹窗内部，不能做成并列的第二个模态。 */
   detailsResult: ClassifyResult | null;
   onCloseDetails: () => void;
+  /** 用户主动要求读这份文件的内容。批量默认不读按规范定位的那些。 */
+  onExtractFacts: (clientId: string) => void;
+  extractingClientId: string | null;
 }) {
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
   const [moveTarget, setMoveTarget] = useState<BatchReviewFile | null>(null);
@@ -2161,6 +2309,14 @@ function BatchReviewDialog({
           icon: <Eye className="h-3.5 w-3.5 mr-2" />,
           action: () => onShowDetails(file.clientId),
         },
+        // 只对没读过内容的文件出现。已经抽过事实的再抽一次没有意义。
+        ...(file.byNamingRule
+          ? [{
+              label: '提取事实并复核',
+              icon: <Brain className="h-3.5 w-3.5 mr-2" />,
+              action: () => onExtractFacts(file.clientId),
+            }]
+          : []),
         {
           label: '修改归档位置',
           icon: <ArrowRightLeft className="h-3.5 w-3.5 mr-2" />,
@@ -2191,6 +2347,7 @@ function BatchReviewDialog({
               node={node}
               level={0}
               onFileContextMenu={handleFileContextMenu}
+              extractingClientId={extractingClientId}
             />
           ))}
         </div>
@@ -2413,6 +2570,10 @@ export default function Home() {
     { done: number; total: number } | null
   >(null);
   const [batchDetailsClientId, setBatchDetailsClientId] = useState<string | null>(
+    null
+  );
+  /** 正在按用户要求读内容的那一份。同一时刻只允许一个，避免并发写同一份事实。 */
+  const [extractingClientId, setExtractingClientId] = useState<string | null>(
     null
   );
 
@@ -3053,7 +3214,25 @@ export default function Home() {
 
     let uploadedStorageKey = '';
     try {
+      // 单份上传**不跳过任何步骤**，仍然读内容、抽事实、走完整链路。归一化在这里只用来
+      // 多给判阶段的模型一句提示，让单份和批量里歧义分支拿到的上下文一致——否则同一份
+      // 公司章程混在批量里判会比单独传更准，说不通。
+      // 归一化和上传互不依赖，并行发出，正常情况下不增加等待时间；失败就当没有提示。
+      const namingPromise = fetch('/api/naming', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourcePaths: [uploadedSourcePath] }),
+      })
+        .then(async response => {
+          if (!response.ok) return null;
+          const data = await response.json().catch(() => null);
+          const term = data?.results?.[0]?.term;
+          return typeof term === 'string' ? term : null;
+        })
+        .catch(() => null);
+
       uploadedStorageKey = await uploadToTemp(file, projectId);
+      const namingTerm = await namingPromise;
 
       const response = await fetch('/api/classify', {
         method: 'POST',
@@ -3067,6 +3246,7 @@ export default function Home() {
           autoArchive: false,
           minimalPath: true,
           sourcePath: uploadedSourcePath,
+          namingTerm,
         }),
       });
       const result = await response.json().catch(() => null);
@@ -3173,6 +3353,11 @@ export default function Home() {
       failed: false,
       /** 是否已产出待人工确认的建议。中断时只留下产出了建议的，其余一律清掉。 */
       suggested: false,
+      /** 命名规范归一到的词条，null 表示规范没覆盖。 */
+      namingTerm: null as string | null,
+      /** unique 的按规范直接归档；ambiguous / unmatched 走事实链路。 */
+      namingKind: 'unmatched' as 'unique' | 'ambiguous' | 'unmatched',
+      namingStages: [] as string[],
     }));
 
     // 先把整批列出来，用户一眼能看到队列有多长、卡在哪一份。
@@ -3226,28 +3411,145 @@ export default function Home() {
     };
 
     try {
-      // ---------- 第一阶段：抽取全部文件的事实 ----------
+      // ---------- 第 0 步：按文件名分流 ----------
+      // 整批只调一次模型，把文件名归一到客户规范里的词条；词条到阶段的映射在服务端
+      // 查表得出。归一失败不影响流程：全部按"未命中"处理，等于回到没有这一步之前。
       setBatchProgress({
-        phase: 'extracting',
+        phase: 'naming',
         total: items.length,
         done: 0,
         currentFile: '',
         paused: false,
       });
+      try {
+        const namingResponse = await fetch('/api/naming', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sourcePaths: items.map(item => item.sourcePath),
+          }),
+          signal: controller.signal,
+        });
+        const namingData = await namingResponse.json().catch(() => null);
+        if (namingResponse.ok && Array.isArray(namingData?.results)) {
+          namingData.results.forEach(
+            (
+              result: { kind?: string; term?: string | null; stages?: string[] },
+              index: number
+            ) => {
+              const item = items[index];
+              if (!item) return;
+              item.namingTerm = result.term ?? null;
+              item.namingStages = result.stages ?? [];
+              item.namingKind =
+                result.kind === 'unique' || result.kind === 'ambiguous'
+                  ? result.kind
+                  : 'unmatched';
+            }
+          );
+        }
+      } catch (error) {
+        if (!abortRef.current) console.warn('文件名分流失败，全部走事实链路', error);
+      }
 
-      for (const [index, item] of items.entries()) {
+      // ---------- 唯一命中：只上传，不读内容 ----------
+      // 规范已经给出答案，粗筛阶段没必要为它花 OCR 和模型调用。它们照样进归档预览的
+      // 文件树，跟其余文件一起等一键归档；只是归档时来源记为"命名规范"，并在项目档案
+      // 里标成"只读到文件名"，随时可以人工要求补抽事实。
+      const namedItems = items.filter(item => item.namingKind === 'unique');
+      if (namedItems.length > 0 && !abortRef.current) {
+        setBatchProgress({
+          phase: 'uploading',
+          total: namedItems.length,
+          done: 0,
+          currentFile: '',
+          paused: false,
+        });
+        for (const [index, item] of namedItems.entries()) {
+          await waitWhilePaused();
+          if (abortRef.current) break;
+          setBatchProgress(prev =>
+            prev ? { ...prev, done: index, currentFile: item.file.name } : prev
+          );
+          const folder = SYSTEM_ARCHIVE_FOLDERS.find(
+            candidate => candidate.businessStage === item.namingStages[0]
+          );
+          try {
+            item.storageKey = await uploadToTemp(
+              item.file,
+              projectId,
+              controller.signal
+            );
+            if (!folder) throw new Error('命名规范给出的阶段没有对应的归档文件夹');
+            item.suggested = true;
+            patch(item.clientId, {
+              batchStage: undefined,
+              targetFolder: folder,
+              namingTerm: item.namingTerm,
+              namingKind: 'unique',
+              requiresArchiveConfirmation: true,
+              sourceStorageKey: item.storageKey,
+              sourceMimeType: item.file.type || 'application/octet-stream',
+              sourceProjectId: projectId,
+              archiveStatus: 'pending',
+              minimalPending: false,
+              reasoning: `文件名对应归档规范里的「${item.namingTerm}」，规范只把它列在这一个阶段，未读取文件内容。`,
+              process: {
+                finalDecision: {
+                  method: 'stage' as const,
+                  explanation: `按命名规范归入“${folder.folderPath.slice(1).join(' / ')}”`,
+                },
+              },
+            });
+          } catch (error) {
+            if (abortRef.current) break;
+            item.failed = true;
+            const message = error instanceof Error ? error.message : '未知错误';
+            if (item.storageKey) {
+              void deleteTemp(item.storageKey, projectId, item.sourcePath);
+              item.storageKey = '';
+            }
+            patch(item.clientId, {
+              batchStage: undefined,
+              minimalPending: false,
+              reasoning: `上传失败：${message}`,
+              process: {
+                finalDecision: {
+                  method: 'none' as const,
+                  explanation: `上传失败：${message}`,
+                },
+              },
+            });
+          }
+          setBatchProgress(prev =>
+            prev ? { ...prev, done: index + 1 } : prev
+          );
+        }
+      }
+
+      // ---------- 第一阶段：抽取其余文件的事实 ----------
+      const needsFacts = items.filter(item => item.namingKind !== 'unique');
+      setBatchProgress({
+        phase: 'extracting',
+        total: needsFacts.length,
+        done: 0,
+        currentFile: '',
+        paused: false,
+      });
+
+      for (const [index, item] of needsFacts.entries()) {
         await waitWhilePaused();
         if (abortRef.current) break;
 
         setBatchProgress({
           phase: 'extracting',
-          total: items.length,
+          total: needsFacts.length,
           done: index,
           currentFile: item.file.name,
           paused: false,
         });
         // 抽事实占整体进度的前一半。
-        setProcessingProgress(Math.round((index / items.length) * 50));
+        setProcessingProgress(Math.round((index / needsFacts.length) * 50));
         patch(item.clientId, {
           batchStage: 'extracting',
           reasoning: '正在读取文件并抽取事实…',
@@ -3315,11 +3617,13 @@ export default function Home() {
         setBatchProgress(prev =>
           prev ? { ...prev, done: index + 1 } : prev
         );
-        setProcessingProgress(Math.round(((index + 1) / items.length) * 50));
+        setProcessingProgress(
+          Math.round(((index + 1) / needsFacts.length) * 50)
+        );
       }
 
       // ---------- 第二阶段：事实齐了，逐份判阶段 ----------
-      const ready = items.filter(item => item.storageKey && !item.failed);
+      const ready = needsFacts.filter(item => item.storageKey && !item.failed);
       if (!abortRef.current && ready.length > 0) {
         setBatchProgress({
           phase: 'deciding',
@@ -3358,6 +3662,9 @@ export default function Home() {
                 mimeType: item.file.type || 'application/octet-stream',
                 projectId,
                 sourcePath: item.sourcePath,
+                // 歧义词条给模型当提示用；服务端会自己查表得出候选阶段，
+                // 前端只透传词条，不参与"词条属于哪个阶段"的判断。
+                namingTerm: item.namingTerm,
               }),
               signal: controller.signal,
             });
@@ -3376,6 +3683,8 @@ export default function Home() {
               ...result,
               clientId: item.clientId,
               sourcePath: item.sourcePath,
+              namingTerm: item.namingTerm,
+              namingKind: item.namingKind,
               requiresArchiveConfirmation: true,
               sourceStorageKey: item.storageKey,
               sourceMimeType: item.file.type || 'application/octet-stream',
@@ -3517,6 +3826,8 @@ export default function Home() {
         folder: batchFolderOverrides[clientId] ?? suggested,
         suggestedFolderId: suggested?.folderId ?? null,
         needsReview: Boolean(result.minimalDecision?.requiresHumanReview),
+        byNamingRule: result.namingKind === 'unique',
+        namingTerm: result.namingTerm,
         archiveStatus: result.archiveStatus,
         archiveError: result.archiveError,
       }];
@@ -3586,6 +3897,13 @@ export default function Home() {
                 source.minimalDecision?.reasoning ?? source.reasoning,
               sourcePath: source.sourcePath || source.fileName,
               documentFacts: source.documentFacts,
+              // 人改过位置的算人工确认；原样采纳命名规范建议的记成规范来源。
+              // 冲突复核会区别对待这两者：对前者给面子，对后者主动质疑。
+              stageSource:
+                source.namingKind === 'unique' &&
+                folder.folderId === source.targetFolder?.folderId
+                  ? 'naming_rule'
+                  : 'human',
             }),
           });
           const data = await response.json().catch(() => null);
@@ -3658,6 +3976,88 @@ export default function Home() {
       }
     }
   }, [results, batchReviewFiles]);
+
+  /**
+   * 用户主动要求读某份文件的内容。
+   *
+   * 批量流程默认不读按命名规范定位的文件——那是粗筛提速的来源。但人扫过文件树时
+   * 可能对某一份不放心，这里给他一个随时加深的入口：抽事实、重新判一次阶段，
+   * 结果只作提示，**不自动挪动文件**。
+   *
+   * 这个入口也是将来 agent 回补循环要用的同一条路，只是调度者从人换成程序。
+   */
+  const handleExtractFacts = useCallback(async (clientId: string) => {
+    const target = results.find(result => result.clientId === clientId);
+    if (!target?.sourceStorageKey || !target.sourceProjectId) return;
+
+    setExtractingClientId(clientId);
+    try {
+      const factsResponse = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'facts',
+          storageKey: target.sourceStorageKey,
+          fileName: target.fileName,
+          fileSize: target.fileSize,
+          mimeType: target.sourceMimeType,
+          projectId: target.sourceProjectId,
+          sourcePath: target.sourcePath || target.fileName,
+        }),
+      });
+      const factsData = await factsResponse.json().catch(() => null);
+      if (!factsResponse.ok) {
+        throw new Error(
+          [factsData?.error, factsData?.details].filter(Boolean).join('：') ||
+            `抽取失败（HTTP ${factsResponse.status}）`
+        );
+      }
+
+      const decideResponse = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'decide',
+          storageKey: target.sourceStorageKey,
+          fileName: target.fileName,
+          fileSize: target.fileSize,
+          mimeType: target.sourceMimeType,
+          projectId: target.sourceProjectId,
+          sourcePath: target.sourcePath || target.fileName,
+          namingTerm: target.namingTerm,
+        }),
+      });
+      const decided = await decideResponse.json().catch(() => null);
+      if (!decideResponse.ok || !decided) {
+        throw new Error(decided?.error || '判断阶段失败');
+      }
+
+      setResults(prev => prev.map(result =>
+        result.clientId === clientId
+          ? {
+              ...result,
+              documentFacts: factsData?.documentFacts,
+              documentType: factsData?.documentType,
+              contentPreview: factsData?.contentPreview,
+              minimalDecision: decided.minimalDecision,
+              reasoning: decided.reasoning ?? result.reasoning,
+              // 位置不自动改：读完内容只是多了一条依据，挪不挪由人决定。
+              // 建议的位置在详情里看得到，和当前位置不一致时预览树会标出来。
+              namingKind: 'ambiguous' as const,
+            }
+          : result
+      ));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      setResults(prev => prev.map(result =>
+        result.clientId === clientId
+          ? { ...result, reasoning: `提取事实失败：${message}` }
+          : result
+      ));
+    } finally {
+      setExtractingClientId(null);
+    }
+  }, [results]);
 
   /**
    * 放弃整批。
@@ -3858,6 +4258,49 @@ export default function Home() {
                         : ''}
                     </p>
 
+                    {/* 确定性检查：纯比对得出，不调模型也不会误报，所以直接铺开显示，
+                        不像模型复核那样折叠起来 */}
+                    {(minimalReport.ruleFindings?.length ?? 0) > 0 && (
+                      <div className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-2">
+                        <p className="flex items-center gap-1.5 text-[11px] font-medium text-amber-900">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          数值比对发现 {minimalReport.ruleFindings!.length} 处时点对不上
+                        </p>
+                        {minimalReport.ruleFindings!.map((finding, index) => (
+                          <div key={index} className="text-[11px] leading-4 text-amber-800">
+                            <p className="break-words">{finding.description}</p>
+                            {finding.evidence.map(item => (
+                              <p key={item} className="break-words pl-3 text-amber-700">
+                                · {item}
+                              </p>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 建议深挖：系统零成本标出来，点不点由用户决定 */}
+                    {(minimalReport.deepenSuggestions?.length ?? 0) > 0 && (
+                      <details className="group">
+                        <summary className="cursor-pointer text-[11px] text-violet-700 hover:underline">
+                          建议读内容的文件（{minimalReport.deepenSuggestions!.length}）——在已归档文件里右键「提取事实并复核」
+                        </summary>
+                        <div className="mt-1.5 space-y-1">
+                          {minimalReport.deepenSuggestions!.map(item => (
+                            <p
+                              key={item.sourcePath}
+                              className="break-words text-[11px] leading-4 text-muted-foreground"
+                            >
+                              <span className="font-medium text-foreground">
+                                {item.sourcePath.split(/[/\\]/).pop()}
+                              </span>
+                              ：{item.reason}
+                            </p>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
                     {/* 已存事实：系统从每份文件里究竟读到了什么，判断全部基于它 */}
                     {minimalReport.documents.length > 0 && (
                       <details className="group">
@@ -3991,11 +4434,9 @@ export default function Home() {
                         )}
                         <span className="truncate text-sm">
                           {batchProgress
-                            ? `${
-                                batchProgress.phase === 'extracting'
-                                  ? '第 1/2 步 抽取事实'
-                                  : '第 2/2 步 判断归档阶段'
-                              }（${batchProgress.done}/${batchProgress.total}）${
+                            ? `${BATCH_PHASE_LABELS[batchProgress.phase]}（${
+                                batchProgress.done
+                              }/${batchProgress.total}）${
                                 batchProgress.paused ? ' — 已暂停' : ''
                               }`
                             : '正在处理文件...'}
@@ -4346,6 +4787,8 @@ export default function Home() {
             null
           }
           onCloseDetails={() => setBatchDetailsClientId(null)}
+          onExtractFacts={clientId => void handleExtractFacts(clientId)}
+          extractingClientId={extractingClientId}
         />
       )}
     </div>

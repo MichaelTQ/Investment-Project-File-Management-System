@@ -22,11 +22,23 @@ import { DocumentFactsSchema, type DocumentFacts } from '../document-facts';
 const ARCHIVE_ROOT = 'minimal-archive/v1/projects';
 const SCHEMA_VERSION = 1 as const;
 
+/**
+ * 归档位置是怎么定下来的。
+ *
+ * 这个区分很要紧：时间线和冲突复核都会读它。人工确认过的位置值得给面子，推翻它需要
+ * 硬证据；而纯靠文件名按命名规范落位的，恰恰是最容易错的一类（规范里那八个跨阶段
+ * 词条就是明证），必须反过来主动质疑。两者混作一谈的话，最不可靠的判断会被当成
+ * 最可信的证据。
+ */
+export type StageSource = 'human' | 'naming_rule';
+
 export interface MinimalDocument {
   sourcePath: string;
   facts: DocumentFacts;
   /** 文件当前实际归在哪个阶段。null 表示尚未归档。 */
   stage: ArchiveBusinessStage | null;
+  /** 这个阶段是谁定的。缺省按人工确认处理，兼容这个字段出现之前的历史条目。 */
+  stageSource?: StageSource;
   archivedFileId?: string;
   /** 内容指纹，用于识别重复文件。 */
   fingerprint?: string;
@@ -107,6 +119,10 @@ function parseArchive(
         sourcePath: record.sourcePath,
         facts: facts.data,
         stage: (record.stage as ArchiveBusinessStage | null) ?? null,
+        stageSource:
+          record.stageSource === 'naming_rule' || record.stageSource === 'human'
+            ? record.stageSource
+            : undefined,
         archivedFileId:
           typeof record.archivedFileId === 'string'
             ? record.archivedFileId
@@ -223,6 +239,7 @@ export interface UpsertMinimalDocumentParams {
   sourcePath: string;
   facts: DocumentFacts;
   stage?: ArchiveBusinessStage | null;
+  stageSource?: StageSource;
   archivedFileId?: string;
   fingerprint?: string;
 }
@@ -243,6 +260,11 @@ export async function upsertMinimalDocument(
       facts: params.facts,
       // 未显式给出阶段时保留原值，避免重抽事实把用户手动改过的位置冲掉。
       stage: params.stage !== undefined ? params.stage : existing?.stage ?? null,
+      // 来源跟着阶段走：给了新阶段就用新来源，没给就保留原来的。
+      stageSource:
+        params.stage !== undefined
+          ? params.stageSource
+          : params.stageSource ?? existing?.stageSource,
       archivedFileId: params.archivedFileId ?? existing?.archivedFileId,
       fingerprint: params.fingerprint ?? existing?.fingerprint,
       updatedAt: Date.now(),

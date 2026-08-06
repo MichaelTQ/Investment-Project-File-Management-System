@@ -5,7 +5,11 @@ import {
   HeaderUtils,
   type ContentPart,
 } from 'coze-coding-dev-sdk';
-import type { ArchiveFolder } from '@/lib/folder-structure';
+import type {
+  ArchiveBusinessStage,
+  ArchiveFolder,
+} from '@/lib/folder-structure';
+import { matchSpecTerm } from '@/lib/classification/naming-spec';
 import {
   DOCUMENT_FACTS_EXTRACTOR_VERSION,
   DOCUMENT_FACTS_MODEL,
@@ -35,6 +39,7 @@ import {
 import {
   archiveFile,
   archiveStoredFile,
+  getArchivedFileSource,
   getProject,
   getStoredFileUrl,
   readStoredFile,
@@ -286,11 +291,22 @@ export async function POST(request: NextRequest) {
       globalThis.process.env.PERSIST_PROJECT_MEMORY_SHADOW === 'true' ||
       globalThis.process.env.PERSIST_DOCUMENT_FACTS_SHADOW === 'true';
     let mode: ClassifyMode = 'full';
+    let namingHint:
+      | { term: string; stages: ArchiveBusinessStage[] }
+      | undefined;
 
     if (isJsonRequest) {
       const body = await request.json();
       mode =
         body.mode === 'facts' || body.mode === 'decide' ? body.mode : 'full';
+      // 命名规范归一出来的词条，由前端在批量分流那一步拿到后透传回来。
+      // 只有词条，阶段由服务端查表得出——前端不参与"哪个词条属于哪个阶段"的判断。
+      if (typeof body.namingTerm === 'string') {
+        const matched = matchSpecTerm(body.namingTerm);
+        if (matched.term && matched.stages.length > 0) {
+          namingHint = { term: matched.term, stages: matched.stages };
+        }
+      }
       storageKey = typeof body.storageKey === 'string' ? body.storageKey : '';
       fileName = typeof body.fileName === 'string' ? body.fileName : '';
       fileSize = Number(body.fileSize || 0);
@@ -309,7 +325,26 @@ export async function POST(request: NextRequest) {
           ? body.persistFacts
           : persistFacts;
 
-      if (
+      // 对已归档文件补抽事实：文件早已不在 uploads/ 临时目录下，得按归档记录去取。
+      // 这是"用户主动要求深挖某份文件"这条路，也是将来 agent 回补循环要用的同一个入口。
+      const archivedFileId =
+        typeof body.archivedFileId === 'string' ? body.archivedFileId : '';
+      if (archivedFileId) {
+        const archivedSource = await measurePhase('load_archived_file', () =>
+          getArchivedFileSource(archivedFileId)
+        );
+        if (!archivedSource || archivedSource.projectId !== projectId) {
+          return NextResponse.json(
+            { error: '未找到该归档文件' },
+            { status: 404 }
+          );
+        }
+        storageKey = archivedSource.storageKey;
+        fileName = fileName || archivedSource.originalName;
+        sourcePath = sourcePath || archivedSource.originalName;
+        fileSize = fileSize || archivedSource.fileSize;
+        suppliedMimeType = suppliedMimeType || archivedSource.mimeType;
+      } else if (
         !storageKey ||
         !projectId ||
         !storageKey.startsWith(`uploads/${projectId}/`)
@@ -399,6 +434,7 @@ export async function POST(request: NextRequest) {
             sourcePath: documentPath,
             facts: stored.facts,
             fingerprint: stored.fingerprint,
+            namingHint,
             customHeaders,
           })
         );
@@ -767,6 +803,9 @@ export async function POST(request: NextRequest) {
             sourcePath: sourcePath || fileName,
             facts: factsForMinimal,
             fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+            // 单份上传也吃这条软提示。它不改变要做的事——内容照读、事实照抽——
+            // 只是让模型和批量里的歧义分支看到同样的上下文。
+            namingHint,
             customHeaders,
           })
         );

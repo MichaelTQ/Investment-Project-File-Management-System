@@ -1,6 +1,6 @@
 import type { ArchiveBusinessStage } from '../../folder-structure';
 import { leafName } from '../source-path';
-import type { MinimalDocument } from './store';
+import type { MinimalDocument, StageSource } from './store';
 
 /**
  * 时间线：把各文件抽出来的日期汇总排序。
@@ -17,8 +17,26 @@ export interface TimelineEntry {
   date: string;
   sourcePath: string;
   stage: ArchiveBusinessStage | null;
+  stageSource?: StageSource;
   meaning: string;
   evidence: string;
+}
+
+/**
+ * 归档位置的措辞。
+ *
+ * 人工确认的和按文件名落位的必须分开说。上游提示词里对前者写着"推翻它需要文件自身
+ * 记载的互斥事实"，要是把纯靠名字定的位置也套上这句话，等于叫模型最信任最不可靠的
+ * 那一批——规范里那八个跨阶段词条（章程、表决票、投委会决议…）全在这一批里。
+ */
+export function describeStagePlacement(
+  stage: ArchiveBusinessStage | null,
+  stageSource?: StageSource
+): string {
+  if (!stage) return '尚未归档';
+  return stageSource === 'naming_rule'
+    ? `按命名规范归入 ${stage}，未经人工确认`
+    : `人工确认归入 ${stage}`;
 }
 
 /** 按日期排序汇总所有文件的日期事实。没有日期的文件不出现在时间线里。 */
@@ -33,6 +51,7 @@ export function buildTimeline(documents: MinimalDocument[]): TimelineEntry[] {
           date: item.date,
           sourcePath: document.sourcePath,
           stage: document.stage,
+          stageSource: document.stageSource,
           meaning: item.meaning,
           evidence: item.evidence,
         }))
@@ -63,9 +82,7 @@ export function describeTimeline(
   return entries
     .map(entry => {
       const stage = options.showStage
-        ? entry.stage
-          ? `（人工确认归入 ${entry.stage}）`
-          : '（尚未归档）'
+        ? `（${describeStagePlacement(entry.stage, entry.stageSource)}）`
         : '';
       // 不带 evidence：meaning 已经说清这是什么日期（"章程生效日期"），
       // 再抄一遍出处对判断没有增量，16 份文件时白花约 800 字。
