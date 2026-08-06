@@ -163,3 +163,9 @@ Desktop.ini
 # Misc
 .coze-logs
 .codegraph/
+
+# 客户真实项目档案：只在本地用于开发和评测，不进版本库。
+# 现有规则按扩展名挡掉了 pdf/docx/xlsx/pptx，但 png、jpg 等没覆盖到——
+# 而 OA 流程截图恰恰是 png，里面有真实姓名、邮箱、电话和估值。整个目录忽略更稳妥。
+/君柔档案/
+/佰特微档案/
