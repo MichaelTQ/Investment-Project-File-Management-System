@@ -22,9 +22,10 @@ import {
 const DOCUMENT_FACTS_CONTENT_LIMIT = 5_000;
 // 这是护栏，不是省时手段：撞上它 JSON 必然截断，解析失败后整份事实退化为
 // 只含文件名的空壳（createFallbackDocumentFacts），而且内容越丰富的文件越容易
-// 触发——本该分得更准的文件反而退化。实测正常输出约 590 tokens，留足余量。
-// 想缩短生成耗时应收紧 prompt 里的逐字段长度，而不是压低这里。
-export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 900;
+// 触发——本该分得更准的文件反而退化。
+// 取消逐字段条数上限后，信息量大的文件输出会变长（此前实测约 590 tokens），
+// 因此这里从 900 抬到 1400 留足余量。压低它等于给丰富的文件判死刑。
+export const DOCUMENT_FACTS_MAX_OUTPUT_TOKENS = 1_400;
 const DOCUMENT_FACTS_TIMEOUT_MS = 120_000;
 const DOCUMENT_FACTS_CACHE_TTL_MS = 12 * 60 * 60 * 1_000;
 const DOCUMENT_FACTS_CACHE_MAX_ENTRIES = 500;
@@ -33,11 +34,12 @@ export const DOCUMENT_FACTS_MODEL = 'doubao-seed-2-0-mini-260215';
  * 抽取器版本。**改了提示词或后处理逻辑就必须改这里**——它是事实缓存键的一部分，
  * 不改的话旧结果会继续命中，改动等于没生效。
  *
- * v5：不再单凭模型自报的 sourceQuality 判定"读不到内容"。实测模型会一边抽出
- * 日期、字段变更、原文摘录，一边自报"只读到文件名"，旧逻辑据此把类型作废，
- * 界面上大量 unknown 都是这么来的。现在以有没有原文事实为准。
+ * v5：不再单凭模型自报的 sourceQuality 判定"读不到内容"。
+ * v6：取消每个字段最多几条的限制（那些数字是拍脑袋定的，会静默丢掉信息量大的
+ * 文件里的关键日期和字段变化），改为只约束 JSON 总长度；输出上限同步抬到 1400
+ * tokens，否则放宽条数会更容易撞顶截断。
  */
-export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v5';
+export const DOCUMENT_FACTS_EXTRACTOR_VERSION = 'document-facts-v6';
 
 interface InvokeClient {
   // 与 LLMClient['invoke'] 兼容，但显式带上 finishReason：截断与其他失败必须能区分。
@@ -230,9 +232,9 @@ shareholder_register, other, unknown
 6. 如果内容来自扫描 PDF 视觉摘要，应将 sourceQuality 设为 visual_summary 或 mixed，并在 warnings 中说明信息可能不完整。
 7. extractionConfidence 表示事实抽取完整度，不表示归档分类置信度。
 8. d、p、c、g、e、w 必须始终输出数组；没有内容时输出 []，不得省略字段。
-9. 只输出后续阶段判断真正需要的最小事实集合。最多输出 d 2项、p 4项、c 3项、g 2项、e 2项、w 2项。
-10. 同一事实只能出现一次：已写入 dates 或 transactionChanges 的内容不要再复制到 explicitStageClues 或 evidenceQuotes。只保留最有区分力的原文证据。
-11. 变化前后值各不超过 60 字；证据和提示单项不超过 80 字。完整 JSON 必须紧凑，目标 250-450 tokens、700 个字符以内。
+9. 文件里能核实的事实都写下来，不要为了精简而丢弃。日期有几个写几个，字段变化有几处写几处——判断文件属于哪个阶段靠的就是这些，少写一条可能正好少了决定性的那条。
+10. 同一事实只能出现一次：已写入 dates 或 transactionChanges 的内容不要再复制到 explicitStageClues 或 evidenceQuotes。
+11. 单项长度：变化前后值各不超过 60 字，证据和提示单项不超过 80 字。完整 JSON 控制在 1000 个字符以内——这不是精简要求，而是超长会撞上输出上限被截断，届时整份事实都会作废。信息量大的文件优先保证 d 和 c 写全，摘录可以少写。
 12. 不要复述文档，不要输出分析过程或背景说明。必须使用下方短字段和数组元组，不得改成长字段对象。
 
 只输出一个 JSON 对象，不要输出 Markdown或其他说明。短字段协议严格如下：
