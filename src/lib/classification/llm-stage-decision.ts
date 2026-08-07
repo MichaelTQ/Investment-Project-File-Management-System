@@ -14,6 +14,7 @@ import {
   type DocumentFacts,
 } from './document-facts';
 import type { ContextClassificationDecision } from './minimal/types';
+import { describeProjectNotes } from './project-notes';
 import { leafName } from './source-path';
 
 /**
@@ -78,6 +79,8 @@ export interface LlmStageDecisionParams {
    * 项目立项，正确答案根本不在候选里。所以提示词里明确允许模型选候选之外的阶段。
    */
   namingHint?: { term: string; stages: ArchiveBusinessStage[] };
+  /** 项目负责人填写的归档口径，原样进提示词。见 project-notes.ts。 */
+  projectNotes?: string;
   customHeaders?: Record<string, string>;
 }
 
@@ -199,7 +202,9 @@ ${STAGE_DEFINITIONS}
     : '';
 
   const userPrompt = `【待归档文件名】
-${leafName(params.sourcePath)}${namingHintBlock}
+${leafName(params.sourcePath)}${namingHintBlock}${describeProjectNotes(
+    params.projectNotes ?? ''
+  )}
 
 【该文件的文档事实】
 ${factsBrief(params.facts)}
@@ -252,6 +257,7 @@ export interface BatchStageDecisionItem {
 export function buildBatchStageDecisionPrompt(params: {
   items: BatchStageDecisionItem[];
   projectName?: string;
+  projectNotes?: string;
   /** 本项目此前已归档文件的事实，作为背景。不参与本次判断。 */
   archivedDocuments?: Array<{ sourcePath: string; facts: DocumentFacts }>;
   timeline?: string;
@@ -305,7 +311,7 @@ ${STAGE_DEFINITIONS}
     .join('\n\n');
 
   const userPrompt = `【项目】
-${params.projectName || '未提供'}
+${params.projectName || '未提供'}${describeProjectNotes(params.projectNotes ?? '')}
 
 【本项目此前已归档文件的事实（背景，不需要为它们输出结论）】
 ${archivedBrief}
@@ -390,6 +396,7 @@ export interface BatchStageDecisionResult {
 export async function decideStagesForBatchWithModel(params: {
   items: BatchStageDecisionItem[];
   projectName?: string;
+  projectNotes?: string;
   archivedDocuments?: Array<{ sourcePath: string; facts: DocumentFacts }>;
   timeline?: string;
   customHeaders?: Record<string, string>;

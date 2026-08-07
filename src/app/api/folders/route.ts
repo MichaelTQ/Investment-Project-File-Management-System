@@ -6,6 +6,7 @@ import {
   matchStageByFolderName,
 } from '@/lib/classification/folder-stage';
 import type { ArchiveBusinessStage } from '@/lib/folder-structure';
+import { getProject } from '@/lib/storage';
 
 export const runtime = 'nodejs';
 
@@ -27,6 +28,7 @@ export interface FolderStageRouteResult {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    const projectId = typeof body.projectId === 'string' ? body.projectId : '';
     const folderNames: string[] = Array.isArray(body.folderNames)
       ? body.folderNames
           .filter((item: unknown): item is string => typeof item === 'string')
@@ -52,8 +54,10 @@ export async function POST(request: NextRequest) {
     let modelCall;
     let error: string | undefined;
     if (pending.length > 0) {
+      const project = projectId ? await getProject(projectId) : null;
       const classified = await classifyFoldersWithModel({
         folderNames: pending.map(entry => entry.item.name),
+        projectNotes: project?.description,
         customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
       });
       modelCall = classified.modelCall;

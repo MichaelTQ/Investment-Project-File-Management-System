@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     // 纯读取：返回各文件的事实与时间线，不跑冲突复核。
     // 复核要调模型，而这个接口在切换项目、刷新页面时都会被调用。
     const minimal = await rebuildMinimalArchive(projectId, {
+      projectNotes: project?.description,
       projectName: project.name,
       reviewConflicts: false,
     });
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '项目不存在' }, { status: 404 });
     }
     const minimal = await rebuildMinimalArchive(projectId, {
+      projectNotes: project?.description,
       projectName: project.name,
       customHeaders: HeaderUtils.extractForwardHeaders(request.headers),
     });
