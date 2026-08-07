@@ -205,6 +205,9 @@ interface ClassifyResult {
   decidePath?: 'folder_rule' | 'naming_rule' | 'batch' | 'single';
   /** 阶段文件夹之下的目录层级。来自上传时的文件夹结构，或人工指定。 */
   subPath?: string[];
+  /** 处理失败的原因。必须直接显示出来——之前只写进 reasoning，而界面读的是
+   *  minimalDecision.reasoning，于是失败原因彻底看不见。 */
+  errorMessage?: string;
 }
 
 /** 批量分析的进度。phase 决定进度条上显示的是哪一步。 */
@@ -342,6 +345,14 @@ const UPLOAD_ACCEPT =
  * 拖一个文件夹进来必然会带上 .DS_Store：它没有内容可读，却要完整走一遍上传、
  * OCR、抽事实、判阶段，白花钱和时间，还会作为"同项目其他文件"混进判断依据里。
  */
+/**
+ * 单个文件的上传上限，与服务端两个上传接口保持一致（/api/uploads 直接判 100 MB，
+ * /api/uploads/chunk 表现为 MAX_CHUNKS = 50 片 × 2 MB）。
+ * 客户端先拦一道，否则 128 MB 的文件会切成 64 片、每一片都被拒，用户只看到一句
+ * 语焉不详的失败。
+ */
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+
 const IGNORED_UPLOAD_NAMES = new Set([
   '.DS_Store',
   'Thumbs.db',
@@ -692,6 +703,27 @@ function ClassifyDetailsDialog({
         <ScrollArea type="always" className="min-h-0 flex-1 pr-5">
           <div className="space-y-4 pb-4">
 
+            {/* 失败时详情里必须有东西。卡片让用户"查看详情中的诊断信息"，
+                而这里一片空白，是最容易让人以为系统坏掉的情形。 */}
+            {result.errorMessage && (
+              <div className="space-y-2">
+                <h4 className="text-sm font-medium text-destructive">处理失败</h4>
+                <div className="whitespace-pre-wrap break-words rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                  {result.errorMessage}
+                </div>
+              </div>
+            )}
+
+            {!result.errorMessage &&
+              !result.decidePath &&
+              !result.minimalDecision &&
+              !result.contentPreview &&
+              (result.performance?.phases?.length ?? 0) === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  这份文件还没有产生任何分析记录。它可能仍在处理中，或者上传阶段就失败了。
+                </p>
+              )}
+
             {/* 分析路径：这份文件是怎么被处理的。
                 以前这些只在服务端日志里，等于没有——出了问题没法判断是哪一环。 */}
             {result.decidePath && (
@@ -898,6 +930,20 @@ function ClassifyResultItem({
       </div>
 
       <div className="min-w-0 space-y-3 p-3">
+        {/* 失败原因必须在最显眼的位置。之前它只写进 reasoning，而下面那块读的是
+            minimalDecision.reasoning，结果界面只说"未成功返回结果，请查看详情"，
+            而详情里空空如也——让人去看一个没有内容的地方，比不报错还糟。 */}
+        {result.errorMessage && (
+          <div className="min-w-0 rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              处理失败
+            </p>
+            <p className="mt-1 break-words text-xs leading-5 text-destructive">
+              {result.errorMessage}
+            </p>
+          </div>
+        )}
         <div className="min-w-0 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
@@ -3664,6 +3710,7 @@ export default function Home() {
               ...existing,
               targetFolder: null,
               minimalPending: false,
+              errorMessage,
               reasoning: `文件处理失败：${errorMessage}`,
               process: {
                 finalDecision: {
@@ -3880,6 +3927,7 @@ export default function Home() {
             patch(item.clientId, {
               batchStage: undefined,
               minimalPending: false,
+              errorMessage: message,
               reasoning: `上传失败：${message}`,
               process: {
                 finalDecision: {
@@ -3998,6 +4046,7 @@ export default function Home() {
             patch(item.clientId, {
               batchStage: undefined,
               minimalPending: false,
+              errorMessage: message,
               reasoning: `上传失败：${message}`,
               process: {
                 finalDecision: {
@@ -4270,6 +4319,7 @@ export default function Home() {
             patch(item.clientId, {
               batchStage: undefined,
               minimalPending: false,
+              errorMessage: message,
               reasoning: `判断阶段失败：${message}`,
               process: {
                 finalDecision: {
@@ -4324,8 +4374,26 @@ export default function Home() {
 
     // 拖文件夹必然带上 .DS_Store 这类系统文件。它们没有内容可读，却要完整走一遍
     // 上传、OCR、抽事实、判阶段，白花钱和时间，还会混进"同项目其他文件"里。
-    const uploadable = files.filter(file => !isIgnorableUpload(file));
-    const skippedCount = files.length - uploadable.length;
+    // 超大文件在这里就拦下来，别等切完 64 片被服务端逐片拒绝才发现。
+    // 服务端两个上传接口都是 100 MB 上限（分片那边表现为 MAX_CHUNKS = 50）。
+    const oversized = files.filter(file => file.size > MAX_UPLOAD_BYTES);
+    if (oversized.length > 0) {
+      alert(
+        `以下文件超过 ${MAX_UPLOAD_BYTES / 1024 / 1024} MB 上限，已跳过：\n` +
+          oversized
+            .map(
+              file =>
+                `· ${file.name}（${(file.size / 1024 / 1024).toFixed(1)} MB）`
+            )
+            .join('\n')
+      );
+    }
+
+    const uploadable = files.filter(
+      file => !isIgnorableUpload(file) && file.size <= MAX_UPLOAD_BYTES
+    );
+    const skippedCount =
+      files.length - uploadable.length - oversized.length;
     if (uploadable.length === 0) {
       alert(
         skippedCount > 0
