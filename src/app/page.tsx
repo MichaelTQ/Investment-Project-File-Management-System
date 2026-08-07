@@ -45,6 +45,7 @@ import {
 import { parseSourceLocation } from '@/lib/archive-subpath';
 import { MAX_PROJECT_NOTES_LENGTH } from '@/lib/classification/project-notes';
 import {
+  resolveArchiveFolder,
   FOLDER_STRUCTURE,
   SYSTEM_ARCHIVE_FOLDERS,
   type FolderNode,
@@ -252,9 +253,10 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
     <div className="select-none">
       <div
         className={`flex items-center gap-1 py-1.5 px-2 rounded cursor-pointer transition-colors ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`}
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelectFolder(node.id); }}
       >
+        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
+        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
         {hasChildren ? (
           isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         ) : (<span className="w-4 shrink-0" />)}
@@ -1250,7 +1252,6 @@ function MoveFolderNode({ node, level, selectedId, onSelect, path, blockedPath }
             ? 'cursor-not-allowed opacity-40'
             : `cursor-pointer ${isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'}`
         }`}
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
         onClick={() => {
           if (isBlocked) return;
           if (hasChildren) setIsOpen(!isOpen);
@@ -1468,13 +1469,13 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
     ];
     return (
       <div
-        className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors group"
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
+        className="flex w-max min-w-full items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors group"
         onContextMenu={(e) => {
           e.preventDefault();
           setCtxMenu({ x: e.clientX, y: e.clientY, items: contextItems });
         }}
       >
+        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
         <p className="text-xs font-medium truncate flex-1 min-w-0" title={`${node.file.archivedName}\n${meta}`}>{node.file.archivedName}</p>
         <DropdownMenu>
@@ -1525,14 +1526,14 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
   return (
     <div className="select-none">
       <div
-        className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-        style={{ paddingLeft: `${level * 12 + 6}px` }}
+        className="flex w-max min-w-full items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
         onClick={() => setIsOpen(!isOpen)}
         onContextMenu={(e) => {
           e.preventDefault();
           setCtxMenu({ x: e.clientX, y: e.clientY, items: folderContextItems });
         }}
       >
+        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         {isOpen ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         <span className="text-xs font-medium truncate">{node.name}</span>
@@ -1916,7 +1917,7 @@ function ArchivedFilesList({
           一键下载全部
         </Button>
       </div>
-      <div className="border rounded-lg p-2 bg-muted/20">
+      <div className="overflow-x-auto border rounded-lg p-2 bg-muted/20">
         {tree.map((node, idx) => (
           <ArchiveTreeItem
             key={`${node.path}-${idx}`}
@@ -2309,10 +2310,10 @@ function BatchTreeItem({
 
   const folderRow = (
     <div
-      className="flex items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
-      style={{ paddingLeft: `${level * 12 + 6}px` }}
+      className="flex w-max min-w-full items-center gap-1 py-1 px-2 rounded cursor-pointer hover:bg-muted/50 transition-colors"
       onClick={() => setIsOpen(!isOpen)}
     >
+      <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
       {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
       {isUnplaced
         ? <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
@@ -2414,10 +2415,10 @@ function BatchFileRow({
               <ContextMenu key={file.clientId}>
               <ContextMenuTrigger asChild>
               <div
-                className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors"
-                style={{ paddingLeft: `${level * 12 + 6}px` }}
-                title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
+                className="flex w-max min-w-full items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors"
+                        title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
               >
+                <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
                 {extractingClientId === file.clientId ? (
                   <Brain className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-600" />
                 ) : file.archiveStatus === 'archiving' ? (
@@ -2484,23 +2485,15 @@ function BatchFileRow({
 }
 
 /**
- * 把选中的完整路径拆成「阶段文件夹 + 阶段之下的子路径」。
+ * 把选中的完整路径拆成「归档目录 + 该目录之下的子路径」。
  *
- * 归档接口只认预设的八个阶段 folderId，子路径单独传。所以不管用户在树上点到多深，
- * 都要先找出它落在哪个阶段下面。点到"投资项目档案"或"基金投资及投资执行"这类
- * 纯分组层时找不到阶段，返回 null——那些层不能直接放文件。
+ * 用共享的最长前缀解析：分组层现在也是合法目标，而根目录是所有路径的前缀，
+ * 取第一个匹配会把随便哪一层都解析成根目录。
+ *
+ * 目标目录的 businessStage 为 null 时表示它是分组层——文件放得进去，但**不属于
+ * 任何业务阶段**，因而不进时间线、不进冲突复核。选择界面必须把这一点说出来。
  */
-function splitStageAndSubPath(
-  fullPath: string[]
-): { folder: ArchiveFolder; subPath: string[] } | null {
-  const folder = SYSTEM_ARCHIVE_FOLDERS.find(
-    candidate =>
-      candidate.folderPath.length <= fullPath.length &&
-      candidate.folderPath.every((segment, index) => fullPath[index] === segment)
-  );
-  if (!folder) return null;
-  return { folder, subPath: fullPath.slice(folder.folderPath.length) };
-}
+const splitStageAndSubPath = resolveArchiveFolder;
 
 /**
  * 改归档位置。
@@ -2590,14 +2583,24 @@ function BatchMoveDialog({
           </div>
         )}
 
-        {selectedPath.length > 0 && !target && (
-          <p className="shrink-0 text-xs text-amber-700">
-            这一层只是分组，不能直接存放文件，请选择它下面的具体阶段。
+        {target && target.folder.businessStage === null && (
+          <p className="shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs leading-5 text-amber-800">
+            这一层不属于任何业务阶段。文件可以放在这里，但不会进入项目时间线和
+            冲突复核，系统后续也不会拿它和别的文件比对。
           </p>
         )}
         {target && (
           <p className="shrink-0 break-all text-xs text-muted-foreground">
             目标位置：{targetPath.join(' / ')}
+          </p>
+        )}
+        {/* 放进分组层是允许的，但这些文件没有业务阶段——它们不进项目时间线、
+            不进冲突复核、数值比对也看不见。不说明白的话，用户会以为系统在盯着
+            它们，而实际上它们游离在整套分析之外。 */}
+        {target && target.folder.businessStage === null && (
+          <p className="shrink-0 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs leading-5 text-amber-800">
+            这一层不属于任何业务阶段。文件可以放在这里，但不会进入项目时间线和冲突复核，
+            系统后续的一致性检查看不到它们。需要参与分析请选择具体的业务阶段目录。
           </p>
         )}
 
@@ -2795,7 +2798,7 @@ function BatchReviewDialog({
                 </p>
               </div>
             </div>
-            <div className="max-h-[28vh] overflow-y-auto rounded border border-amber-200 bg-background/70 p-1">
+            <div className="max-h-[28vh] overflow-auto rounded border border-amber-200 bg-background/70 p-1">
               {unplacedTree.children.map(node => (
                 <BatchTreeItem
                   key={node.key}
@@ -2816,7 +2819,7 @@ function BatchReviewDialog({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2">
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/20 p-2">
           {tree.length > 0 ? (
             tree.map(node => (
               <BatchTreeItem
@@ -4950,65 +4953,67 @@ export default function Home() {
                   </div>
                 ) : (
                   <ScrollArea className="h-[160px] md:h-[200px]">
-                    <div className="space-y-1 pr-1">
+                    {/* pr-3 给滚动条让位。原来是 pr-1（4px），比滚动条窄，
+                        内容会被压在下面。 */}
+                    <div className="space-y-1 pr-3">
                       {projects.map(project => (
-                        <div
-                          key={project.id}
-                          className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all duration-300 group ${
-                            selectedProjectId === project.id
-                              ? 'bg-primary/10 text-primary'
-                              : 'hover:bg-muted'
-                          } ${
-                            newProjectId === project.id
-                              ? 'animate-in slide-in-from-top-2 fade-in duration-500 bg-primary/5 ring-1 ring-primary/20'
-                              : ''
-                          }`}
-                          onClick={() => setSelectedProjectId(project.id)}
-                        >
-                          <Building2 className="h-4 w-4 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{project.name}</p>
-                            {project.description && (
-                              <p
-                                className="text-xs text-muted-foreground truncate"
-                                title={project.description}
-                              >
-                                {project.description}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground">{project.fileCount} 个文件</p>
-                          </div>
-                          <div className="flex shrink-0 items-center">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              title="编辑项目信息"
-                              aria-label={`编辑项目 ${project.name}`}
-                              className="h-7 w-7 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRenameProject(project);
-                              }}
+                        <ContextMenu key={project.id}>
+                          <ContextMenuTrigger asChild>
+                            <div
+                              className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all duration-300 ${
+                                selectedProjectId === project.id
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'hover:bg-muted'
+                              } ${
+                                newProjectId === project.id
+                                  ? 'animate-in slide-in-from-top-2 fade-in duration-500 bg-primary/5 ring-1 ring-primary/20'
+                                  : ''
+                              }`}
+                              onClick={() => setSelectedProjectId(project.id)}
+                              title={`${project.name}\n右键可重命名、编辑归档口径或删除`}
                             >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              title="删除项目"
-                              aria-label={`删除项目 ${project.name}`}
-                              className="h-7 w-7 shrink-0 text-destructive opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDeleteProject(project.id);
-                              }}
+                              <Building2 className="h-4 w-4 shrink-0" />
+                              {/* 操作入口改成右键菜单。原来那两个按钮在桌面端是
+                                  opacity-0，但**依然占着布局空间**——每行凭空少 56px，
+                                  名称和描述提前截断，右边空一块，看起来就是被遮挡。 */}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-medium">{project.name}</p>
+                                {project.description && (
+                                  <p
+                                    className="truncate text-xs text-muted-foreground"
+                                    title={project.description}
+                                  >
+                                    {project.description}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground">
+                                  {project.fileCount} 个文件
+                                </p>
+                              </div>
+                            </div>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-44">
+                            <ContextMenuItem
+                              onSelect={() => setSelectedProjectId(project.id)}
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </div>
+                              <FolderOpen className="mr-2 h-3.5 w-3.5" />
+                              打开项目
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onSelect={() => handleRenameProject(project)}
+                            >
+                              <Pencil className="mr-2 h-3.5 w-3.5" />
+                              重命名与归档口径
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              className="text-destructive"
+                              onSelect={() => handleDeleteProject(project.id)}
+                            >
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              删除项目
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
                       ))}
                     </div>
                   </ScrollArea>

@@ -302,7 +302,7 @@ test('提示词要求优先做数值对照，且措辞不含业务词汇', () =>
   }
 });
 
-test('命名规范提示是软约束，明确允许模型选候选之外的阶段', () => {
+test('命名规范提示是软约束，但走出候选要拿得出原文依据', () => {
   const userPrompt = String(
     buildStageDecisionPrompt({
       sourcePath: '君柔科技_立项表决结果(1).pdf',
@@ -315,8 +315,10 @@ test('命名规范提示是软约束，明确允许模型选候选之外的阶�
   );
 
   assert.match(userPrompt, /仅供参考，不是限制/);
-  assert.match(userPrompt, /指向别的阶段，就选别的阶段/);
-  assert.match(userPrompt, /不要为了迁就规范而选一个与内容不符的阶段/);
+  // 可以走出候选，但必须引用原文；说不清就交人工，而不是随手挑一个。
+  assert.match(userPrompt, /必须能引用文件原文说明为什么/);
+  assert.match(userPrompt, /说不清就输出 unknown/);
+  assert.match(userPrompt, /宁可多一些交人工的/);
   assert.match(userPrompt, /表决票/);
 });
 
