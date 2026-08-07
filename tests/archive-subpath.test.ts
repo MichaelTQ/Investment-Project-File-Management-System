@@ -6,6 +6,11 @@ import {
   parseSourceLocation,
   sanitizeSubPath,
 } from '../src/lib/archive-subpath';
+import {
+  ALL_ARCHIVE_FOLDERS,
+  resolveArchiveFolder,
+  SYSTEM_ARCHIVE_FOLDERS,
+} from '../src/lib/folder-structure';
 
 test('判断只发生在顶层，顶层之下的层级原样保留', () => {
   const parsed = parseSourceLocation(
@@ -67,4 +72,41 @@ test('层数超过上限就截断，不无限深', () => {
 test('单段过长会截短，不会撑爆对象键', () => {
   const [segment] = sanitizeSubPath('长'.repeat(500));
   assert.equal(segment.length, 100);
+});
+
+/* 分组层现在也是合法归档目标（用户 2026-08-07 决定），代价是这些文件没有业务阶段，
+   不进时间线和冲突复核。解析必须最长前缀优先，否则一切都会落到根目录上。 */
+
+test('最长前缀优先：选到阶段之下的层，仍解析为那个阶段', () => {
+  const resolved = resolveArchiveFolder([
+    '投资项目档案',
+    '基金投资及投资执行',
+    '投资决策',
+    '1、天士力FA财务尽调资料2025.7',
+  ]);
+  assert.equal(resolved?.folder.businessStage, 'investment_decision');
+  assert.deepEqual(resolved?.subPath, ['1、天士力FA财务尽调资料2025.7']);
+});
+
+test('分组层可以作为归档目标，但没有业务阶段', () => {
+  const grouping = resolveArchiveFolder(['投资项目档案', '基金投资及投资执行']);
+  assert.equal(grouping?.folder.name, '基金投资及投资执行');
+  assert.equal(grouping?.folder.businessStage, null);
+  assert.deepEqual(grouping?.subPath, []);
+
+  const root = resolveArchiveFolder(['投资项目档案']);
+  assert.equal(root?.folder.businessStage, null);
+});
+
+test('阶段选择器只拿得到八个阶段，分组层不混进去', () => {
+  assert.equal(SYSTEM_ARCHIVE_FOLDERS.length, 8);
+  for (const folder of SYSTEM_ARCHIVE_FOLDERS) {
+    assert.notEqual(folder.businessStage, null);
+  }
+  // 但全量列表里必须有分组层，否则归档接口会拒掉它们
+  assert.ok(ALL_ARCHIVE_FOLDERS.length > SYSTEM_ARCHIVE_FOLDERS.length);
+});
+
+test('路径对不上任何目录时返回 null', () => {
+  assert.equal(resolveArchiveFolder(['不存在的目录']), null);
 });
