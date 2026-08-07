@@ -123,7 +123,7 @@ interface ClassifyResult {
   documentType?: string;
   suggestedArchiveTitle?: string;
   documentFacts?: DocumentFacts;
-  /** 极简链路的结论，与 Agent 链路并行运行、互不影响，用于 A/B 对照。 */
+  /** 归档判断的结论。 */
   minimalDecision?: MinimalClassifyResult;
   requiresArchiveConfirmation?: boolean;
   archived?: {
@@ -383,7 +383,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 极简分类始终依赖结构化事实，并始终保留人工确认。
+    // 归档判断始终依赖结构化事实，并始终保留人工确认。
     autoArchive = false;
     const runMinimalPath = mode !== 'facts';
     // 三种模式都要抽事实，facts 模式尤其——它存在的意义就是抽事实。
@@ -461,13 +461,13 @@ export async function POST(request: NextRequest) {
           finalDecision: decidedFolder
             ? {
                 method: 'minimal',
-                explanation: `极简链路建议归入“${decidedFolder.folderPath
+                explanation: `建议归入“${decidedFolder.folderPath
                   .slice(1)
                   .join(' / ')}”；请人工确认后归档`,
               }
             : {
                 method: 'none',
-                explanation: '极简链路未能唯一确定阶段，需要人工选择阶段文件夹',
+                explanation: '未能唯一确定阶段，需要人工选择阶段文件夹',
               },
         },
         classificationMode: 'minimal',
@@ -791,8 +791,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(factsOnly);
     }
 
-    // 极简链路是唯一的分类建议来源。
-    // 的状态，因此可以直接 A/B；将来极简版胜出时删掉 Agent 一整块即可。
+    // 这是唯一的分类建议来源。
     if (runMinimalPath && documentFacts && projectId) {
       const factsForMinimal = documentFacts;
       try {
@@ -834,11 +833,11 @@ export async function POST(request: NextRequest) {
       finalDecision: targetFolder
         ? {
             method: 'minimal',
-            explanation: `极简链路建议归入“${targetFolder.folderPath.slice(1).join(' / ')}”；请人工确认后归档`,
+            explanation: `建议归入“${targetFolder.folderPath.slice(1).join(' / ')}”；请人工确认后归档`,
           }
         : {
             method: 'none',
-            explanation: '极简链路未能唯一确定阶段，需要人工选择阶段文件夹',
+            explanation: '未能唯一确定阶段，需要人工选择阶段文件夹',
           },
     };
     const result: ClassifyResult = {
