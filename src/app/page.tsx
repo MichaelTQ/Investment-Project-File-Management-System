@@ -43,6 +43,7 @@ import {
   Pause, Play, Square, FolderUp
 } from 'lucide-react';
 import { parseSourceLocation } from '@/lib/archive-subpath';
+import { MAX_PROJECT_NOTES_LENGTH } from '@/lib/classification/project-notes';
 import {
   FOLDER_STRUCTURE,
   SYSTEM_ARCHIVE_FOLDERS,
@@ -1170,8 +1171,24 @@ function CreateProjectDialog({ onCreated }: { onCreated: (project: Project) => v
             <Input id="project-name" placeholder="例如：某科技公司A轮投资" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreate()} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="project-desc">项目描述（可选）</Label>
-            <Input id="project-desc" placeholder="简要描述项目信息" value={description} onChange={(e) => setDescription(e.target.value)} />
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="project-desc">项目描述与归档口径（可选）</Label>
+              <span className="text-xs text-muted-foreground">
+                {description.length}/{MAX_PROJECT_NOTES_LENGTH}
+              </span>
+            </div>
+            <Textarea
+              id="project-desc"
+              placeholder="项目背景，以及你们的归档习惯"
+              value={description}
+              maxLength={MAX_PROJECT_NOTES_LENGTH}
+              rows={4}
+              className="min-h-24 resize-y"
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <p className="text-xs leading-5 text-muted-foreground">
+              写在这里的内容会原样交给模型参与归档判断。适合写你们的归档习惯，例如「FA 提供的财务尽调底稿随上会材料归入投资决策」「项目名里的 -投后 只是内部命名，与文件属于哪个阶段无关」。
+            </p>
           </div>
         </div>
         <DialogFooter>
@@ -3929,7 +3946,7 @@ export default function Home() {
           const response = await fetch('/api/folders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ folderNames }),
+            body: JSON.stringify({ projectId, folderNames }),
             signal: controller.signal,
           });
           const data = await response.json().catch(() => null);
@@ -5449,21 +5466,24 @@ export default function Home() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="rename-project-description">项目描述（可选）</Label>
+                <Label htmlFor="rename-project-description">项目描述与归档口径（可选）</Label>
                 <span className="text-xs text-muted-foreground">
-                  {renameProjectDescription.length}/2000
+                  {renameProjectDescription.length}/{MAX_PROJECT_NOTES_LENGTH}
                 </span>
               </div>
               <Textarea
                 id="rename-project-description"
                 value={renameProjectDescription}
-                maxLength={2000}
+                maxLength={MAX_PROJECT_NOTES_LENGTH}
                 rows={4}
                 disabled={renamingProject}
-                placeholder="简要描述项目背景、投资阶段或被投企业信息"
+                placeholder="项目背景，以及你们的归档习惯"
                 className="min-h-24 resize-y"
                 onChange={(event) => setRenameProjectDescription(event.target.value)}
               />
+              <p className="text-xs leading-5 text-muted-foreground">
+                写在这里的内容会原样交给模型参与归档判断。适合写你们的归档习惯，例如「FA 提供的财务尽调底稿随上会材料归入投资决策」「项目名里的 -投后 只是内部命名，与文件属于哪个阶段无关」。
+              </p>
             </div>
             <p className="text-xs text-muted-foreground">
               S3 文件、文件夹结构和已归档文件名不会改变。

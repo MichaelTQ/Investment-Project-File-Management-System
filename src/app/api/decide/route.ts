@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     const result = await decideStagesForBatchWithModel({
       items,
       projectName: project?.name,
+      projectNotes: project?.description,
       archivedDocuments,
       timeline: describeTimeline(buildTimeline(archive.documents), {
         showStage: true,

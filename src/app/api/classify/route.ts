@@ -435,6 +435,7 @@ export async function POST(request: NextRequest) {
             facts: stored.facts,
             fingerprint: stored.fingerprint,
             namingHint,
+            projectNotes: project?.description,
             customHeaders,
           })
         );
@@ -805,6 +806,7 @@ export async function POST(request: NextRequest) {
             // 单份上传也吃这条软提示。它不改变要做的事——内容照读、事实照抽——
             // 只是让模型和批量里的歧义分支看到同样的上下文。
             namingHint,
+            projectNotes: project?.description,
             customHeaders,
           })
         );

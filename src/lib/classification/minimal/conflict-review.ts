@@ -5,6 +5,7 @@ import {
   type ModelCallDiagnostics,
 } from '../chat-completions';
 import { extractFirstJsonObject } from '../document-facts';
+import { describeProjectNotes } from '../project-notes';
 import { leafName } from '../source-path';
 import {
   describeStagePlacement,
@@ -121,6 +122,7 @@ export function buildConflictReviewPrompt(params: {
   documents: MinimalDocument[];
   timeline: TimelineEntry[];
   projectName?: string;
+  projectNotes?: string;
   stageDefinitions: string;
   /** 用户点过"忽略"的提示，格式见 conflictKey。 */
   dismissedFindings?: string[];
@@ -181,7 +183,7 @@ ${params.stageDefinitions}
 }`;
 
   const userPrompt = `【项目】
-${params.projectName || '未提供'}
+${params.projectName || '未提供'}${describeProjectNotes(params.projectNotes ?? '')}
 
 【已归档文件及其事实】
 ${documentsBrief(params.documents)}
@@ -247,6 +249,7 @@ export async function reviewConflictsWithModel(params: {
   documents: MinimalDocument[];
   timeline: TimelineEntry[];
   projectName?: string;
+  projectNotes?: string;
   stageDefinitions: string;
   dismissedFindings?: string[];
   customHeaders?: Record<string, string>;

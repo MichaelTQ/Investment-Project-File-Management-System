@@ -48,6 +48,8 @@ export interface MinimalClassifyParams {
   fingerprint?: string;
   /** 命名规范给出的候选阶段，软提示。见 LlmStageDecisionParams.namingHint。 */
   namingHint?: { term: string; stages: ArchiveBusinessStage[] };
+  /** 项目负责人填写的归档口径。 */
+  projectNotes?: string;
   customHeaders?: Record<string, string>;
 }
 
@@ -84,6 +86,7 @@ export async function classifyWithMinimalPath(
     // 是这套系统里最硬的信号。提示词里同时约束它不能成为唯一依据。
     timeline: describeTimeline(buildTimeline(others), { showStage: true }),
     namingHint: params.namingHint,
+    projectNotes: params.projectNotes,
     customHeaders: params.customHeaders,
   });
 
@@ -147,6 +150,7 @@ export async function rebuildMinimalArchive(
   projectId: string,
   options: {
     projectName?: string;
+    projectNotes?: string;
     customHeaders?: Record<string, string>;
     /**
      * 是否跑**模型**冲突复核。默认跑。
@@ -215,6 +219,7 @@ export async function rebuildMinimalArchive(
           documents: archivedDocuments,
           timeline,
           projectName: options.projectName,
+          projectNotes: options.projectNotes,
           stageDefinitions: STAGE_DEFINITIONS,
           // 事后过滤保留在下面当兜底，但先让模型知道用户忽略过什么：否则同一条
           // 误报每次都要重新生成一遍再被丢掉，白花钱，还会因为换了措辞绕过过滤。

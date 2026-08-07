@@ -6,6 +6,8 @@ import { S3Storage } from "coze-coding-dev-sdk";
 import { getSupabaseClient } from "@/storage/database/supabase-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Readable } from "stream";
+// 项目描述会原样进入模型提示词，长度上限由那边定，见 project-notes.ts。
+import { MAX_PROJECT_NOTES_LENGTH } from "@/lib/classification/project-notes";
 
 // ============ 类型定义 ============
 
@@ -209,6 +211,7 @@ export async function createProject(
   description: string
 ): Promise<Project> {
   const db = getDb();
+  description = description.trim().slice(0, MAX_PROJECT_NOTES_LENGTH);
   const now = new Date().toISOString();
   const { data, error } = await db
     .from("projects")
@@ -325,8 +328,8 @@ export async function renameProject(
     typeof newDescription === "string"
       ? newDescription.trim()
       : current.description ?? "";
-  if (description.length > 2000) {
-    throw new Error("项目描述不能超过 2000 个字符");
+  if (description.length > MAX_PROJECT_NOTES_LENGTH) {
+    throw new Error(`项目描述不能超过 ${MAX_PROJECT_NOTES_LENGTH} 个字符`);
   }
 
   const { data: otherProjects, error: duplicateError } = await db

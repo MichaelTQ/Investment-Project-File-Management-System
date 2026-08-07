@@ -9,6 +9,7 @@ import {
   type ModelCallDiagnostics,
 } from './chat-completions';
 import { STAGE_DEFINITIONS } from './llm-stage-decision';
+import { describeProjectNotes } from './project-notes';
 
 /**
  * 顶层文件夹判阶段。
@@ -60,7 +61,10 @@ export interface FolderStageResult {
   error?: string;
 }
 
-export function buildFolderStagePrompt(folderNames: string[]): Message[] {
+export function buildFolderStagePrompt(
+  folderNames: string[],
+  projectNotes = ''
+): Message[] {
   const systemPrompt = `你要判断一批**文件夹的名字**分别属于投资项目档案的哪个业务阶段。
 
 【可选阶段及其含义】
@@ -80,7 +84,8 @@ ${STAGE_DEFINITIONS}
 
 可用的阶段名只有这些：${STAGE_FOLDER_NAMES.join('、')}`;
 
-  const userPrompt = `【文件夹名】
+  const userPrompt = `${describeProjectNotes(projectNotes)}
+【文件夹名】
 ${folderNames.map((name, index) => `${index + 1}. ${name}`).join('\n')}`;
 
   return [
@@ -125,6 +130,7 @@ export function parseFolderStageResponse(
  */
 export async function classifyFoldersWithModel(params: {
   folderNames: string[];
+  projectNotes?: string;
   customHeaders?: Record<string, string>;
 }): Promise<FolderStageResult> {
   const { folderNames } = params;
@@ -133,7 +139,7 @@ export async function classifyFoldersWithModel(params: {
   let modelCall: ModelCallDiagnostics | undefined;
   try {
     const response = await invokeChatCompletion({
-      messages: buildFolderStagePrompt(folderNames),
+      messages: buildFolderStagePrompt(folderNames, params.projectNotes),
       model: FOLDER_STAGE_MODEL,
       temperature: 0,
       maxOutputTokens: Math.min(
