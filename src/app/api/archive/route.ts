@@ -279,7 +279,7 @@ export async function DELETE(request: NextRequest) {
       const deleted = await deleteArchivedFile(fileId);
       if (deleted) {
         try {
-          // 极简链路有自己的事实表，删除必须同步，否则事实会继续参与后续判断。
+          // 分析链路有自己的事实表，删除必须同步，否则事实会继续参与后续判断。
           await forgetMinimalDocumentsByArchivedFile(deleted.projectId, {
             archivedFileId: deleted.archivedFileId,
             originalName: deleted.originalName,

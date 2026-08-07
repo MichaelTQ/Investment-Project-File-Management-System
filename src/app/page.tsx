@@ -762,7 +762,7 @@ function ClassifyDetailsDialog({
               </div>
             )}
 
-            {/* 极简分类结论：批量流程里结果卡片不展开，这里是唯一能看到判断理由的地方 */}
+            {/* 归档判断：批量流程里结果卡片不展开，这里是唯一能看到判断理由的地方 */}
             {result.minimalDecision && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">归档判断</h4>
@@ -922,7 +922,7 @@ function ClassifyResultItem({
             {minimalRunning && (
               <>
                 <span>·</span>
-                <span>极简分类中</span>
+                <span>分析中</span>
               </>
             )}
           </div>
@@ -948,7 +948,7 @@ function ClassifyResultItem({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-xs font-medium text-violet-900">
               <Brain className="h-3.5 w-3.5" />
-              极简分类结果
+              归档判断
             </p>
             <Badge
               variant="outline"
@@ -2160,40 +2160,76 @@ interface BatchTreeNode {
 
 const UNPLACED_KEY = '__unplaced__';
 
-/** 按归档位置把这一批文件组成一棵树。没有位置的单独归到一个待办分组。 */
+function childBatchNode(
+  siblings: BatchTreeNode[],
+  name: string,
+  key: string
+): BatchTreeNode {
+  const existing = siblings.find(node => node.key === key);
+  if (existing) return existing;
+  const created: BatchTreeNode = { name, key, children: [], files: [] };
+  siblings.push(created);
+  return created;
+}
+
+/**
+ * 按归档位置把**已经定了位置的**文件组成一棵树。
+ *
+ * 判不出位置的不在这棵树里——它们曾经作为一个名叫「未确定归档位置」的根节点跟真正
+ * 要归档的目录并排显示，看上去就像又一个待归档文件夹，误导性很强。现在单独成区，
+ * 见 buildUnplacedTree。
+ */
 function buildBatchTree(files: BatchReviewFile[]): BatchTreeNode[] {
   const roots: BatchTreeNode[] = [];
 
-  const childNode = (siblings: BatchTreeNode[], name: string, key: string) => {
-    const existing = siblings.find(node => node.key === key);
-    if (existing) return existing;
-    const created: BatchTreeNode = { name, key, children: [], files: [] };
-    siblings.push(created);
-    return created;
-  };
-
   for (const file of files) {
-    // 判不出阶段的也按来源文件夹分组，而不是堆成一片。这样"整个文件夹移动/ 取消"
-    // 在待办这一侧同样成立——而待办恰恰是最需要按文件夹批量处理的地方。
-    const basePath = file.folder
-      ? file.folder.folderPath
-      : ['未确定归档位置'];
+    if (!file.folder) continue;
     let siblings = roots;
     let node: BatchTreeNode | null = null;
-    let keyPrefix = file.folder ? '' : UNPLACED_KEY;
+    let keyPrefix = '';
     // 阶段路径之后接上用户自己的层级，预览树长得和归档后一模一样。
-    for (const segment of [...basePath, ...(file.subPath ?? [])]) {
+    for (const segment of [...file.folder.folderPath, ...(file.subPath ?? [])]) {
       keyPrefix = keyPrefix ? `${keyPrefix}/${segment}` : segment;
-      node = childNode(siblings, segment, keyPrefix);
+      node = childBatchNode(siblings, segment, keyPrefix);
       siblings = node.children;
     }
     node?.files.push(file);
   }
 
-  // 待办分组永远排最前面：有它就说明还不能一键归档。
-  return roots.sort((left, right) =>
-    left.key === UNPLACED_KEY ? -1 : right.key === UNPLACED_KEY ? 1 : 0
-  );
+  return roots;
+}
+
+/**
+ * 还没定下位置的文件，按来源文件夹分组。
+ *
+ * 仍然分组而不是堆成一片，是为了让「整个文件夹指定位置 / 取消归档」在这一侧同样
+ * 成立——待办恰恰是最需要按文件夹批量处理的地方。
+ *
+ * 返回一个虚拟根：它的 children 是各个来源文件夹，files 是没有目录层级的散文件。
+ * key 保留 UNPLACED_KEY 前缀，subPathIndexOfNode 才能算对层级。
+ */
+function buildUnplacedTree(files: BatchReviewFile[]): BatchTreeNode {
+  const root: BatchTreeNode = {
+    name: '未确定归档位置',
+    key: UNPLACED_KEY,
+    children: [],
+    files: [],
+  };
+
+  for (const file of files) {
+    if (file.folder) continue;
+    let siblings = root.children;
+    let node: BatchTreeNode | null = null;
+    let keyPrefix = UNPLACED_KEY;
+    for (const segment of file.subPath ?? []) {
+      keyPrefix = `${keyPrefix}/${segment}`;
+      node = childBatchNode(siblings, segment, keyPrefix);
+      siblings = node.children;
+    }
+    (node ?? root).files.push(file);
+  }
+
+  return root;
 }
 
 function countBatchTreeFiles(node: BatchTreeNode): number {
@@ -2322,17 +2358,47 @@ function BatchTreeItem({
               actions={actions}
             />
           ))}
-          {node.files.map(file => {
-            const moved =
-              file.folder !== null &&
-              file.suggestedFolderId !== null &&
-              file.folder.folderId !== file.suggestedFolderId;
-            return (
+          {node.files.map(file => (
+            <BatchFileRow
+              key={file.clientId}
+              file={file}
+              level={level + 1}
+              actions={actions}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 预览树里的一行文件。
+ *
+ * 单独成组件是因为它要在两个地方出现：正常的归档预览树，以及顶部那个「需要先指定
+ * 位置」的分区。两处必须长得一样，各写一份迟早会走样。
+ */
+function BatchFileRow({
+  file,
+  level,
+  actions,
+}: {
+  file: BatchReviewFile;
+  level: number;
+  actions: BatchTreeActions;
+}) {
+  const { extractingClientId } = actions;
+  const moved =
+    file.folder !== null &&
+    file.suggestedFolderId !== null &&
+    file.folder.folderId !== file.suggestedFolderId;
+
+  return (
               <ContextMenu key={file.clientId}>
               <ContextMenuTrigger asChild>
               <div
                 className="flex items-center gap-1 py-1 px-2 rounded hover:bg-muted/50 transition-colors"
-                style={{ paddingLeft: `${(level + 1) * 12 + 6}px` }}
+                style={{ paddingLeft: `${level * 12 + 6}px` }}
                 title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
               >
                 {extractingClientId === file.clientId ? (
@@ -2397,11 +2463,6 @@ function BatchTreeItem({
                 </ContextMenuItem>
               </ContextMenuContent>
               </ContextMenu>
-            );
-          })}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -2585,6 +2646,7 @@ function BatchReviewDialog({
   const [renameValue, setRenameValue] = useState('');
 
   const tree = useMemo(() => buildBatchTree(files), [files]);
+  const unplacedTree = useMemo(() => buildUnplacedTree(files), [files]);
   const pathCounts = useMemo(
     () =>
       files.reduce(
@@ -2700,22 +2762,59 @@ function BatchReviewDialog({
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2">
-          {tree.map(node => (
-            <BatchTreeItem
-              key={node.key}
-              node={node}
-              level={0}
-              actions={treeActions}
-            />
-          ))}
-        </div>
-
+        {/* 需要人工处理的单独一区，放在最上面，和下面的归档预览彻底分开。
+            这一区里的文件不会被归档，混在同一棵树里显示会让人以为它们也要进档案。 */}
         {unplacedCount > 0 && (
-          <p className="shrink-0 text-xs text-amber-700">
-            还有 {unplacedCount} 个文件没有归档位置，请右键逐个指定后再归档。
-          </p>
+          <div className="shrink-0 rounded-lg border-2 border-amber-400 bg-amber-50 p-2">
+            <div className="mb-1.5 flex items-start gap-1.5 px-1">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-amber-900">
+                  需要你先指定位置（{unplacedCount} 份）
+                </p>
+                <p className="mt-0.5 text-xs leading-4 text-amber-800">
+                  这些文件的名字看不出属于哪个阶段，不会随下方一键归档。
+                  右键整个文件夹指定位置，或整体取消归档。
+                </p>
+              </div>
+            </div>
+            <div className="max-h-[28vh] overflow-y-auto rounded border border-amber-200 bg-background/70 p-1">
+              {unplacedTree.children.map(node => (
+                <BatchTreeItem
+                  key={node.key}
+                  node={node}
+                  level={0}
+                  actions={treeActions}
+                />
+              ))}
+              {unplacedTree.files.map(file => (
+                <BatchFileRow
+                  key={file.clientId}
+                  file={file}
+                  level={0}
+                  actions={treeActions}
+                />
+              ))}
+            </div>
+          </div>
         )}
+
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-2">
+          {tree.length > 0 ? (
+            tree.map(node => (
+              <BatchTreeItem
+                key={node.key}
+                node={node}
+                level={0}
+                actions={treeActions}
+              />
+            ))
+          ) : (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              还没有文件确定归档位置。
+            </p>
+          )}
+        </div>
         {failedCount > 0 && (
           <p className="shrink-0 text-xs text-destructive">
             有 {failedCount} 个文件归档失败，可重新点击一键归档只重试它们。
@@ -3100,12 +3199,12 @@ export default function Home() {
       );
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error || '清空极简事实表失败');
+        throw new Error(data?.error || '清空项目事实表失败');
       }
       setMinimalReport(data.minimal ?? null);
     } catch (error) {
       setProjectContextError(
-        error instanceof Error ? error.message : '清空极简事实表失败'
+        error instanceof Error ? error.message : '清空项目事实表失败'
       );
     } finally {
       setMinimalClearing(false);
@@ -3590,11 +3689,11 @@ export default function Home() {
         sourcePath: uploadedSourcePath,
         fileSize: file.size,
         targetFolder: null,
-        reasoning: '文件上传完成后将运行极简分类。',
+        reasoning: '文件上传完成后开始分析。',
         process: {
           finalDecision: {
             method: 'none',
-            explanation: '正在抽取事实并运行极简分类。',
+            explanation: '正在抽取事实并判断归档阶段。',
           },
         },
         classificationMode: 'minimal',
@@ -4909,13 +5008,13 @@ export default function Home() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-xs">
-                {/* 极简链路的时间线：代码按日期排序拼出，不调用模型 */}
+                {/* 项目时间线：代码按日期排序拼出，不调用模型 */}
                 {minimalReport && (
                   <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="flex items-center gap-1.5 text-xs font-medium text-emerald-900">
                         <Zap className="h-3.5 w-3.5" />
-                        极简链路 Context
+                        项目上下文
                       </p>
                       <Badge
                         variant="outline"
@@ -5046,7 +5145,7 @@ export default function Home() {
                         {minimalClearing && (
                           <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
                         )}
-                        清空极简事实表（{minimalReport.documentCount} 份）
+                        清空项目事实表（{minimalReport.documentCount} 份）
                       </Button>
                     )}
                   </div>
@@ -5218,13 +5317,13 @@ export default function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <CardTitle className="flex items-center gap-2 text-base md:text-lg">
                     <Brain className="h-5 w-5 text-violet-600" />
-                    极简分类结果
+                    归档判断
                   </CardTitle>
                 </div>
                 <CardDescription>
                   {results.length > 0
                     ? `已处理 ${results.length} 个文件；结果均需人工确认后归档`
-                    : '上传后显示极简分类建议与一致性校验'}
+                    : '上传后显示归档建议与一致性校验'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="min-w-0 flex-1 px-3 pt-0">

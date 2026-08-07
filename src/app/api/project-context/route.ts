@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
 /**
  * DELETE /api/project-context?projectId=xxx&scope=minimal
- * 清空极简链路的事实表。归档文件删除后事实会同步清理，这个接口用于重跑测试，
+ * 清空项目事实表。归档文件删除后事实会同步清理，这个接口用于重跑测试，
  * 或修复历史遗留的孤立条目（删除流程接入之前产生的）。
  */
 export async function DELETE(request: NextRequest) {
@@ -94,7 +94,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : '清空极简事实表失败',
+          error instanceof Error ? error.message : '清空项目事实表失败',
       },
       { status: 500 }
     );
