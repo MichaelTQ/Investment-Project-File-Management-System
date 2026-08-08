@@ -374,8 +374,8 @@ test('整批判断的提示词要求每个序号都有结果', () => {
   const userPrompt = String(messages[1].content);
   assert.match(systemPrompt, /必须为每一个序号都输出一条结果/);
   assert.match(systemPrompt, /不要因为它们一起提交就往同一个阶段归/);
-  // 软约束的措辞在整批版本里同样不能丢
-  assert.match(userPrompt, /仅供参考，不是限制/);
+  // 候选约束在整批版本里同样不能丢（实测漏改这处，章程一直走出候选）
+  assert.match(userPrompt, /请从这几个候选里选一个/);
   assert.match(userPrompt, /【1】a\.pdf/);
   assert.match(userPrompt, /【2】b\.pdf/);
 });
