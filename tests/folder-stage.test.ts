@@ -54,7 +54,8 @@ test('"无"和清单外的说法都判为未能区分，绝不猜', () => {
 
 test('提示词要求含糊的名字必须答无', () => {
   const systemPrompt = String(buildFolderStagePrompt(['协议word版本'])[0].content);
-  assert.match(systemPrompt, /只看文件夹名字本身，不要臆测里面装了什么文件/);
+  // 措辞从「只看文件夹名字本身」改掉了——那句字面上会把归档口径一起排除。
+  assert.match(systemPrompt, /不要臆测文件夹里装了什么文件/);
   assert.match(systemPrompt, /输出"无"是正确结果，不是失败/);
   assert.match(systemPrompt, /不要为了给每一个都填上答案而勉强选一个最接近的/);
 });

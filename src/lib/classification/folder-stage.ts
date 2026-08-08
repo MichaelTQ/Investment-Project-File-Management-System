@@ -8,7 +8,10 @@ import {
   invokeChatCompletion,
   type ModelCallDiagnostics,
 } from './chat-completions';
-import { STAGE_DEFINITIONS } from './llm-stage-decision';
+import {
+  PARTY_CONTEXT_HINT,
+  STAGE_DEFINITIONS,
+} from './llm-stage-decision';
 import { describeProjectNotes } from './project-notes';
 
 /**
@@ -70,8 +73,11 @@ export function buildFolderStagePrompt(
 【可选阶段及其含义】
 ${STAGE_DEFINITIONS}
 
+${PARTY_CONTEXT_HINT}
+
 【要求】
-1. 只看文件夹名字本身，不要臆测里面装了什么文件。
+1. 判断依据是**文件夹的名字**加上下面给出的归档口径。不要臆测文件夹里装了什么文件——
+   你看不到里面的内容，但口径里写明的各方身份和归档习惯必须用上。
 2. 只有当名字**明确指向**某一个阶段时才给出阶段。名字含糊、只是格式或版本的说法
    （例如"协议word版本""最终版""备份"）、或者同时像多个阶段的，一律输出"无"。
 3. 【输出"无"是正确结果，不是失败】判不出来的会交给人工分类，那比猜错好得多。
@@ -84,7 +90,9 @@ ${STAGE_DEFINITIONS}
 
 可用的阶段名只有这些：${STAGE_FOLDER_NAMES.join('、')}`;
 
-  const userPrompt = `${describeProjectNotes(projectNotes)}
+  const userPrompt = `${describeProjectNotes(projectNotes, {
+    hasFileContent: false,
+  })}
 【文件夹名】
 ${folderNames.map((name, index) => `${index + 1}. ${name}`).join('\n')}`;
 

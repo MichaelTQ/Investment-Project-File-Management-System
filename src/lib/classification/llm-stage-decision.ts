@@ -63,6 +63,27 @@ post_investment 投后管理：投资完成后持续跟踪被投企业的阶段�
 exit_decision 退出决策：内部决定是否退出、如何退出的阶段。
 exit_execution 退出执行：退出交易实际完成的阶段。`;
 
+/**
+ * 各方身份的说明。
+ *
+ * 阶段定义本身分不开"同一份材料的不同来源"：一份财务资料，由中介机构出具并随上会
+ * 材料提交，和我方在调查阶段自行收集，按定义两边都说得通——尽职调查写着"为核查而
+ * 收集的标的方原始资料"，投资决策写着"审议时所依据的标的状态"。实测《天士力FA财务
+ * 尽调资料》就卡在这里，反复被判到尽职调查。
+ *
+ * 真正的区分点是**这份材料是谁出的、给谁用的**，而各方身份只有项目负责人知道。
+ * 所以这里不给答案，只告诉模型去哪里找答案——身份写在归档口径里。
+ *
+ * 注意这段话不含任何"某类文件属于某阶段"的映射，它只是让模型知道有"来源"这个维度，
+ * 以及口径里可能写着各方是谁。
+ */
+export const PARTY_CONTEXT_HINT = `【判断时要分清"谁出的、给谁用的"】
+同一份材料，出自不同主体、用于不同环节，可能分属不同阶段——例如中介机构出具并随
+上会材料提交的资料，与我方在调查阶段自行收集的资料，归属未必相同。
+项目各方的身份（投资方、被投企业、中介机构、决策机构等）如果在下面的归档口径里
+写明了，请按口径理解：文件名或文件夹名里出现这些公司、机构的名称时，用口径说明的
+角色去理解它。口径没有写明的身份不要臆测。`;
+
 export interface LlmStageDecisionParams {
   sourcePath: string;
   facts: DocumentFacts;
@@ -172,6 +193,8 @@ export function buildStageDecisionPrompt(
 【可选阶段及其含义】
 ${STAGE_DEFINITIONS}
 
+${PARTY_CONTEXT_HINT}
+
 【判断要求】
 1. 只依据下面给出的事实和时间线。文件名可能不含任何阶段信息，不要单凭文件名判断。
 2. 不要假设项目里应当存在某份没有出现的文件，也不要因为某类文件"通常"归在某个阶段就照此归档。判断依据必须来自这份文件自身记载的内容。
@@ -268,6 +291,8 @@ export function buildBatchStageDecisionPrompt(params: {
 【可选阶段及其含义】
 ${STAGE_DEFINITIONS}
 
+${PARTY_CONTEXT_HINT}
+
 【判断要求】
 1. 只依据下面给出的事实和时间线。文件名可能不含任何阶段信息，不要单凭文件名判断。
 2. 不要假设项目里应当存在某份没有出现的文件，也不要因为某类文件"通常"归在某个阶段就照此归档。判断依据必须来自这份文件自身记载的内容。
@@ -305,7 +330,7 @@ ${STAGE_DEFINITIONS}
   const itemsBrief = params.items
     .map((item, index) => {
       const hint = item.namingHint
-        ? `\n  命名规范提示（仅供参考，不是限制）：名称对应「${item.namingHint.term}」，规范把它列在 ${item.namingHint.stages.join('、')}；文件内容指向别的阶段时就选别的阶段。`
+        ? `\n  命名规范提示：名称对应「${item.namingHint.term}」，规范把它列在 ${item.namingHint.stages.join('、')}。请从这几个候选里选一个；只有当文件内容与所有候选都明显对不上时，才输出 unknown，不要在候选之外自己另挑一个阶段。`
         : '';
       return `【${index + 1}】${leafName(item.sourcePath)}${hint}\n${indent(factsBrief(item.facts))}`;
     })

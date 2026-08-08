@@ -25,15 +25,31 @@ export function normalizeProjectNotes(value: unknown): string {
  * 前者是用户说了算的，后者不是——否则一句备注就能让模型无视文件里白纸黑字写着的
  * 内容，那比没有备注更危险。
  */
-export function describeProjectNotes(notes: string): string {
+export function describeProjectNotes(
+  notes: string,
+  /**
+   * 判文件夹时没有文件内容可读，所以"以内容为准"那句必须去掉——留着等于给模型
+   * 一个不采信口径的台阶，而它手上根本没有内容可以作为依据。
+   */
+  options: { hasFileContent?: boolean } = {}
+): string {
   const normalized = normalizeProjectNotes(notes);
   if (!normalized) return '';
+
+  const contentClause = options.hasFileContent === false
+    ? `这一步只看名字、读不到文件内容，所以这份口径是你手上最硬的依据。名称与口径里
+描述的某类材料对得上时，直接按口径给出结论。`
+    : `口径不能推翻文件自身记载的事实：如果某份文件的内容明确指向别处，仍按内容判断，
+并在理由里说明与口径不一致的地方。`;
+
   return `
 
 【本项目的归档口径（项目负责人填写）】
 ${normalized}
 
-以上是本项目负责人写下的归档习惯与背景说明。涉及"这一类文件我们习惯放在哪里"时，
-以它为准，优先于你的一般判断。但它不能推翻文件自身记载的事实：如果某份文件的内容
-明确指向别处，仍按内容判断，并在理由里说明与口径不一致的地方。`;
+以上由项目负责人写下，通常包含两类信息，两类都要用：
+- **各方身份**：口径里提到的公司或机构分别是什么角色（投资方、被投企业、中介机构等）。
+  文件名或文件夹名里出现这些名称时，按口径说明的角色去理解，不要只当成一个陌生的名字。
+- **归档习惯**：涉及"这一类材料我们放在哪里"时以口径为准，优先于你的一般判断。
+${contentClause}`;
 }
