@@ -302,7 +302,7 @@ test('提示词要求优先做数值对照，且措辞不含业务词汇', () =>
   }
 });
 
-test('候选之外只能输出 unknown，不许自己另挑一个阶段', () => {
+test('命名规范提示是软约束，但走出候选要拿得出原文依据', () => {
   const userPrompt = String(
     buildStageDecisionPrompt({
       sourcePath: '君柔科技_立项表决结果(1).pdf',
@@ -315,12 +315,10 @@ test('候选之外只能输出 unknown，不许自己另挑一个阶段', () => 
   );
 
   assert.match(userPrompt, /仅供参考，不是限制/);
-  // 起因：佰特微那份 2024.11 章程，候选是投资决策/投资实施，模型却选了尽职调查，
-  // 还给了一套像样的理由。"必须引用原文"拦不住——模型总编得出理由。
-  // 所以候选之外的出口只留 unknown 一个。
-  assert.match(userPrompt, /你只有两种选择：从上面的候选里选一个，或者输出 unknown/);
-  assert.match(userPrompt, /不要选候选之外的阶段/);
-  assert.match(userPrompt, /被自信地放错位置的文件，比一份等人处理的文件代价大得多/);
+  // 可以走出候选，但必须引用原文；说不清就交人工，而不是随手挑一个。
+  assert.match(userPrompt, /必须能引用文件原文说明为什么/);
+  assert.match(userPrompt, /说不清就输出 unknown/);
+  assert.match(userPrompt, /宁可多一些交人工的/);
   assert.match(userPrompt, /表决票/);
 });
 
