@@ -302,7 +302,7 @@ test('提示词要求优先做数值对照，且措辞不含业务词汇', () =>
   }
 });
 
-test('命名规范提示是软约束，但走出候选要拿得出原文依据', () => {
+test('默认在候选里选，全都对不上才交人工，不许另挑阶段', () => {
   const userPrompt = String(
     buildStageDecisionPrompt({
       sourcePath: '君柔科技_立项表决结果(1).pdf',
@@ -315,10 +315,12 @@ test('命名规范提示是软约束，但走出候选要拿得出原文依据',
   );
 
   assert.match(userPrompt, /仅供参考，不是限制/);
-  // 可以走出候选，但必须引用原文；说不清就交人工，而不是随手挑一个。
-  assert.match(userPrompt, /必须能引用文件原文说明为什么/);
-  assert.match(userPrompt, /说不清就输出 unknown/);
-  assert.match(userPrompt, /宁可多一些交人工的/);
+  // 默认在候选里选——候选是规范圈定的范围，正确答案通常在其中。
+  assert.match(userPrompt, /请从上面的候选里选一个/);
+  // 只有全都对不上才交人工，且不许自己另挑一个阶段。
+  // 起因是佰特微那份 2024.11 章程：候选是投资决策/投资实施，模型选了尽职调查。
+  assert.match(userPrompt, /所有候选都明显对不上/);
+  assert.match(userPrompt, /不要在候选之外自己另挑一个阶段/);
   assert.match(userPrompt, /表决票/);
 });
 
