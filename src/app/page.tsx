@@ -256,7 +256,6 @@ function FolderTree({ node, level = 0, selectedFolder, onSelectFolder }: {
         onClick={() => { if (hasChildren) setIsOpen(!isOpen); onSelectFolder(node.id); }}
       >
         <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
-        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
         {hasChildren ? (
           isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         ) : (<span className="w-4 shrink-0" />)}
@@ -1258,6 +1257,7 @@ function MoveFolderNode({ node, level, selectedId, onSelect, path, blockedPath }
           onSelect(node.id, node.name, currentPath);
         }}
       >
+        <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
         {hasChildren ? (
           isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
         ) : (<span className="w-4 shrink-0" />)}
@@ -2554,7 +2554,7 @@ function BatchMoveDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-[280px] shrink-0 rounded-lg border p-2">
+        <ScrollArea className="min-h-[180px] flex-1 rounded-lg border p-2">
           <MoveFolderNode
             node={mergedTree}
             level={0}
@@ -2583,20 +2583,15 @@ function BatchMoveDialog({
           </div>
         )}
 
-        {target && target.folder.businessStage === null && (
-          <p className="shrink-0 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs leading-5 text-amber-800">
-            这一层不属于任何业务阶段。文件可以放在这里，但不会进入项目时间线和
-            冲突复核，系统后续也不会拿它和别的文件比对。
-          </p>
-        )}
         {target && (
           <p className="shrink-0 break-all text-xs text-muted-foreground">
             目标位置：{targetPath.join(' / ')}
           </p>
         )}
         {/* 放进分组层是允许的，但这些文件没有业务阶段——它们不进项目时间线、
-            不进冲突复核、数值比对也看不见。不说明白的话，用户会以为系统在盯着
-            它们，而实际上它们游离在整套分析之外。 */}
+            不进冲突复核、数值比对也看不见。说明必须给，但只给一次：这里曾经
+            重复渲染了两遍几乎一样的警告，把本就没有伸缩空间的页脚挤出了可视区，
+            表现为"只有一堆琥珀色警报，没有确认按钮"。 */}
         {target && target.folder.businessStage === null && (
           <p className="shrink-0 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs leading-5 text-amber-800">
             这一层不属于任何业务阶段。文件可以放在这里，但不会进入项目时间线和冲突复核，
@@ -2604,7 +2599,7 @@ function BatchMoveDialog({
           </p>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={onCancel}>取消</Button>
           <Button
             disabled={!target}
