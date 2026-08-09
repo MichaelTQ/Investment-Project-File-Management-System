@@ -39,7 +39,7 @@ import {
   Folder, FolderOpen, FileText, Upload, CheckCircle2, AlertCircle,
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
-  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye,
+  History, ArrowRightLeft, MoreHorizontal, Pencil, Eye, RefreshCw,
   Pause, Play, Square, FolderUp
 } from 'lucide-react';
 import { parseSourceLocation } from '@/lib/archive-subpath';
@@ -463,6 +463,93 @@ const SOURCE_QUALITY_LABELS: Record<string, string> = {
   filename_only: '只读到文件名',
   mixed: '文字与图片混合',
 };
+
+/**
+ * 项目 Context 里的一个分区。
+ *
+ * 三个列表原来都是 details，展开之后整页被撑到几屏高——七十多份文件的事实卡片叠在
+ * 一起，滚动条属于整个页面，看完事实想回头看时间线就得一路滚回去。这里给每个分区
+ * 固定高度、各自滚动，页面长度不再随文件数变化。
+ *
+ * 仍然保留折叠：默认收起，标题行点开。高度写死而不是按内容自适应，是因为自适应会
+ * 让三个分区互相挤，展开哪个页面就往哪边跳。
+ */
+function ContextPane({
+  title,
+  hint,
+  tone,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  tone: 'violet' | 'emerald';
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const toneClass =
+    tone === 'violet' ? 'text-violet-700' : 'text-emerald-700';
+
+  return (
+    <div className="rounded-md border border-emerald-100 bg-white/60">
+      <button
+        type="button"
+        className={`flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] ${toneClass} hover:underline`}
+        onClick={() => setOpen(value => !value)}
+      >
+        {open ? (
+          <ChevronDown className="h-3 w-3 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 shrink-0" />
+        )}
+        <span className="font-medium">{title}</span>
+        {hint && (
+          <span className="truncate text-[10px] text-muted-foreground">
+            {hint}
+          </span>
+        )}
+      </button>
+      {open && (
+        <ScrollArea className="h-56 border-t border-emerald-100">
+          <div className="p-2">{children}</div>
+        </ScrollArea>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 给 Context 里的一行挂上「提取事实并复核」的右键菜单。
+ *
+ * 判断"这份文件该读内容"是在 Context 里做出的，动手的地方就该在这儿——原来必须记住
+ * 文件名，再到右侧归档树里逐层展开去找。
+ */
+function ExtractableRow({
+  sourcePath,
+  busy,
+  onExtract,
+  children,
+}: {
+  sourcePath: string;
+  busy: boolean;
+  onExtract: (sourcePath: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div className={busy ? 'animate-pulse opacity-60' : undefined}>
+          {children}
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem disabled={busy} onSelect={() => onExtract(sourcePath)}>
+          <Brain className="mr-2 h-3.5 w-3.5" />
+          提取事实并复核
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
 
 /**
  * 一份文件抽取出来的事实。
@@ -1595,10 +1682,7 @@ function ArchivedFilesList({
     fileName: string;
     status: 'running' | 'done' | 'error';
     message: string;
-    /** 抽到了新事实，值得重新分析项目上下文。只有这时才给按钮。 */
-    canRebuildContext?: boolean;
   } | null>(null);
-  const [rebuildingContext, setRebuildingContext] = useState(false);
   const [moveTarget, setMoveTarget] = useState<ArchiveOperationTarget | null>(null);
   const [moving, setMoving] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
@@ -1842,13 +1926,18 @@ function ArchivedFilesList({
             : differs
               ? `事实已加入项目上下文。按内容判断它更像属于「${suggested.join(' / ')}」，当前归在「${currentPath.join(' / ') || '未知位置'}」，请人工确认是否需要移动。`
               : '事实已加入项目上下文，按内容判断与当前归档位置一致。',
-        canRebuildContext: true,
       });
 
       // 事实已经入库，但项目 Context 卡片手里还是抽取之前的那份快照：事实列表、
-      // 时间线、数值比对、建议深挖全都不会动。这里通知父组件重新拉一次（纯读取，
-      // 不调模型）。模型那层的全项目矛盾复核要花钱，留给上面那个按钮手动触发。
+      // 时间线、数值比对、建议深挖全都不会动。先通知父组件重新拉一次（纯读取）。
       onFilesChanged(projectId, 0);
+      // 再重新分析一次：新事实很可能正好和别的文件对上矛盾，不重跑就发现不了。
+      await onRebuildContext(projectId).catch(() => undefined);
+      setExtractResult(prev =>
+        prev && prev.fileName === originalName && prev.status === 'done'
+          ? { ...prev, message: `${prev.message}项目上下文已重新分析。` }
+          : prev
+      );
     } catch (error) {
       setExtractResult({
         fileName: originalName,
@@ -1904,55 +1993,6 @@ function ArchivedFilesList({
             <div className="min-w-0 flex-1">
               <p className="break-all font-medium">{extractResult.fileName}</p>
               <p className="mt-0.5 break-words leading-4">{extractResult.message}</p>
-              {extractResult.canRebuildContext && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-6 bg-white text-[11px]"
-                    disabled={rebuildingContext}
-                    onClick={() => {
-                      setRebuildingContext(true);
-                      onRebuildContext(projectId)
-                        .then(() => {
-                          setExtractResult(prev =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  message: `${prev.message}项目上下文已重新分析，矛盾提示见左侧「项目 Context」。`,
-                                  canRebuildContext: false,
-                                }
-                              : prev
-                          );
-                        })
-                        .catch(error => {
-                          setExtractResult(prev =>
-                            prev
-                              ? {
-                                  ...prev,
-                                  status: 'error',
-                                  message:
-                                    error instanceof Error
-                                      ? error.message
-                                      : '重新分析项目上下文失败',
-                                }
-                              : prev
-                          );
-                        })
-                        .finally(() => setRebuildingContext(false));
-                    }}
-                  >
-                    {rebuildingContext && (
-                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                    )}
-                    重新分析项目上下文
-                  </Button>
-                  <span className="text-[10px] text-violet-600">
-                    要调模型，会把这份新事实和全项目其他文件比一遍矛盾
-                  </span>
-                </div>
-              )}
             </div>
             {extractResult.status !== 'running' && (
               <button
@@ -3157,6 +3197,14 @@ export default function Home() {
   const [minimalReport, setMinimalReport] =
     useState<MinimalRebuildReport | null>(null);
   const [minimalClearing, setMinimalClearing] = useState(false);
+  /** 手动触发的「重新分析项目上下文」是否在跑。 */
+  const [contextRebuilding, setContextRebuilding] = useState(false);
+  /** 在 Context 里直接提取事实的进度。一次只跑一份，够用。 */
+  const [contextExtractState, setContextExtractState] = useState<{
+    sourcePath: string;
+    status: 'running' | 'done' | 'error';
+    message: string;
+  } | null>(null);
   // 用户忽略过的提示不再重复弹。切换项目时清空；持久化留待后续。
   const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
     () => new Set()
@@ -3321,6 +3369,123 @@ export default function Home() {
       }
     },
     []
+  );
+
+  /**
+   * 在项目 Context 里直接对某份文件重新提取事实。
+   *
+   * 原来只能到右侧归档文件树里逐层展开去找——而"哪份文件该读内容"这个判断恰恰是在
+   * Context 这边做出来的（建议深挖列表、事实列表都在这儿）。看到问题的地方就是动手的
+   * 地方，中间那趟找文件的路没有存在的理由。
+   *
+   * 文件按名称回查归档记录：Context 里只有 sourcePath，而抽事实要拿归档记录 ID 才能
+   * 定位到 S3 上的原件。重名时不猜，直接说清楚让用户去文件树里操作。
+   */
+  const handleExtractFactsFromContext = useCallback(
+    async (sourcePath: string) => {
+      if (!selectedProjectId) return;
+      const leaf = sourcePath.split(/[/\\]/).pop() ?? sourcePath;
+      const matched = archivedFiles.filter(file => file.originalName === leaf);
+      if (matched.length === 0) {
+        setContextExtractState({
+          sourcePath,
+          status: 'error',
+          message: `《${leaf}》还没有归档，请先归档后再提取事实。`,
+        });
+        return;
+      }
+      if (matched.length > 1) {
+        setContextExtractState({
+          sourcePath,
+          status: 'error',
+          message: `项目里有 ${matched.length} 份都叫《${leaf}》的文件，无法确定是哪一份，请到右侧归档文件树里对具体文件操作。`,
+        });
+        return;
+      }
+
+      const target = matched[0];
+      setContextExtractState({
+        sourcePath,
+        status: 'running',
+        message: `正在读取《${leaf}》的内容并抽取事实…`,
+      });
+      try {
+        const factsResponse = await fetch('/api/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'facts',
+            archivedFileId: target.id,
+            projectId: selectedProjectId,
+            sourcePath: leaf,
+          }),
+        });
+        const factsData = await factsResponse.json().catch(() => null);
+        if (!factsResponse.ok) {
+          throw new Error(
+            [factsData?.error, factsData?.details].filter(Boolean).join('：') ||
+              `抽取失败（HTTP ${factsResponse.status}）`
+          );
+        }
+
+        const decideResponse = await fetch('/api/classify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'decide',
+            archivedFileId: target.id,
+            projectId: selectedProjectId,
+            sourcePath: leaf,
+          }),
+        });
+        const decided = await decideResponse.json().catch(() => null);
+        const suggested: string[] | undefined =
+          decided?.targetFolder?.folderPath?.slice(1);
+        const currentPath = target.folderPath.slice(1);
+        const differs =
+          Array.isArray(suggested) &&
+          suggested.join(' / ') !== currentPath.join(' / ');
+
+        setContextExtractState({
+          sourcePath,
+          status: 'running',
+          message:
+            (!decideResponse.ok || !decided
+              ? `《${leaf}》事实已抽取，但重新判断阶段失败。`
+              : differs && suggested
+                ? `《${leaf}》事实已抽取。按内容判断它更像属于「${suggested.join(' / ')}」，当前归在「${currentPath.join(' / ') || '未知位置'}」，请人工确认是否需要移动。`
+                : `《${leaf}》事实已抽取，按内容判断与当前归档位置一致。`) +
+            '正在重新分析项目上下文…',
+        });
+
+        // 读到新事实之后必须重新分析：它很可能正好和别的文件对上矛盾，不重跑就发现不了。
+        // 归档位置仍然不自动改——读完内容只是多了一条依据，挪不挪由人决定。
+        await rebuildProjectContext(
+          selectedProjectId,
+          '事实已抽取，但重新分析项目上下文失败'
+        );
+        setContextExtractState(prev =>
+          prev && prev.sourcePath === sourcePath
+            ? {
+                ...prev,
+                status: 'done',
+                message: prev.message.replace(
+                  '正在重新分析项目上下文…',
+                  '项目上下文已重新分析。'
+                ),
+              }
+            : prev
+        );
+        setArchiveRefreshKey(key => key + 1);
+      } catch (error) {
+        setContextExtractState({
+          sourcePath,
+          status: 'error',
+          message: error instanceof Error ? error.message : '提取事实失败',
+        });
+      }
+    },
+    [selectedProjectId, archivedFiles, rebuildProjectContext]
   );
 
   const handleProjectCreated = (project: Project) => {
@@ -5066,8 +5231,67 @@ export default function Home() {
                   <Zap className="h-5 w-5 text-emerald-600" />
                   项目 Context
                 </CardTitle>
+                {/* 常驻按钮：归档和提取事实之后都会自动重跑，但用户改了归档口径、
+                    手动挪过文件之后也需要重来一遍，那些时机系统看不见。 */}
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 flex-1 bg-emerald-600 text-[11px] hover:bg-emerald-700"
+                    disabled={!selectedProjectId || contextRebuilding}
+                    onClick={() => {
+                      if (!selectedProjectId) return;
+                      setContextRebuilding(true);
+                      rebuildProjectContext(
+                        selectedProjectId,
+                        '重新分析项目上下文失败'
+                      )
+                        .catch(() => undefined)
+                        .finally(() => setContextRebuilding(false));
+                    }}
+                  >
+                    {contextRebuilding ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    重新分析项目上下文
+                  </Button>
+                </div>
+                <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                  归档、提取事实之后会自动重跑；改了归档口径或手动挪过文件，点这里。
+                </p>
               </CardHeader>
               <CardContent className="space-y-2 text-xs">
+                {/* 在 Context 里直接提取事实的进度条 */}
+                {contextExtractState && (
+                  <div
+                    className={`flex items-start gap-1.5 rounded-md border p-2 text-[11px] leading-4 ${
+                      contextExtractState.status === 'error'
+                        ? 'border-destructive/40 bg-destructive/5 text-destructive'
+                        : 'border-violet-200 bg-violet-50 text-violet-800'
+                    }`}
+                  >
+                    {contextExtractState.status === 'running' ? (
+                      <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                    ) : contextExtractState.status === 'error' ? (
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    ) : (
+                      <Brain className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1 break-words">
+                      {contextExtractState.message}
+                    </span>
+                    {contextExtractState.status !== 'running' && (
+                      <button
+                        className="shrink-0 opacity-60 hover:opacity-100"
+                        onClick={() => setContextExtractState(null)}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* 项目时间线：代码按日期排序拼出，不调用模型 */}
                 {minimalReport && (
                   <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
@@ -5120,71 +5344,102 @@ export default function Home() {
 
                     {/* 建议深挖：系统零成本标出来，点不点由用户决定 */}
                     {(minimalReport.deepenSuggestions?.length ?? 0) > 0 && (
-                      <details className="group">
-                        <summary className="cursor-pointer text-[11px] text-violet-700 hover:underline">
-                          建议读内容的文件（{minimalReport.deepenSuggestions!.length}）——尚未读取内容，在已归档文件里右键「提取事实并复核」
-                        </summary>
-                        <div className="mt-1.5 space-y-1">
+                      <ContextPane
+                        title={`建议读内容的文件（${minimalReport.deepenSuggestions!.length}）`}
+                        hint="尚未读取内容，右键可直接提取"
+                        tone="violet"
+                      >
+                        <div className="space-y-1">
                           {minimalReport.deepenSuggestions!.map(item => (
-                            <p
+                            <ExtractableRow
                               key={item.sourcePath}
-                              className="break-words text-[11px] leading-4 text-muted-foreground"
+                              sourcePath={item.sourcePath}
+                              busy={
+                                contextExtractState?.sourcePath ===
+                                  item.sourcePath &&
+                                contextExtractState.status === 'running'
+                              }
+                              onExtract={handleExtractFactsFromContext}
                             >
-                              <span className="font-medium text-foreground">
-                                {item.sourcePath.split(/[/\\]/).pop()}
-                              </span>
-                              ：{item.reason}
-                            </p>
+                              <p className="break-words text-[11px] leading-4 text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                  {item.sourcePath.split(/[/\\]/).pop()}
+                                </span>
+                                ：{item.reason}
+                              </p>
+                            </ExtractableRow>
                           ))}
                         </div>
-                      </details>
+                      </ContextPane>
                     )}
 
                     {/* 已存事实：系统从每份文件里究竟读到了什么，判断全部基于它 */}
                     {minimalReport.documents.length > 0 && (
-                      <details className="group">
-                        <summary className="cursor-pointer text-[11px] text-emerald-700 hover:underline">
-                          查看各文件已提取的事实（{minimalReport.documents.length}）
-                        </summary>
-                        <div className="mt-1.5 space-y-2">
+                      <ContextPane
+                        title={`各文件已提取的事实（${minimalReport.documents.length}）`}
+                        hint="右键可重新提取"
+                        tone="emerald"
+                      >
+                        <div className="space-y-2">
                           {minimalReport.documents.map(document => (
-                            <StoredFactsCard
+                            <ExtractableRow
                               key={document.sourcePath}
-                              entry={document}
-                            />
+                              sourcePath={document.sourcePath}
+                              busy={
+                                contextExtractState?.sourcePath ===
+                                  document.sourcePath &&
+                                contextExtractState.status === 'running'
+                              }
+                              onExtract={handleExtractFactsFromContext}
+                            >
+                              <StoredFactsCard entry={document} />
+                            </ExtractableRow>
                           ))}
                         </div>
-                      </details>
+                      </ContextPane>
                     )}
 
                     {minimalReport.timeline.length > 0 ? (
-                      <details className="group">
-                        <summary className="cursor-pointer text-[11px] text-emerald-700 hover:underline">
-                          查看时间线（{minimalReport.timeline.length}）
-                        </summary>
-                        <ol className="mt-1.5 space-y-1.5 border-l border-emerald-200 pl-2.5">
+                      <ContextPane
+                        title={`时间线（${minimalReport.timeline.length}）`}
+                        hint="右键可提取该文件的事实"
+                        tone="emerald"
+                      >
+                        <ol className="space-y-1.5 border-l border-emerald-200 pl-2.5">
                           {minimalReport.timeline.map((entry, index) => (
                             <li
                               key={`${entry.sourcePath}-${entry.date}-${index}`}
                               className="text-[11px] leading-4"
                             >
-                              <span className="font-medium text-emerald-900">
-                                {entry.date}
-                              </span>
-                              <span className="text-emerald-800">
-                                {' '}
-                                · {entry.meaning}
-                              </span>
-                              <p className="break-all text-muted-foreground">
-                                {entry.sourcePath}
-                                {entry.stage
-                                  ? ` · ${PROJECT_STAGE_LABELS[entry.stage] ?? entry.stage}`
-                                  : ' · 尚未归档'}
-                              </p>
+                              <ExtractableRow
+                                sourcePath={entry.sourcePath}
+                                busy={
+                                  contextExtractState?.sourcePath ===
+                                    entry.sourcePath &&
+                                  contextExtractState.status === 'running'
+                                }
+                                onExtract={handleExtractFactsFromContext}
+                              >
+                                <div>
+                                  <span className="font-medium text-emerald-900">
+                                    {entry.date}
+                                  </span>
+                                  <span className="text-emerald-800">
+                                    {' '}
+                                    · {entry.meaning}
+                                  </span>
+                                  <p className="break-all text-muted-foreground">
+                                    {entry.sourcePath}
+                                    {entry.stage
+                                      ? ` · ${PROJECT_STAGE_LABELS[entry.stage] ?? entry.stage}`
+                                      : ' · 尚未归档'}
+                                  </p>
+                                </div>
+                              </ExtractableRow>
                             </li>
                           ))}
                         </ol>
-                      </details>
+                      </ContextPane>
                     ) : (
                       <p className="text-[11px] leading-4 text-muted-foreground">
                         还没有带日期的文件事实，时间线为空。
