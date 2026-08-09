@@ -1567,6 +1567,8 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
         }}
       >
         <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
+        {/* 文件没有折叠箭头，补一个同宽占位，让文件图标与同级文件夹图标对齐、向右缩进 */}
+        <span aria-hidden className="w-3.5 shrink-0" />
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
         <p className="text-xs font-medium truncate flex-1 min-w-0" title={`${node.file.archivedName}\n${meta}`}>{node.file.archivedName}</p>
         <DropdownMenu>
@@ -2524,6 +2526,8 @@ function BatchFileRow({
                         title={`${file.fileName}\n右键可查看分析详情或修改归档位置`}
               >
                 <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
+                {/* 文件没有折叠箭头，补一个同宽占位，让文件图标与同级文件夹图标对齐、向右缩进 */}
+                <span aria-hidden className="w-3.5 shrink-0" />
                 {extractingClientId === file.clientId ? (
                   <Brain className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-600" />
                 ) : file.archiveStatus === 'archiving' ? (
