@@ -151,7 +151,15 @@ export function checkSpecVsFactConflicts(
  *
  * 用户可以自己挑哪些文件要提取事实，但那要求他事先就知道哪里可能有问题——而最该
  * 挖的往往看起来最正常（君柔那对章程各自都说得通）。所以系统零成本地把可疑的标出来，
- * 点不点仍由用户决定。三条信号都是纯比对，不调模型。
+ * 点不点仍由用户决定。判据是纯比对，不调模型。
+ *
+ * **这里只放真有指向的信号。** 之前还有两条无差别规则——"项目里任意一份文件记着
+ * 由 A 变为 B，就把所有未读文件全标上"，以及兜底把剩下的未读文件也全标上。三条叠加
+ * 的净效果是：只要没读过内容就会出现在这个列表里。那不是筛选，是一份未读清单顶着
+ * "建议深挖"的名字，用户看几次就会把整个列表连同真信号一起忽略掉。
+ *
+ * 未读清单本身是有用的（那些文件此前在界面上哪儿都不显示），但它是另一件事，
+ * 见 {@link listUnreadDocuments}。两个需求分开列，各自才有意义。
  */
 export interface DeepenSuggestion {
   sourcePath: string;
@@ -162,12 +170,13 @@ export function suggestDocumentsToDeepen(
   documents: MinimalDocument[]
 ): DeepenSuggestion[] {
   const suggestions = new Map<string, string>();
+
   // 判据统一走 hasExtractedFacts，不再各处自己看 sourceQuality：模型经常自报
   // filename_only 却给出了日期和摘录，两边口径不一致时，同一份文件会既算"已提取"
   // 又算"没读过"。
-  const unread = documents.filter(document => !hasExtractedFacts(document));
-
-  // 信号一：同一归档位置下出现多份未读内容的文件，且标题高度相似。
+  //
+  // 信号一（现在是唯一的信号）：同一归档位置下出现多份未读内容的文件，且标题高度相似。
+  // 这就是君柔那对公司章程——两份各自都说得通，只有读了内容才分得清先后。
   const byStage = new Map<string, MinimalDocument[]>();
   for (const document of documents) {
     if (!document.stage) continue;
@@ -196,34 +205,42 @@ export function suggestDocumentsToDeepen(
     }
   }
 
-  // 信号二：项目里已经有人记下了"由 X 变为 Y"，说明存在能定方向的锚点，
-  // 而这些没读过内容的文件正好无法与之比对。
-  const hasAnchor = documents.some(
-    document => document.facts.transactionChanges.length > 0
-  );
-  if (hasAnchor) {
-    for (const document of unread) {
-      if (suggestions.has(document.sourcePath)) continue;
-      suggestions.set(
-        document.sourcePath,
-        '项目里已有记载数值变更的文件，读了内容才能判断这份属于变更前还是变更后'
-      );
-    }
-  }
-
-  // 兜底：没命中上面任何信号的未读文件也要列出来。
-  // 它们此前哪儿都不显示，只在"已提取的事实"里占一条空壳记录——看上去像系统读过，
-  // 实际一个字都没读。这里是它们唯一的去处。
-  for (const document of unread) {
-    if (suggestions.has(document.sourcePath)) continue;
-    suggestions.set(
-      document.sourcePath,
-      '按文件名归档，尚未读取内容'
-    );
-  }
+  // 曾经这里还有第二条信号和一条兜底，都已删除。删的理由见 DeepenSuggestion 的注释：
+  // 它们不看单份文件的具体情况，只要没读过就标，把这个列表变成了未读清单。
+  // 未读清单挪到 listUnreadDocuments，这里只留真有指向的。
 
   return [...suggestions.entries()].map(([sourcePath, reason]) => ({
     sourcePath,
     reason,
   }));
+}
+
+/**
+ * 尚未读取内容的文件清单。
+ *
+ * 与 {@link suggestDocumentsToDeepen} 的分工：那个是**筛选**，回答"哪几份值得花钱挖"，
+ * 应该很少；这个是**清单**，回答"哪些文件系统压根没读过"，该有多少列多少。
+ *
+ * 为什么这个清单必须存在：只按文件名归档的文件此前在界面上没有任何入口，它们在
+ * "已提取的事实"里只占一条空壳记录，看上去像系统读过、实际一个字都没读。用户没有
+ * 办法知道自己在为哪些文件的判断承担风险。
+ *
+ * 措辞刻意保持中性——这是陈述状态，不是建议。带上判断色彩会让它跟深挖建议混淆，
+ * 那正是之前把两者塞进同一个列表造成的问题。
+ */
+export interface UnreadDocument {
+  sourcePath: string;
+  /** 该文件当前归在哪个阶段。null 表示尚未归档。 */
+  stage: string | null;
+}
+
+export function listUnreadDocuments(
+  documents: MinimalDocument[]
+): UnreadDocument[] {
+  return documents
+    .filter(document => !hasExtractedFacts(document))
+    .map(document => ({
+      sourcePath: document.sourcePath,
+      stage: document.stage,
+    }));
 }

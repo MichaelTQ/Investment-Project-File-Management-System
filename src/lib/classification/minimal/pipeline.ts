@@ -17,8 +17,10 @@ import {
 import { buildTimeline, describeTimeline, type TimelineEntry } from './evidence';
 import {
   checkValueTimepointConflicts,
+  listUnreadDocuments,
   suggestDocumentsToDeepen,
   type DeepenSuggestion,
+  type UnreadDocument,
 } from './rule-checks';
 import { leafName } from '../source-path';
 import {
@@ -149,8 +151,15 @@ export interface MinimalRebuildReport {
   dismissedCount: number;
   /** 确定性检查的结果。不调模型，常开。 */
   ruleFindings: ConflictFinding[];
-  /** 建议人工深挖的文件。系统只标记，不自动执行。 */
+  /**
+   * 建议人工深挖的文件。系统只标记，不自动执行。
+   *
+   * 只放真有指向的信号，通常很少甚至为空。不要往这里塞"所有未读文件"——那会让
+   * 用户连同真信号一起忽略掉整个列表。未读清单见 unreadDocuments。
+   */
   deepenSuggestions: DeepenSuggestion[];
+  /** 尚未读取内容的文件清单。陈述状态，不含判断。 */
+  unreadDocuments: UnreadDocument[];
   /** 冲突复核失败时的说明。为空表示复核正常完成。 */
   reviewError?: string;
   modelCall?: ModelCallDiagnostics;
@@ -268,6 +277,7 @@ export async function rebuildMinimalArchive(
     findings,
     ruleFindings,
     deepenSuggestions: suggestDocumentsToDeepen(withStage),
+    unreadDocuments: listUnreadDocuments(withStage),
     dismissedCount: review.findings.length - findings.length,
     reviewError: review.error,
     modelCall: review.modelCall,

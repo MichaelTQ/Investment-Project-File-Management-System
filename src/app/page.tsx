@@ -156,6 +156,7 @@ interface MinimalRebuildReport {
   ruleFindings?: ConflictFinding[];
   /** 系统建议人工深挖的文件。只标记，不自动执行。 */
   deepenSuggestions?: Array<{ sourcePath: string; reason: string }>;
+  unreadDocuments?: Array<{ sourcePath: string; stage: string | null }>;
   dismissedCount: number;
   reviewError?: string;
 }
@@ -5346,11 +5347,13 @@ export default function Home() {
                       </div>
                     )}
 
-                    {/* 建议深挖：系统零成本标出来，点不点由用户决定 */}
+                    {/* 建议深挖：真有指向的少数几份，系统零成本标出来，点不点由用户决定。
+                        与下面的"尚未读取内容"分开列——那是全量清单，这是筛选结果，
+                        混在一起会让用户连同真信号一起忽略。 */}
                     {(minimalReport.deepenSuggestions?.length ?? 0) > 0 && (
                       <ContextPane
-                        title={`建议读内容的文件（${minimalReport.deepenSuggestions!.length}）`}
-                        hint="尚未读取内容，右键可直接提取"
+                        title={`值得深挖（${minimalReport.deepenSuggestions!.length}）`}
+                        hint="有具体线索指向，右键可直接提取"
                         tone="violet"
                       >
                         <div className="space-y-1">
@@ -5370,6 +5373,39 @@ export default function Home() {
                                   {item.sourcePath.split(/[/\\]/).pop()}
                                 </span>
                                 ：{item.reason}
+                              </p>
+                            </ExtractableRow>
+                          ))}
+                        </div>
+                      </ContextPane>
+                    )}
+
+                    {/* 尚未读取内容：全量清单，中性陈述，不含判断。
+                        这些文件只按文件名归了档，此前在界面上没有任何入口——用户没办法
+                        知道自己在为哪些文件的判断承担风险。 */}
+                    {(minimalReport.unreadDocuments?.length ?? 0) > 0 && (
+                      <ContextPane
+                        title={`尚未读取内容（${minimalReport.unreadDocuments!.length}）`}
+                        hint="仅按文件名归档，右键可提取内容"
+                        tone="emerald"
+                      >
+                        <div className="space-y-1">
+                          {minimalReport.unreadDocuments!.map(item => (
+                            <ExtractableRow
+                              key={item.sourcePath}
+                              sourcePath={item.sourcePath}
+                              busy={
+                                contextExtractState?.sourcePath ===
+                                  item.sourcePath &&
+                                contextExtractState.status === 'running'
+                              }
+                              onExtract={handleExtractFactsFromContext}
+                            >
+                              <p className="break-words text-[11px] leading-4 text-muted-foreground">
+                                <span className="font-medium text-foreground">
+                                  {item.sourcePath.split(/[/\\]/).pop()}
+                                </span>
+                                {item.stage ? `：归在 ${item.stage}` : '：尚未归档'}
                               </p>
                             </ExtractableRow>
                           ))}

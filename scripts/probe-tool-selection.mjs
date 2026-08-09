@@ -273,8 +273,18 @@ try {
   const perfectPick = gotTarget && gotKey && readSet.size === 2;
 
   const answer = finalAnswer.replace(/\s/g, '');
-  const saysBefore = /增资之前|变更之前|之前形成|增资前|早于/.test(answer);
-  const saysAfter = /增资之后|变更之后|之后形成|增资后|晚于/.test(answer);
+  /**
+   * 只匹配「结论句」，不匹配文中任何提到方向的措辞。
+   *
+   * 首版用的是 /增资后/ 这种宽匹配，结果把一次正确作答判成了方向反了——模型在说明
+   * 章程**没有**体现什么时写了"未体现本次增资后的注册资本变更内容"，"增资后"三个字
+   * 出现在了一个否定句里。判分被自己的关键词骗了。
+   *
+   * 教训：用关键词给自然语言判分本来就脆。下面同时把模型的原话整段打出来，
+   * 自动判定只作参考，最终以人读为准。
+   */
+  const saysBefore = /(形成|产生|制定|出具)于本?次?(增资|变更)之前|(增资|变更)之前(形成|制定)/.test(answer);
+  const saysAfter = /(形成|产生|制定|出具)于本?次?(增资|变更)之后|(增资|变更)之后(形成|制定)/.test(answer);
   const concluded = saysBefore !== saysAfter; // 给了明确方向（不是两头都说）
   const correct = saysBefore && !saysAfter;
   const admitsUnknown = /定不了|无法判断|无法确定|不能确定|证据不足|还缺|尚缺/.test(answer);
@@ -304,6 +314,14 @@ try {
             : '⚠️ 答复含糊'
     }`);
   }
+
+  console.log('─'.repeat(72));
+  console.log('  自动判定只作参考——关键词匹配给自然语言判分本来就脆，以下面这段原话为准：');
+  console.log('  ┌' + '─'.repeat(68));
+  for (const line of (finalAnswer || '（没有最终答复）').split('\n')) {
+    console.log('  │ ' + line);
+  }
+  console.log('  └' + '─'.repeat(68));
 
   console.log('─'.repeat(72));
   if (perfectPick && correct) {
