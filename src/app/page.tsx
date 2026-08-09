@@ -132,11 +132,15 @@ interface StoredDocument {
   sourcePath: string;
   stage: string | null;
   facts: StoredDocumentFacts;
+  /** 服务端只会把真读过内容的条目放进 documents，这里恒为 true，留字段是为了对齐类型。 */
+  factsExtracted?: boolean;
   updatedAt: number;
 }
 
 interface MinimalRebuildReport {
   documentCount: number;
+  /** 其中真读过内容的份数。documentCount 还包含只按文件名归档的那些。 */
+  extractedCount?: number;
   checkedCount: number;
   skippedCount: number;
   documents: StoredDocument[];
@@ -5041,8 +5045,10 @@ export default function Home() {
                       </Badge>
                     </div>
                     <p className="text-[11px] leading-4 text-emerald-800">
-                      依据 {minimalReport.documentCount} 份文件的事实；已归档{' '}
-                      {minimalReport.checkedCount} 份
+                      项目里 {minimalReport.documentCount} 份文件，其中读过内容的{' '}
+                      {minimalReport.extractedCount ??
+                        minimalReport.documents.length}{' '}
+                      份；已归档 {minimalReport.checkedCount} 份
                       {minimalReport.skippedCount > 0
                         ? `，${minimalReport.skippedCount} 份尚未归档已跳过`
                         : ''}
@@ -5077,7 +5083,7 @@ export default function Home() {
                     {(minimalReport.deepenSuggestions?.length ?? 0) > 0 && (
                       <details className="group">
                         <summary className="cursor-pointer text-[11px] text-violet-700 hover:underline">
-                          建议读内容的文件（{minimalReport.deepenSuggestions!.length}）——在已归档文件里右键「提取事实并复核」
+                          建议读内容的文件（{minimalReport.deepenSuggestions!.length}）——尚未读取内容，在已归档文件里右键「提取事实并复核」
                         </summary>
                         <div className="mt-1.5 space-y-1">
                           {minimalReport.deepenSuggestions!.map(item => (

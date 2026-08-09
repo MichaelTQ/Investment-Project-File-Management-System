@@ -182,6 +182,8 @@ export async function POST(request: NextRequest) {
       stage: targetFolder.businessStage,
       stageSource,
       archivedFileId: archived.id,
+      // 没有 documentFacts 就是没读过内容，界面据此把它归到"建议读内容的文件"。
+      factsExtracted: Boolean(documentFacts),
     });
 
     return NextResponse.json({

@@ -7,7 +7,12 @@ import {
   readStoredFile,
   writeStoredFile,
 } from '../../storage';
-import { DocumentFactsSchema, type DocumentFacts } from '../document-facts';
+import {
+  DocumentFactsSchema,
+  hasContentEvidence,
+  type DocumentFacts,
+} from '../document-facts';
+import { leafName } from '../source-path';
 
 /**
  * 极简项目档案存储。
@@ -42,7 +47,31 @@ export interface MinimalDocument {
   archivedFileId?: string;
   /** 内容指纹，用于识别重复文件。 */
   fingerprint?: string;
+  /**
+   * 有没有真读过这份文件的内容。
+   *
+   * 按命名规范直接归档的文件也要入库（否则时间线和复核看不见它们），但它们的 facts
+   * 是从文件名兜底造出来的。界面必须能把两者分开：前者是"系统读到了什么"，后者只是
+   * 一个占位。缺省值靠 hasExtractedFacts 从事实本身推，兼容这个字段出现之前的条目。
+   */
+  factsExtracted?: boolean;
   updatedAt: number;
+}
+
+/**
+ * 这条记录背后有没有真正抽取过事实。
+ *
+ * 显式标记优先；历史条目没有标记，就回退到"自报只读到文件名且确实没有任何原文事实"。
+ * 单看 sourceQuality 不够——模型经常自报 filename_only 却同时给出了日期和摘录。
+ */
+export function hasExtractedFacts(
+  document: Pick<MinimalDocument, 'facts' | 'factsExtracted'>
+): boolean {
+  if (typeof document.factsExtracted === 'boolean') return document.factsExtracted;
+  return (
+    document.facts.sourceQuality !== 'filename_only' ||
+    hasContentEvidence(document.facts)
+  );
 }
 
 export interface MinimalProjectArchive {
@@ -129,6 +158,10 @@ function parseArchive(
             : undefined,
         fingerprint:
           typeof record.fingerprint === 'string' ? record.fingerprint : undefined,
+        factsExtracted:
+          typeof record.factsExtracted === 'boolean'
+            ? record.factsExtracted
+            : undefined,
         updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : 0,
       });
     }
@@ -138,7 +171,7 @@ function parseArchive(
       projectId,
       updatedAt:
         typeof parsed.updatedAt === 'number' ? parsed.updatedAt : Date.now(),
-      documents,
+      documents: mergeDuplicateDocuments(documents),
       dismissedFindings: Array.isArray(parsed.dismissedFindings)
         ? parsed.dismissedFindings.filter(
             (item): item is string => typeof item === 'string'
@@ -148,6 +181,50 @@ function parseArchive(
   } catch {
     return null;
   }
+}
+
+/**
+ * 修掉历史数据里已经分裂出来的重复条目。
+ *
+ * 复核入口早先按纯文件名写，同一份文件因此在库里留下两条（一条带目录路径、一条只有
+ * 文件名），份数虚高、旧事实还在参与判断。上面的 findMinimalDocument 只能防住新写入，
+ * 已经存在的两条得在读的时候合掉。
+ *
+ * **只合并"一条带目录、一条不带"这一种情况。** 两条都带目录说明它们本来就在不同
+ * 文件夹下，是两份同名文件（客户档案里同名的章程、决议很常见），合并会直接丢数据。
+ * 保留读过内容的那一条；都读过就保留更新的那一条。
+ */
+function mergeDuplicateDocuments(
+  documents: MinimalDocument[]
+): MinimalDocument[] {
+  const byLeaf = new Map<string, MinimalDocument[]>();
+  for (const document of documents) {
+    const leaf = leafName(document.sourcePath);
+    byLeaf.set(leaf, [...(byLeaf.get(leaf) ?? []), document]);
+  }
+
+  const dropped = new Set<MinimalDocument>();
+  for (const [leaf, group] of byLeaf) {
+    if (group.length < 2) continue;
+    const bare = group.filter(document => document.sourcePath === leaf);
+    const withDirectory = group.filter(document => document.sourcePath !== leaf);
+    if (bare.length === 0 || withDirectory.length !== 1) continue;
+
+    const survivor = [...group].sort((left, right) => {
+      const readDiff =
+        Number(hasExtractedFacts(right)) - Number(hasExtractedFacts(left));
+      return readDiff !== 0 ? readDiff : right.updatedAt - left.updatedAt;
+    })[0];
+    for (const document of group) {
+      if (document !== survivor) dropped.add(document);
+    }
+    // 路径统一取带目录的那条，界面和时间线才不会一会儿一个样。
+    survivor.sourcePath = withDirectory[0].sourcePath;
+  }
+
+  return dropped.size === 0
+    ? documents
+    : documents.filter(document => !dropped.has(document));
 }
 
 /**
@@ -242,6 +319,49 @@ export interface UpsertMinimalDocumentParams {
   stageSource?: StageSource;
   archivedFileId?: string;
   fingerprint?: string;
+  /**
+   * 这批事实是不是真读了内容抽出来的。
+   * 兜底写入（按文件名归档）必须显式传 false；不给则沿用原有标记，没有原有标记时
+   * 从事实本身推断。
+   */
+  factsExtracted?: boolean;
+}
+
+/**
+ * 找出这次写入应当覆盖的那一条。
+ *
+ * **不能只按 sourcePath 精确匹配。** 同一份文件在不同入口拿到的路径粒度不一样：
+ * 批量上传用的是目录相对路径（`佰特微档案/投资决策/章程.pdf`），已归档文件右键
+ * 「提取事实并复核」手里只有归档记录里的原始文件名（`章程.pdf`）。只按字符串比，
+ * 复核一次就凭空多出一条记录——77 份文件复核两份就显示 79 份，旧事实还留在库里
+ * 继续参与后续判断，等于同一份文件在系统里有两个互相矛盾的版本。
+ *
+ * 匹配顺序：归档记录 ID（最硬）→ 完整路径相等 → 文件名唯一命中。
+ * 文件名有重名时不敢认，宁可新建一条，也不要把两份同名文件的事实混成一份。
+ */
+export function findMinimalDocument(
+  documents: MinimalDocument[],
+  params: { sourcePath: string; archivedFileId?: string }
+): MinimalDocument | undefined {
+  if (params.archivedFileId) {
+    const byId = documents.find(
+      document => document.archivedFileId === params.archivedFileId
+    );
+    if (byId) return byId;
+  }
+  const byPath = documents.find(
+    document => document.sourcePath === params.sourcePath
+  );
+  if (byPath) return byPath;
+
+  // 只有传进来的本身就是纯文件名（复核入口手里只有归档记录里的名字）才认文件名。
+  // 传进来带目录却去认同名的另一条，会把两份不同目录下的同名文件合成一份。
+  const leaf = leafName(params.sourcePath);
+  if (leaf !== params.sourcePath) return undefined;
+  const byLeaf = documents.filter(
+    document => leafName(document.sourcePath) === leaf
+  );
+  return byLeaf.length === 1 ? byLeaf[0] : undefined;
 }
 
 export async function upsertMinimalDocument(
@@ -252,12 +372,26 @@ export async function upsertMinimalDocument(
 
   return withProjectLock(normalized, async () => {
     const { archive, staleKeys } = await loadFromBackend(normalized);
-    const existing = archive.documents.find(
-      document => document.sourcePath === params.sourcePath
-    );
+    const existing = findMinimalDocument(archive.documents, params);
+    // 路径粒度取信息更全的那个：复核入口只有文件名，不能让它把目录路径抹掉，
+    // 否则时间线里同一份文件时而带目录时而不带，看着像两份。
+    const sourcePath =
+      existing && leafName(existing.sourcePath) !== existing.sourcePath
+        ? existing.sourcePath
+        : params.sourcePath;
+    const extracted =
+      params.factsExtracted ??
+      existing?.factsExtracted ??
+      hasExtractedFacts({ facts: params.facts });
+    // 兜底事实（按文件名归档时造的占位）不许覆盖已经真读出来的事实。
+    const keepExistingFacts =
+      params.factsExtracted === false &&
+      existing !== undefined &&
+      hasExtractedFacts(existing);
+
     const next: MinimalDocument = {
-      sourcePath: params.sourcePath,
-      facts: params.facts,
+      sourcePath,
+      facts: keepExistingFacts ? existing.facts : params.facts,
       // 未显式给出阶段时保留原值，避免重抽事实把用户手动改过的位置冲掉。
       stage: params.stage !== undefined ? params.stage : existing?.stage ?? null,
       // 来源跟着阶段走：给了新阶段就用新来源，没给就保留原来的。
@@ -267,13 +401,13 @@ export async function upsertMinimalDocument(
           : params.stageSource ?? existing?.stageSource,
       archivedFileId: params.archivedFileId ?? existing?.archivedFileId,
       fingerprint: params.fingerprint ?? existing?.fingerprint,
+      // 只升不降：读过一次内容之后，后续的兜底写入不能把它打回"没读过"。
+      factsExtracted: keepExistingFacts || extracted,
       updatedAt: Date.now(),
     };
 
     archive.documents = [
-      ...archive.documents.filter(
-        document => document.sourcePath !== params.sourcePath
-      ),
+      ...archive.documents.filter(document => document !== existing),
       next,
     ];
     archive.updatedAt = Date.now();

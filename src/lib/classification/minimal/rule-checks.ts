@@ -1,7 +1,7 @@
 import { matchSpecTerm } from '../naming-spec';
 import { leafName } from '../source-path';
 import type { ConflictFinding } from './conflict-review';
-import type { MinimalDocument } from './store';
+import { hasExtractedFacts, type MinimalDocument } from './store';
 
 /**
  * 确定性复核：不调模型、不会误报的那两条。
@@ -143,9 +143,10 @@ export function suggestDocumentsToDeepen(
   documents: MinimalDocument[]
 ): DeepenSuggestion[] {
   const suggestions = new Map<string, string>();
-  const unread = documents.filter(
-    document => document.facts.sourceQuality === 'filename_only'
-  );
+  // 判据统一走 hasExtractedFacts，不再各处自己看 sourceQuality：模型经常自报
+  // filename_only 却给出了日期和摘录，两边口径不一致时，同一份文件会既算"已提取"
+  // 又算"没读过"。
+  const unread = documents.filter(document => !hasExtractedFacts(document));
 
   // 信号一：同一归档位置下出现多份未读内容的文件，且标题高度相似。
   const byStage = new Map<string, MinimalDocument[]>();
@@ -164,7 +165,7 @@ export function suggestDocumentsToDeepen(
         const nameB = leafName(b.sourcePath).replace(/\.[^.]+$/, '');
         if (nameA === nameB || nameA.includes(nameB) || nameB.includes(nameA)) {
           for (const document of [a, b]) {
-            if (document.facts.sourceQuality === 'filename_only') {
+            if (!hasExtractedFacts(document)) {
               suggestions.set(
                 document.sourcePath,
                 '同一位置下有名称高度相似的多份文件，需要读内容才能分清先后'
@@ -189,6 +190,17 @@ export function suggestDocumentsToDeepen(
         '项目里已有记载数值变更的文件，读了内容才能判断这份属于变更前还是变更后'
       );
     }
+  }
+
+  // 兜底：没命中上面任何信号的未读文件也要列出来。
+  // 它们此前哪儿都不显示，只在"已提取的事实"里占一条空壳记录——看上去像系统读过，
+  // 实际一个字都没读。这里是它们唯一的去处。
+  for (const document of unread) {
+    if (suggestions.has(document.sourcePath)) continue;
+    suggestions.set(
+      document.sourcePath,
+      '按文件名归档，尚未读取内容'
+    );
   }
 
   return [...suggestions.entries()].map(([sourcePath, reason]) => ({

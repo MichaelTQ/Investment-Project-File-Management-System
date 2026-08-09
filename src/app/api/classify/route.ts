@@ -26,6 +26,7 @@ import {
   type MinimalClassifyResult,
 } from '@/lib/classification/minimal/pipeline';
 import {
+  findMinimalDocument,
   loadMinimalArchive,
   upsertMinimalDocument,
 } from '@/lib/classification/minimal/store';
@@ -294,6 +295,8 @@ export async function POST(request: NextRequest) {
     let namingHint:
       | { term: string; stages: ArchiveBusinessStage[] }
       | undefined;
+    // 对已归档文件补抽事实时带上归档记录 ID，写事实表时用它认领原有条目。
+    let archivedFileIdForRecord = '';
 
     if (isJsonRequest) {
       const body = await request.json();
@@ -329,6 +332,7 @@ export async function POST(request: NextRequest) {
       // 这是"用户主动要求深挖某份文件"这条路，也是将来 agent 回补循环要用的同一个入口。
       const archivedFileId =
         typeof body.archivedFileId === 'string' ? body.archivedFileId : '';
+      archivedFileIdForRecord = archivedFileId;
       if (archivedFileId) {
         const archivedSource = await measurePhase('load_archived_file', () =>
           getArchivedFileSource(archivedFileId)
@@ -414,9 +418,12 @@ export async function POST(request: NextRequest) {
       const archive = await measurePhase('load_minimal_archive', () =>
         loadMinimalArchive(projectId)
       );
-      const stored = archive.documents.find(
-        document => document.sourcePath === documentPath
-      );
+      // 不能只按完整路径找：复核入口手里只有归档记录里的文件名，而事实是批量上传时
+      // 按目录相对路径存的，精确比对会一律 409。
+      const stored = findMinimalDocument(archive.documents, {
+        sourcePath: documentPath,
+        archivedFileId: archivedFileIdForRecord || undefined,
+      });
       if (!stored) {
         return NextResponse.json(
           { error: `未找到《${fileName}》已抽取的事实，请重新上传该文件` },
@@ -758,6 +765,10 @@ export async function POST(request: NextRequest) {
           sourcePath: sourcePath || fileName,
           facts: factsToRecord,
           fingerprint: `${fingerprint.kind}:${fingerprint.value}`,
+          // 复核入口只拿得到归档记录里的文件名，靠这个 ID 才能对上原来那条（带目录路径的）
+          // 记录并原地覆盖，而不是新增一条。
+          archivedFileId: archivedFileIdForRecord || undefined,
+          factsExtracted: true,
         })
       );
       const factsOnly: ClassifyResult = {

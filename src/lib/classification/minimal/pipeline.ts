@@ -20,7 +20,9 @@ import {
   suggestDocumentsToDeepen,
   type DeepenSuggestion,
 } from './rule-checks';
+import { leafName } from '../source-path';
 import {
+  hasExtractedFacts,
   loadMinimalArchive,
   upsertMinimalDocument,
   type MinimalDocument,
@@ -70,8 +72,15 @@ export async function classifyWithMinimalPath(
   params: MinimalClassifyParams
 ): Promise<MinimalClassifyResult> {
   const archive = await loadMinimalArchive(params.projectId);
+  // 排除自己时要照顾路径粒度：复核入口传进来的是纯文件名，库里存的是目录相对路径，
+  // 只比完整字符串的话这份文件会作为"同项目其他文件"把自己的旧事实喂给模型。
+  // 反过来，传进来带目录时不能按文件名排除，否则会误伤另一个目录下的同名文件。
+  const selfLeaf = leafName(params.sourcePath);
+  const matchByLeaf = selfLeaf === params.sourcePath;
   const others = archive.documents.filter(
-    document => document.sourcePath !== params.sourcePath
+    document =>
+      document.sourcePath !== params.sourcePath &&
+      !(matchByLeaf && leafName(document.sourcePath) === selfLeaf)
   );
 
   const decision = await decideStageWithModel({
@@ -119,14 +128,21 @@ export interface MinimalArchivedDocument {
   sourcePath: string;
   stage: ArchiveBusinessStage | null;
   facts: DocumentFacts;
+  /** 有没有真读过内容。false 的条目只是文件名占位，不能当作"已提取的事实"展示。 */
+  factsExtracted: boolean;
   updatedAt: number;
 }
 
 export interface MinimalRebuildReport {
   documentCount: number;
+  /** 其中真正读过内容、抽出事实的份数。 */
+  extractedCount: number;
   checkedCount: number;
   skippedCount: number;
-  /** 每份文件抽取出来的事实。界面据此展示"这份文件系统读到了什么"。 */
+  /**
+   * 真读过内容的文件的事实。界面据此展示"这份文件系统读到了什么"。
+   * 只按文件名归档的那些不在这里——它们在 deepenSuggestions 里。
+   */
   documents: MinimalArchivedDocument[];
   timeline: TimelineEntry[];
   findings: ConflictFinding[];
@@ -205,12 +221,17 @@ export async function rebuildMinimalArchive(
   }
 
   const timeline = buildTimeline(withStage);
-  const documents: MinimalArchivedDocument[] = withStage.map(document => ({
-    sourcePath: document.sourcePath,
-    stage: document.stage,
-    facts: document.facts,
-    updatedAt: document.updatedAt,
-  }));
+  // 只把真读过内容的铺给界面。没读过的只有一个由文件名造出来的占位事实，
+  // 混在"已提取的事实"里会让人以为系统读过它。
+  const documents: MinimalArchivedDocument[] = withStage
+    .filter(document => hasExtractedFacts(document))
+    .map(document => ({
+      sourcePath: document.sourcePath,
+      stage: document.stage,
+      facts: document.facts,
+      factsExtracted: true,
+      updatedAt: document.updatedAt,
+    }));
 
   const review =
     options.reviewConflicts === false
@@ -239,6 +260,7 @@ export async function rebuildMinimalArchive(
 
   return {
     documentCount: archive.documents.length,
+    extractedCount: documents.length,
     checkedCount: archivedDocuments.length,
     skippedCount,
     documents,

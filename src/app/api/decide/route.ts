@@ -11,7 +11,10 @@ import {
   describeTimeline,
 } from '@/lib/classification/minimal/evidence';
 import type { MinimalClassifyResult } from '@/lib/classification/minimal/pipeline';
-import { loadMinimalArchive } from '@/lib/classification/minimal/store';
+import {
+  findMinimalDocument,
+  loadMinimalArchive,
+} from '@/lib/classification/minimal/store';
 import { getProject } from '@/lib/storage';
 
 export const runtime = 'nodejs';
@@ -50,15 +53,14 @@ export async function POST(request: NextRequest) {
       loadMinimalArchive(projectId),
       getProject(projectId),
     ]);
-    const byPath = new Map(
-      archive.documents.map(document => [document.sourcePath, document])
-    );
 
     const items: BatchStageDecisionItem[] = [];
     const resolvedPaths: string[] = [];
     const missing: string[] = [];
     for (const [index, sourcePath] of sourcePaths.entries()) {
-      const stored = byPath.get(sourcePath);
+      // 与 /api/classify 一致：路径粒度可能对不上（纯文件名 vs 目录相对路径），
+      // 交给 findMinimalDocument 统一认领。
+      const stored = findMinimalDocument(archive.documents, { sourcePath });
       if (!stored) {
         missing.push(sourcePath);
         continue;
