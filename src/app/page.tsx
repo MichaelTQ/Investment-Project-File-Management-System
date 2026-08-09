@@ -1578,12 +1578,15 @@ function ArchivedFilesList({
   archivedFiles,
   loading,
   onFilesChanged,
+  onRebuildContext,
 }: {
   projectId: string;
   archiveTree: ArchiveTreeNode[];
   archivedFiles: ArchivedFile[];
   loading: boolean;
   onFilesChanged: (projectId: string, fileCountDelta: number) => void;
+  /** 重新分析项目上下文（要调模型）。抽完事实后由用户手动触发。 */
+  onRebuildContext: (projectId: string) => Promise<void>;
 }) {
   const [tree, setTree] = useState<ArchiveTreeNode[]>(archiveTree);
   const [files, setFiles] = useState<ArchivedFile[]>(archivedFiles);
@@ -1592,7 +1595,10 @@ function ArchivedFilesList({
     fileName: string;
     status: 'running' | 'done' | 'error';
     message: string;
+    /** 抽到了新事实，值得重新分析项目上下文。只有这时才给按钮。 */
+    canRebuildContext?: boolean;
   } | null>(null);
+  const [rebuildingContext, setRebuildingContext] = useState(false);
   const [moveTarget, setMoveTarget] = useState<ArchiveOperationTarget | null>(null);
   const [moving, setMoving] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null);
@@ -1836,7 +1842,13 @@ function ArchivedFilesList({
             : differs
               ? `事实已加入项目上下文。按内容判断它更像属于「${suggested.join(' / ')}」，当前归在「${currentPath.join(' / ') || '未知位置'}」，请人工确认是否需要移动。`
               : '事实已加入项目上下文，按内容判断与当前归档位置一致。',
+        canRebuildContext: true,
       });
+
+      // 事实已经入库，但项目 Context 卡片手里还是抽取之前的那份快照：事实列表、
+      // 时间线、数值比对、建议深挖全都不会动。这里通知父组件重新拉一次（纯读取，
+      // 不调模型）。模型那层的全项目矛盾复核要花钱，留给上面那个按钮手动触发。
+      onFilesChanged(projectId, 0);
     } catch (error) {
       setExtractResult({
         fileName: originalName,
@@ -1892,6 +1904,55 @@ function ArchivedFilesList({
             <div className="min-w-0 flex-1">
               <p className="break-all font-medium">{extractResult.fileName}</p>
               <p className="mt-0.5 break-words leading-4">{extractResult.message}</p>
+              {extractResult.canRebuildContext && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 bg-white text-[11px]"
+                    disabled={rebuildingContext}
+                    onClick={() => {
+                      setRebuildingContext(true);
+                      onRebuildContext(projectId)
+                        .then(() => {
+                          setExtractResult(prev =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  message: `${prev.message}项目上下文已重新分析，矛盾提示见左侧「项目 Context」。`,
+                                  canRebuildContext: false,
+                                }
+                              : prev
+                          );
+                        })
+                        .catch(error => {
+                          setExtractResult(prev =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  status: 'error',
+                                  message:
+                                    error instanceof Error
+                                      ? error.message
+                                      : '重新分析项目上下文失败',
+                                }
+                              : prev
+                          );
+                        })
+                        .finally(() => setRebuildingContext(false));
+                    }}
+                  >
+                    {rebuildingContext && (
+                      <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                    )}
+                    重新分析项目上下文
+                  </Button>
+                  <span className="text-[10px] text-violet-600">
+                    要调模型，会把这份新事实和全项目其他文件比一遍矛盾
+                  </span>
+                </div>
+              )}
             </div>
             {extractResult.status !== 'running' && (
               <button
@@ -3230,6 +3291,38 @@ export default function Home() {
     }
   }, [selectedProjectId]);
 
+  /**
+   * 重新分析项目上下文：重排时间线、重跑数值比对、调模型复核全项目矛盾。
+   *
+   * 归档之后自动跑，另外「提取事实并复核」的结果条里也给了手动入口——刚读进来的
+   * 新事实很可能正好和别的文件对上矛盾，不重跑就发现不了。
+   *
+   * 之所以不做成"读到新事实就自动跑"：它要调模型，而复核本身已经花了两次调用。
+   * 跑不跑由人决定，这一点和归档位置由人决定是同一个道理。
+   */
+  const rebuildProjectContext = useCallback(
+    async (projectId: string, failureMessage: string) => {
+      setProjectContextError(null);
+      try {
+        const response = await fetch('/api/project-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error || failureMessage);
+        setConsistencyReport(data?.consistency ?? null);
+        setMinimalReport(data?.minimal ?? null);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : failureMessage;
+        setProjectContextError(message);
+        throw new Error(message);
+      }
+    },
+    []
+  );
+
   const handleProjectCreated = (project: Project) => {
     setProjects(prev => [project, ...prev]);
     setSelectedProjectId(project.id);
@@ -3484,29 +3577,10 @@ export default function Home() {
       setArchiveRefreshKey(prev => prev + 1);
       setContextRefreshKey(prev => prev + 1);
       if (data.contextRebuildPending) {
-        setProjectContextError(null);
-        void fetch('/api/project-context', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: pendingResult.sourceProjectId }),
-        })
-          .then(async rebuildResponse => {
-            const rebuildData = await rebuildResponse.json().catch(() => null);
-            if (!rebuildResponse.ok) {
-              throw new Error(
-                rebuildData?.error || '归档成功，但后台 Context 更新失败'
-              );
-            }
-            setConsistencyReport(rebuildData?.consistency ?? null);
-            setMinimalReport(rebuildData?.minimal ?? null);
-          })
-          .catch(error => {
-            setProjectContextError(
-              error instanceof Error
-                ? error.message
-                : '归档成功，但后台 Context 更新失败'
-            );
-          });
+        void rebuildProjectContext(
+          pendingResult.sourceProjectId,
+          '归档成功，但后台 Context 更新失败'
+        ).catch(() => undefined);
       }
       fetch('/api/projects')
         .then(response => response.json())
@@ -3793,29 +3867,10 @@ export default function Home() {
       ));
 
       if (result.contextRebuildPending) {
-        setProjectContextError(null);
-        void fetch('/api/project-context', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId }),
-        })
-          .then(async rebuildResponse => {
-            const rebuildData = await rebuildResponse.json().catch(() => null);
-            if (!rebuildResponse.ok) {
-              throw new Error(
-                rebuildData?.error || '分类成功，但后台 Context 更新失败'
-              );
-            }
-            setConsistencyReport(rebuildData?.consistency ?? null);
-            setMinimalReport(rebuildData?.minimal ?? null);
-          })
-          .catch(error => {
-            setProjectContextError(
-              error instanceof Error
-                ? error.message
-                : '分类成功，但后台 Context 更新失败'
-            );
-          });
+        void rebuildProjectContext(
+          projectId,
+          '分类成功，但后台 Context 更新失败'
+        ).catch(() => undefined);
       }
     } catch (error) {
       if (uploadedStorageKey) {
@@ -3840,7 +3895,7 @@ export default function Home() {
           : existing
       ));
     }
-  }, [uploadToTemp, deleteTemp]);
+  }, [uploadToTemp, deleteTemp, rebuildProjectContext]);
 
   /**
    * 批量上传：先把整批的事实全抽出来，再逐份判阶段。
@@ -4716,32 +4771,13 @@ export default function Home() {
         .catch(() => undefined);
 
       if (lastProjectId) {
-        setProjectContextError(null);
-        void fetch('/api/project-context', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: lastProjectId }),
-        })
-          .then(async rebuildResponse => {
-            const rebuildData = await rebuildResponse.json().catch(() => null);
-            if (!rebuildResponse.ok) {
-              throw new Error(
-                rebuildData?.error || '归档成功，但后台 Context 更新失败'
-              );
-            }
-            setConsistencyReport(rebuildData?.consistency ?? null);
-            setMinimalReport(rebuildData?.minimal ?? null);
-          })
-          .catch(error => {
-            setProjectContextError(
-              error instanceof Error
-                ? error.message
-                : '归档成功，但后台 Context 更新失败'
-            );
-          });
+        void rebuildProjectContext(
+          lastProjectId,
+          '归档成功，但后台 Context 更新失败'
+        ).catch(() => undefined);
       }
     }
-  }, [results, batchReviewFiles]);
+  }, [results, batchReviewFiles, rebuildProjectContext]);
 
   /**
    * 用户主动要求读某份文件的内容。
@@ -4813,6 +4849,9 @@ export default function Home() {
             }
           : result
       ));
+      // 事实已入库，让项目 Context 卡片重新读一次，否则它显示的还是抽取之前的快照。
+      // 纯读取、不调模型；模型复核仍然只在归档后跑。
+      setContextRefreshKey(prev => prev + 1);
     } catch (error) {
       const message = error instanceof Error ? error.message : '未知错误';
       setResults(prev => prev.map(result =>
@@ -5307,6 +5346,12 @@ export default function Home() {
                       archivedFiles={visibleArchivedFiles}
                       loading={visibleArchiveLoading}
                       onFilesChanged={handleArchivedFilesChanged}
+                      onRebuildContext={projectId =>
+                        rebuildProjectContext(
+                          projectId,
+                          '重新分析项目上下文失败'
+                        )
+                      }
                     />
                   ) : (
                     <div className="text-center py-12 text-muted-foreground">
