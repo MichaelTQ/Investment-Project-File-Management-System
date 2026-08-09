@@ -5597,7 +5597,11 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0 flex-1 min-h-0">
-                <ScrollArea className="h-[280px] md:h-[360px] lg:h-[440px]">
+                {/* 这里不能用 Radix ScrollArea：它只挂了纵向滚动条时 viewport 会 overflow-x: hidden，
+                    且内容层 display:table 会随最宽的树行撑开——深层文件夹被裁掉、无法横向滚动，
+                    顶部「一键下载全部」按钮也会被顶出可视区。原生纵向滚动 + 树容器自身的
+                    overflow-x-auto（ArchivedFilesList 内）才能保证横向滑块出现、按钮常驻。 */}
+                <div className="h-[280px] overflow-y-auto md:h-[360px] lg:h-[440px]">
                   {selectedProjectId ? (
                     <ArchivedFilesList
                       projectId={selectedProjectId}
@@ -5618,7 +5622,7 @@ export default function Home() {
                       <p className="text-sm">未选择项目</p>
                     </div>
                   )}
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
           </div>
