@@ -53,11 +53,21 @@ const STAGE_VALUES: ArchiveBusinessStage[] = [
  * 刻意**不列举**每个阶段常见的文件类型。曾经有一版列了清单（"立项申请、立项
  * 报告、立项会纪要…"），它会让模型跳过推理直接查表：清单上有的判得准，清单上
  * 没有的一律判错，且系统无法泛化到没见过的文件。
+ *
+ * 尽职调查和投资决策这两条改过一次，起因是佰特微那份 2024 年版章程反复被判到尽调。
+ * 原来两条的**举证门槛不对等**：尽调写着"为核查而收集的标的方原始资料"，任何一份
+ * 标的出具的材料都自证符合——它是标的出的，这一点文件自己就写着；而投资决策要求
+ * "提交决策机构审议的材料"，一份标的的客观状态材料**永远不会在正文里写自己被提交
+ * 审议**。加上提示词又禁止跨文件推理，模型手上能落地的证据只剩尽调那一句，于是
+ * 一路滑过去。它给出的理由几乎是逐字复述定义，说明它在严格执行规则，是规则写错了。
+ *
+ * 改法不是给章程指定阶段（那就是把业务映射焊进代码），而是把两边的门槛拉平：
+ * 尽调那句收到"核查动作本身"上，投资决策那句点明"这类材料不会自证被提交审议"。
  */
 export const STAGE_DEFINITIONS = `pre_initiation 立项前：与项目方初步接触、建立保密安排、获取初步介绍材料的阶段。此时尚未走内部立项程序。
 initiation 项目立项：正式启动项目、走内部立项审批的阶段。文件反映的是"决定投入资源开展调查"这一内部决策过程本身。
-due_diligence 尽职调查：对标的开展业务、财务、法律、风控核查的阶段。文件反映的是对标的的调查与核实，以及为核查而收集的标的方原始资料。
-investment_decision 投资决策：内部作出投或不投决定的阶段。文件反映的是提交决策机构审议的材料与决策结论，以及审议时所依据的、交易发生之前的标的状态。
+due_diligence 尽职调查：对标的开展业务、财务、法律、风控核查的阶段。文件反映的是**核查这一动作本身**：调查工作形成的记录、底稿与结论，或明确写明供某项核查使用的资料。标的方出具的、只是客观陈述自身状态的材料，如果看不出它与某项核查工作的关联，不足以据此判归本阶段——"这是标的方的原始资料"对每个阶段都成立，不是本阶段独有的特征。
+investment_decision 投资决策：内部作出投或不投决定的阶段。文件反映的是提交决策机构审议的材料与决策结论，以及审议所依据的、交易发生之前的标的客观状态。注意这类客观状态材料**通常不会在正文里写明自己被提交审议**，不要因为找不到"已上会""供审议"之类的字样就排除本阶段。
 investment_execution 投资实施：交易文件正式签署、条件交割、投资款支付的阶段。文件反映的是交易已经发生这一事实状态。
 post_investment 投后管理：投资完成后持续跟踪被投企业的阶段。
 exit_decision 退出决策：内部决定是否退出、如何退出的阶段。
@@ -295,7 +305,7 @@ ${PARTY_CONTEXT_HINT}
 
 【判断要求】
 1. 只依据下面给出的事实和时间线。文件名可能不含任何阶段信息，不要单凭文件名判断。
-2. 不要假设项目里应当存在某份没有出现的文件，也不要因为某类文件"通常"归在某个阶段就照此归档。判断依据必须来自这份文件自身记载的内容。
+2. 不要假设项目里应当存在某份没有出现的文件，也不要凭你自己认为的"这类文件通常放哪"去归档。判断依据必须来自这份文件自身记载的内容。**例外**：下面每份文件如果带了"命名规范提示"，那是客户自己写的归档口径，不是你的常识，按第 11 条处理。
 3. 项目已经走到哪一步，不代表某份文件属于哪一步——较早形成的文件依然属于更早的阶段。
 4. 【逐份独立判断，但要互相参照】这批文件属于同一个项目，可能分属不同阶段，不要因为它们一起提交就往同一个阶段归。同时，一份文件记载的事实可以用来给另一份定位。
 5. 【数值对照是判断先后最直接的依据，必须优先检查】如果某份文件记载了"某字段由 X 变为 Y"，而另一份记载的同一字段数值等于 X，说明后者形成于这次变更之前；等于 Y 则说明形成于变更之后。存在这种对应关系时，它优先于其他一切线索，并且必须在理由中写明比对结果。
@@ -304,6 +314,7 @@ ${PARTY_CONTEXT_HINT}
 8. 事实不足以判断时该文件输出 unknown，并在 why 里说明是哪些信息读不到。不要为了给出结论而猜测。
 9. 存在任何存疑之处时把 review 设为 1。
 10. **必须为每一个序号都输出一条结果，一条都不能少**，顺序不限但序号必须对应。
+11. 【带了命名规范提示的文件，只能在给出的候选里选】那几个候选是客户归档口径圈定的范围，通常正确答案就在其中。先逐个看哪一个与文件内容相符；只有当文件内容与**所有候选都明显对不上**时才输出 unknown 交人工，**不要在候选之外自己另挑一个阶段**。（实测反例：一份 2024 年版的公司章程，候选是投资决策和投资实施，模型却选了尽职调查，理由是"尽调阶段收集的原始资料"——这个理由对任何一份标的方材料都成立，等于没有理由。这种时候应当在两个候选里选，或者输出 unknown。）
 
 【输出格式】
 只输出一个 JSON 对象，不要输出 Markdown 或说明文字：
@@ -466,7 +477,12 @@ export async function decideStagesForBatchWithModel(params: {
     return {
       status: 'success',
       decisions: parsed.map((item, index) =>
-        item ? buildDecisionFromParsed(item, items[index].facts) : null
+        item
+          ? buildDecisionFromParsed(
+              enforceNamingHintCandidates(item, items[index].namingHint),
+              items[index].facts
+            )
+          : null
       ),
       modelCall,
     };
@@ -538,6 +554,39 @@ export function parseLlmStageDecisionResponse(value: string): ParsedModelStage {
 }
 
 /**
+ * 候选闸门：模型选了命名规范候选之外的阶段时，作废这个结论，转人工。
+ *
+ * 提示词里已经写了"只能在候选里选"，但那只是请求。实测佰特微那份章程，候选是
+ * 投资决策和投资实施，模型仍然给了尽职调查，而解析那一步只校验它是不是合法枚举值，
+ * 照单全收——界面于是出现"候选是 A、B，结论是 C"这种自相矛盾的展示。
+ *
+ * 作废而不是改判成某个候选：候选有两个，代码没有依据在它们之间挑，挑了就是瞎猜。
+ * 交人工时把两个候选和模型的原话都带上，人一眼能看出该选哪个。
+ *
+ * 只对名称命中规范词条的文件生效，覆盖面很窄，不是把分类策略整体收紧。
+ */
+export function enforceNamingHintCandidates(
+  parsed: ParsedModelStage,
+  namingHint?: { term: string; stages: ArchiveBusinessStage[] }
+): ParsedModelStage {
+  if (!parsed.stage || !namingHint || namingHint.stages.length === 0) {
+    return parsed;
+  }
+  if (namingHint.stages.includes(parsed.stage)) return parsed;
+
+  return {
+    ...parsed,
+    stage: null,
+    review: true,
+    reasoning: `模型判为 ${parsed.stage}，但归档规范把「${namingHint.term}」列在 ${namingHint.stages.join('、')}，结论不在候选内，已转人工。模型原话：${parsed.reasoning}`,
+    contradictions: [
+      ...parsed.contradictions,
+      `模型选择的 ${parsed.stage} 不在规范给出的候选（${namingHint.stages.join('、')}）之内`,
+    ].slice(0, 2),
+  };
+}
+
+/**
  * 整理成统一结构。
  *
  * 这里只剩两条规则，都与业务无关：模型自己说要复核、或它自己写下了存疑之处，
@@ -593,7 +642,10 @@ export async function decideStageWithModel(
     return {
       status: 'success',
       decision: buildDecisionFromParsed(
-        parseLlmStageDecisionResponse(response.content),
+        enforceNamingHintCandidates(
+          parseLlmStageDecisionResponse(response.content),
+          params.namingHint
+        ),
         params.facts
       ),
       modelCall,

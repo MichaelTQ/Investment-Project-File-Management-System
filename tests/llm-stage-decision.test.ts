@@ -6,8 +6,10 @@ import {
   buildDecisionFromParsed,
   buildBatchStageDecisionPrompt,
   buildStageDecisionPrompt,
+  enforceNamingHintCandidates,
   parseBatchStageDecisionResponse,
   parseLlmStageDecisionResponse,
+  STAGE_DEFINITIONS,
 } from '../src/lib/classification/llm-stage-decision';
 
 function healthyFacts(overrides: Partial<DocumentFacts> = {}): DocumentFacts {
@@ -357,6 +359,91 @@ test('整批判断忽略越界序号和非法阶段', () => {
   // 越界的丢掉；阶段非法的降级为"未确定"，而不是整条作废
   assert.equal(parsed[0]?.stage, null);
   assert.equal(parsed[1], null);
+});
+
+/**
+ * 佰特微那份 2024.11 章程反复被判到尽调，根因是两条阶段定义的举证门槛不对等：
+ * 尽调那句"标的方原始资料"任何一份标的材料都自证符合，而投资决策要求的"提交审议"
+ * 文件正文里永远不会写。定义不拉平，模型每次都必然滑向尽调。
+ */
+test('尽调定义不再把"标的方原始资料"当作本阶段的特征', () => {
+  assert.match(STAGE_DEFINITIONS, /核查这一动作本身/);
+  assert.match(STAGE_DEFINITIONS, /不是本阶段独有的特征/);
+  // 投资决策那边要点明这类材料不会自证被提交审议，否则模型找不到证据就排除它。
+  assert.match(STAGE_DEFINITIONS, /通常不会在正文里写明自己被提交审议/);
+});
+
+test('阶段定义仍然不含任何文件类型到阶段的映射', () => {
+  // 拉平门槛不等于可以夹带业务映射：一旦写上"章程属于投资决策"，系统就只在
+  // 预设覆盖的情况里有效，而用户看到的"判断"其实是代码的预设在说话。
+  for (const documentTypeWord of [
+    '章程',
+    '营业执照',
+    '审计报告',
+    '纳税报表',
+    '决议',
+    '协议',
+  ]) {
+    assert.equal(
+      STAGE_DEFINITIONS.includes(documentTypeWord),
+      false,
+      `阶段定义里出现了文件类型“${documentTypeWord}”`
+    );
+  }
+});
+
+test('模型选了候选之外的阶段时作废结论，转人工', () => {
+  const gated = enforceNamingHintCandidates(
+    {
+      stage: 'due_diligence',
+      review: false,
+      reasoning: '尽调阶段收集的原始资料',
+      evidence: ['2024年版本的标的公司章程'],
+      contradictions: [],
+    },
+    { term: '公司章程', stages: ['investment_decision', 'investment_execution'] }
+  );
+
+  assert.equal(gated.stage, null);
+  assert.equal(gated.review, true);
+  // 两个候选都留给人看，代码没有依据在它们之间挑。
+  assert.match(gated.reasoning, /investment_decision、investment_execution/);
+  assert.match(gated.reasoning, /模型原话：尽调阶段收集的原始资料/);
+  assert.equal(gated.contradictions.length, 1);
+
+  // 转人工要真的落到结论上，而不是只改了措辞。
+  const decision = buildDecisionFromParsed(gated, healthyFacts());
+  assert.equal(decision.status, 'insufficient');
+  assert.equal(decision.selectedFolder, null);
+  assert.equal(decision.requiresHumanReview, true);
+});
+
+test('结论落在候选之内时原样放行', () => {
+  const parsed = {
+    stage: 'investment_decision' as const,
+    review: false,
+    reasoning: '交易前的标的状态',
+    evidence: ['无本次投资方持股记载'],
+    contradictions: [],
+  };
+  assert.deepEqual(
+    enforceNamingHintCandidates(parsed, {
+      term: '公司章程',
+      stages: ['investment_decision', 'investment_execution'],
+    }),
+    parsed
+  );
+});
+
+test('没有命名规范提示时闸门不生效，不影响规范没覆盖的文件', () => {
+  const parsed = {
+    stage: 'due_diligence' as const,
+    review: false,
+    reasoning: '访谈记录',
+    evidence: [],
+    contradictions: [],
+  };
+  assert.deepEqual(enforceNamingHintCandidates(parsed, undefined), parsed);
 });
 
 test('整批判断的提示词要求每个序号都有结果', () => {
