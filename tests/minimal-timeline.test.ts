@@ -295,9 +295,29 @@ test('数值吻合指向的时点与归档阶段对不上时，规则要求报�
   // 原有的防误报语义保留。
   assert.match(systemPrompt, /相互印证，不是冲突/);
   // 但必须接着往下推一步。
-  assert.match(systemPrompt, /不应归在变更之后的阶段/);
-  assert.match(systemPrompt, /与它当前归档的阶段对不上，才是矛盾/);
+  assert.match(systemPrompt, /比记载变更的那份更晚.*的阶段/s);
   assert.match(systemPrompt, /必须报出来/);
+});
+
+/**
+ * 佰特微实测：促成变更的文件本来就记着变更前的值，它和记载变更的文件同处一个阶段
+ * 是正常的。提示词不把这一步说清，模型（和之前那条确定性规则）就会把整批交易文件
+ * 一律报成"时点对不上"。
+ */
+test('提示词讲明形成于变更之前不等于该归更早的阶段', () => {
+  const systemPrompt = String(
+    buildConflictReviewPrompt({
+      documents: [charter, resolution],
+      timeline: buildTimeline([charter, resolution]),
+      stageDefinitions: '',
+    })[0].content
+  );
+
+  assert.match(systemPrompt, /形成于变更之前，不等于应当归入更早\s*的?\s*阶段/);
+  assert.match(systemPrompt, /归在同一个阶段是正常形态，不是矛盾/);
+  // 同阶段那一类不是一刀切放过，而是给出可判断的分辨方式。
+  assert.match(systemPrompt, /新引入的主体/);
+  assert.match(systemPrompt, /判断不了属于哪种，就不要报/);
 });
 
 /**

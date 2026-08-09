@@ -15,6 +15,33 @@ export type ArchiveBusinessStage =
   | 'exit_decision'
   | 'exit_execution';
 
+/**
+ * 业务阶段的先后顺序。就是上面这个联合类型的书写顺序，客户规范里也是这个顺序。
+ *
+ * 这不是业务知识的注入——"立项在尽调之前"是归档目录本身的排列，任何比较先后的
+ * 地方都得有个共同的尺子，否则只能靠字符串相等，退化成"同不同阶段"。
+ */
+export const BUSINESS_STAGE_ORDER: ArchiveBusinessStage[] = [
+  'pre_initiation',
+  'initiation',
+  'due_diligence',
+  'investment_decision',
+  'investment_execution',
+  'post_investment',
+  'exit_decision',
+  'exit_execution',
+];
+
+/** 负数表示 left 在 right 之前。 */
+export function compareBusinessStages(
+  left: ArchiveBusinessStage,
+  right: ArchiveBusinessStage
+): number {
+  return (
+    BUSINESS_STAGE_ORDER.indexOf(left) - BUSINESS_STAGE_ORDER.indexOf(right)
+  );
+}
+
 export interface FolderNode {
   id: string;
   name: string;

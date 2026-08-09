@@ -1,3 +1,4 @@
+import { compareBusinessStages } from '../../folder-structure';
 import { matchSpecTerm } from '../naming-spec';
 import { leafName } from '../source-path';
 import type { ConflictFinding } from './conflict-review';
@@ -25,11 +26,26 @@ function normalizeValue(value: string): string {
 
 /**
  * 检查一：某份文件记载的数值等于另一份文件记载的"变更前值"，
- * 但它却归在变更之后的阶段（反之亦然）。
+ * 却归在**比记载变更的那份更晚**的阶段。
  *
- * 这就是君柔那对公司章程：股东会决议写着注册资本"由 11.73624 变更为 13.04027"，
- * 而某份章程记的是 11.73624——它必然形成于变更之前，不该和变更之后的文件归在一起。
- * 发现这个不需要模型，只需要字符串相等。
+ * 起点是君柔那对公司章程：股东会决议写着注册资本"由 11.73624 变更为 13.04027"，
+ * 而某份章程记的是 11.73624——它形成于变更之前。发现这个不需要模型，只需要字符串相等。
+ *
+ * **但"形成于变更之前"推不出"应当归在更早的阶段"，这是之前这条规则的硬伤。**
+ * 一次交易的文件天然分布在变更的两侧：合同先签、决议再批、新章程后出，它们全都
+ * 属于同一个阶段。促成变更的那些文件必然记着变更前的值——那正是这笔交易的起点，
+ * 不是错放的证据。实测佰特微就卡在这里：《投资合同书》记着 220.9526 万元，与记载
+ * "220.9526 → 225.0443"的《股东会决议》同处投资实施，规则每次都报，而它本来就该在
+ * 那儿。同阶段共存是"阶段跨越了这次变更"的正常形态，不是矛盾。
+ *
+ * 所以只报**能证明**的那一种：变更前的值出现在比变更更晚的阶段里。这种情况没法用
+ * "同一笔交易"解释——交易结束之后不会再产生记录交易前状态的文件。
+ *
+ * 反方向（记着变更后的值却归在更早阶段）刻意不查：交易文件经常前瞻性地写明
+ * "增资后注册资本为 X"，那是约定不是既成事实，查了就是一片误报。
+ *
+ * 同阶段那一类交给模型复核。它拿得到各方身份——人分辨这两种情况靠的就是
+ * "这份文件里有没有本轮新进来的投资方"，而那是读文件读出来的，不是算术算出来的。
  */
 export function checkValueTimepointConflicts(
   documents: MinimalDocument[]
@@ -70,11 +86,14 @@ export function checkValueTimepointConflicts(
         // 两个值都能对上说明这份文件自己就记着变更，它不是被定位的对象。
         if (matchesBefore === matchesAfter) continue;
 
-        // 数值指向变更之前，却和记载变更的文件归在同一个（或更晚的）阶段。
-        if (matchesBefore && other.stage === anchor.stage) {
+        // 数值指向变更之前，却归在比变更更晚的阶段。同阶段不算——见函数注释。
+        if (
+          matchesBefore &&
+          compareBusinessStages(other.stage, anchor.stage) > 0
+        ) {
           findings.push({
             sourcePaths: [leafName(other.sourcePath), leafName(anchor.sourcePath)],
-            description: `《${leafName(other.sourcePath)}》记载的${change.field}等于变更前的值，说明它形成于这次变更之前，但它与记载变更的《${leafName(anchor.sourcePath)}》归在同一阶段 ${anchor.stage}。`,
+            description: `《${leafName(other.sourcePath)}》记载的${change.field}等于变更前的值，说明它形成于这次变更之前，但它归在 ${other.stage}，比记载这次变更的《${leafName(anchor.sourcePath)}》所在的 ${anchor.stage} 更晚。`,
             evidence: [
               `${change.field}：${change.before} → ${change.after}（出自 ${leafName(anchor.sourcePath)}）`,
               `${leafName(other.sourcePath)} 记载的同一字段为 ${change.before}`,
