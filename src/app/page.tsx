@@ -40,7 +40,7 @@ import {
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye, RefreshCw,
-  Pause, Play, Square, FolderUp
+  Pause, Play, Square, FolderUp, Search
 } from 'lucide-react';
 import { parseSourceLocation } from '@/lib/archive-subpath';
 import { MAX_PROJECT_NOTES_LENGTH } from '@/lib/classification/project-notes';
@@ -172,6 +172,58 @@ interface MinimalDecisionResult {
   status: 'success' | 'fallback';
   error?: string;
 }
+
+/**
+ * 深挖结果。字段与 lib/classification/deepen/types.ts 对齐。
+ *
+ * `decision` 来自现有判定器，不是深挖自己判的——深挖只负责把证据凑齐。
+ */
+interface DeepenResult {
+  sourcePath: string;
+  decision: {
+    stage: string | null;
+    folder: ArchiveFolder | null;
+    reasoning: string;
+    evidence: string[];
+    contradictions: string[];
+    requiresHumanReview: boolean;
+  } | null;
+  gatheredFacts: Array<{ sourcePath: string; round: number }>;
+  stopReason:
+    | 'completed'
+    | 'extract_budget'
+    | 'round_budget'
+    | 'timeout'
+    | 'error';
+  closingNote: string;
+  trace: Array<{
+    round: number;
+    message: string;
+    toolCalls: Array<{
+      round: number;
+      tool: string;
+      rawArguments: string;
+      resultBrief: string;
+      durationMs: number;
+      isError: boolean;
+    }>;
+    durationMs: number;
+    finishReason: string | null;
+  }>;
+  extractCount: number;
+  roundCount: number;
+  totalDurationMs: number;
+  error?: string;
+}
+
+/** 停止原因的人话版本。区分"想清楚了"和"被预算掐断"——这两者不能混。 */
+const DEEPEN_STOP_LABEL: Record<DeepenResult['stopReason'], string> = {
+  completed: '取证完成',
+  extract_budget: '读取次数用尽后收尾',
+  round_budget: '轮数用尽',
+  timeout: '超时中断',
+  error: '出错中断',
+};
 
 interface ClassifyResult {
   clientId: string;
@@ -528,11 +580,17 @@ function ExtractableRow({
   sourcePath,
   busy,
   onExtract,
+  onDeepen,
   children,
 }: {
   sourcePath: string;
   busy: boolean;
   onExtract: (sourcePath: string) => void;
+  /**
+   * 发起深挖。传了才显示这一项——深挖默认关闭，没启用时不该出现在菜单里，
+   * 免得用户点了只收到一句"功能未启用"。
+   */
+  onDeepen?: (sourcePath: string) => void;
   children: React.ReactNode;
 }) {
   return (
@@ -542,13 +600,167 @@ function ExtractableRow({
           {children}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
+      <ContextMenuContent className="w-56">
         <ContextMenuItem disabled={busy} onSelect={() => onExtract(sourcePath)}>
           <Brain className="mr-2 h-3.5 w-3.5" />
           提取事实并复核
         </ContextMenuItem>
+        {onDeepen && (
+          <ContextMenuItem
+            disabled={busy}
+            onSelect={() => onDeepen(sourcePath)}
+          >
+            <Search className="mr-2 h-3.5 w-3.5" />
+            深挖：自动查证再判
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/**
+ * 深挖的过程与结论。
+ *
+ * 轨迹默认展开的只有一层摘要——每轮调了什么工具、花了多久。**这不是调试信息**：
+ * 系统凭什么给出这个建议，全部依据都在这里。看不见的话，用户既没法信任它，
+ * 也没法质疑它，只能一路点确认——那正是最危险的状态。
+ */
+function DeepenPanel({
+  state,
+  onClose,
+}: {
+  state: {
+    sourcePath: string;
+    status: 'running' | 'done' | 'error';
+    message: string;
+    result?: DeepenResult;
+  };
+  onClose: () => void;
+}) {
+  const [showTrace, setShowTrace] = useState(false);
+  const result = state.result;
+
+  return (
+    <div
+      className={`mt-2 rounded-md border p-2 text-[11px] leading-4 ${
+        state.status === 'error'
+          ? 'border-destructive/40 bg-destructive/5 text-destructive'
+          : 'border-sky-200 bg-sky-50 text-sky-900'
+      }`}
+    >
+      <div className="flex items-start gap-1.5">
+        {state.status === 'running' ? (
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+        ) : state.status === 'error' ? (
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <Search className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 break-words">{state.message}</span>
+        {state.status !== 'running' && (
+          <button
+            className="shrink-0 opacity-60 hover:opacity-100"
+            onClick={onClose}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {result && (
+        <div className="mt-2 space-y-2 border-t border-sky-200 pt-2">
+          {/* 停下来的原因要显眼：「想清楚了」和「预算用尽被掐断」完全是两回事 */}
+          <p className="text-[10px] text-sky-700">
+            停止原因：{DEEPEN_STOP_LABEL[result.stopReason]}
+            {result.gatheredFacts.length > 0 && (
+              <>
+                {' '}
+                ｜ 本次读了：
+                {result.gatheredFacts
+                  .map(
+                    item =>
+                      `${item.sourcePath.split(/[/\\]/).pop()}（第${item.round}轮）`
+                  )
+                  .join('、')}
+              </>
+            )}
+          </p>
+
+          {result.closingNote && (
+            <div>
+              <p className="font-medium">取证结论</p>
+              <p className="whitespace-pre-wrap break-words">
+                {result.closingNote}
+              </p>
+            </div>
+          )}
+
+          {/* 阶段结论来自现有判定器，不是深挖自己判的 */}
+          {result.decision && (
+            <div>
+              <p className="font-medium">
+                归档建议
+                {result.decision.stage
+                  ? `：${result.decision.stage}`
+                  : '：仍判不出来'}
+              </p>
+              <p className="whitespace-pre-wrap break-words">
+                {result.decision.reasoning}
+              </p>
+              {result.decision.contradictions.length > 0 && (
+                <p className="mt-1 text-amber-700">
+                  矛盾：{result.decision.contradictions.join('；')}
+                </p>
+              )}
+            </div>
+          )}
+
+          <button
+            className="flex items-center gap-1 text-[10px] text-sky-700 hover:underline"
+            onClick={() => setShowTrace(value => !value)}
+          >
+            {showTrace ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+            执行轨迹（{result.roundCount} 轮）
+          </button>
+
+          {showTrace && (
+            <div className="space-y-1.5 rounded bg-white/70 p-1.5">
+              {result.trace.map(round => (
+                <div key={round.round}>
+                  <p className="text-[10px] font-medium text-sky-800">
+                    第 {round.round} 轮 · {round.durationMs}ms
+                  </p>
+                  {round.message && (
+                    <p className="whitespace-pre-wrap break-words pl-2 text-muted-foreground">
+                      {round.message}
+                    </p>
+                  )}
+                  {round.toolCalls.map((call, index) => (
+                    <p
+                      key={`${round.round}-${index}`}
+                      className={`break-words pl-2 ${
+                        call.isError ? 'text-destructive' : 'text-sky-700'
+                      }`}
+                    >
+                      → {call.tool} {call.rawArguments || '{}'} · {call.durationMs}ms
+                      <br />
+                      <span className="pl-3 text-muted-foreground">
+                        ← {call.resultBrief}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3210,6 +3422,18 @@ export default function Home() {
     status: 'running' | 'done' | 'error';
     message: string;
   } | null>(null);
+  /**
+   * 深挖的运行状态与结果。
+   *
+   * 结果**不写回项目档案**，只在这里展示，关掉就没了。深挖产出的是建议和证据，
+   * 采纳与否仍走正常的人工确认流程。
+   */
+  const [deepenState, setDeepenState] = useState<{
+    sourcePath: string;
+    status: 'running' | 'done' | 'error';
+    message: string;
+    result?: DeepenResult;
+  } | null>(null);
   // 用户忽略过的提示不再重复弹。切换项目时清空；持久化留待后续。
   const [dismissedFindingKeys, setDismissedFindingKeys] = useState<Set<string>>(
     () => new Set()
@@ -3386,6 +3610,49 @@ export default function Home() {
    * 文件按名称回查归档记录：Context 里只有 sourcePath，而抽事实要拿归档记录 ID 才能
    * 定位到 S3 上的原件。重名时不猜，直接说清楚让用户去文件树里操作。
    */
+  /**
+   * 发起深挖。
+   *
+   * 与"提取事实"的区别：那个只读这一份文件；深挖会让模型自己决定去查项目里的哪几份，
+   * 可能跑几十秒。结果只展示不落库——采纳与否仍走正常的人工确认。
+   */
+  const handleDeepen = useCallback(
+    async (sourcePath: string) => {
+      if (!selectedProjectId) return;
+      const leaf = sourcePath.split(/[/\\]/).pop() ?? sourcePath;
+      setDeepenState({
+        sourcePath,
+        status: 'running',
+        message: `正在深挖《${leaf}》：让系统自己去查证，可能要几十秒…`,
+      });
+      try {
+        const response = await fetch('/api/deepen', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectId: selectedProjectId, sourcePath }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error || '深挖失败');
+        }
+        const result = data.deepen as DeepenResult;
+        setDeepenState({
+          sourcePath,
+          status: 'done',
+          message: `《${leaf}》深挖完成：${result.roundCount} 轮、读了 ${result.extractCount} 份、${(result.totalDurationMs / 1000).toFixed(1)} 秒`,
+          result,
+        });
+      } catch (error) {
+        setDeepenState({
+          sourcePath,
+          status: 'error',
+          message: error instanceof Error ? error.message : '深挖失败',
+        });
+      }
+    },
+    [selectedProjectId]
+  );
+
   const handleExtractFactsFromContext = useCallback(
     async (sourcePath: string) => {
       if (!selectedProjectId) return;
@@ -5297,6 +5564,16 @@ export default function Home() {
                     )}
                   </div>
                 )}
+
+                {/* 深挖：过程和结论都摊开给用户看。轨迹不是调试信息——
+                    系统凭什么这么判，全在这里，看不见就没法信也没法质疑。 */}
+                {deepenState && (
+                  <DeepenPanel
+                    state={deepenState}
+                    onClose={() => setDeepenState(null)}
+                  />
+                )}
+
                 {/* 项目时间线：代码按日期排序拼出，不调用模型 */}
                 {minimalReport && (
                   <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-2.5">
@@ -5367,6 +5644,7 @@ export default function Home() {
                                 contextExtractState.status === 'running'
                               }
                               onExtract={handleExtractFactsFromContext}
+                              onDeepen={handleDeepen}
                             >
                               <p className="break-words text-[11px] leading-4 text-muted-foreground">
                                 <span className="font-medium text-foreground">
@@ -5400,6 +5678,7 @@ export default function Home() {
                                 contextExtractState.status === 'running'
                               }
                               onExtract={handleExtractFactsFromContext}
+                              onDeepen={handleDeepen}
                             >
                               <p className="break-words text-[11px] leading-4 text-muted-foreground">
                                 <span className="font-medium text-foreground">
@@ -5431,6 +5710,7 @@ export default function Home() {
                                 contextExtractState.status === 'running'
                               }
                               onExtract={handleExtractFactsFromContext}
+                              onDeepen={handleDeepen}
                             >
                               <StoredFactsCard entry={document} />
                             </ExtractableRow>
@@ -5459,6 +5739,7 @@ export default function Home() {
                                   contextExtractState.status === 'running'
                                 }
                                 onExtract={handleExtractFactsFromContext}
+                              onDeepen={handleDeepen}
                               >
                                 <div>
                                   <span className="font-medium text-emerald-900">
