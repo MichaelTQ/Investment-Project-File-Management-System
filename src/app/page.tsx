@@ -587,7 +587,7 @@ function ExtractableRow({
   busy: boolean;
   onExtract: (sourcePath: string) => void;
   /**
-   * 发起深挖。传了才显示这一项——深挖默认关闭，没启用时不该出现在菜单里，
+   * 发起深挖。深挖默认开启；这一项做成可选是为了让不该出现深挖入口的地方能不传，
    * 免得用户点了只收到一句"功能未启用"。
    */
   onDeepen?: (sourcePath: string) => void;

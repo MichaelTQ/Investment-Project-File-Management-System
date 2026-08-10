@@ -32,36 +32,56 @@ import {
  *   判断权仍然只有一个出口。不这么做的话，系统里会出现第二个判据来源——
  *   上一次架构失败正是判断权跑到了覆盖面最窄的组件手里。
  * - **只读不写。** 深挖抽到的新事实不写回项目档案。
- * - **默认关闭。** ENABLE_DEEPEN_AGENT=true 才启用。
+ * - **默认开启，可显式关闭。** 真正的闸门是工具清单和判定器，不是这个开关；
+ *   见下面 isDeepenEnabled 的说明。
  */
 
 /**
- * 深挖是否启用。
+ * 深挖是否启用。**默认开启**，除非显式关掉。
  *
- * **环境变量的值永远是字符串**，跟布尔值 `true` 比恒为 false，怎么设都不会生效。
- * 这里容忍常见写法：大小写、首尾空格、`1`/`yes`。变量可能来自 shell、平台面板或
- * `.env` 三个地方，写成 `TRUE` 或末尾多一个空格是常事，严格相等会让人对着一句
- * "未启用"排查半天，而问题只是一个空格。
+ * 原先是默认关闭、靠 ENABLE_DEEPEN_AGENT=true 打开。改掉的原因是那个开关的安全
+ * 收益撑不起它的麻烦：深挖只读不写、不改任何文件的归档位置、而且必须用户右键点了
+ * 才跑。默认关着挡住的不是风险，只是可用性——而这套部署里环境变量要落到服务进程
+ * 上并不顺手，反复排查一个"未启用"的成本远高于它防住的东西。
+ *
+ * 真正的风险闸门不在这个开关上，在别处：
+ * - 工具清单里没有任何写操作（tools.ts），模型改不了东西；
+ * - 结论交回现有判定器，深挖自己不判阶段；
+ * - 产出只是建议，归档照旧要人工确认。
+ *
+ * 要关掉用 DISABLE_DEEPEN_AGENT=true，或把 ENABLE_DEEPEN_AGENT 显式设成 false。
+ * 两种写法都容忍大小写、首尾空格和 1/0/yes/no——变量可能来自 shell、平台面板或
+ * .env，写成 `TRUE ` 是常事，严格相等会让人对着一句"未启用"查半天。
  */
+function readFlag(name: string): boolean | undefined {
+  const raw = globalThis.process.env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === '') return undefined;
+  if (raw === 'true' || raw === '1' || raw === 'yes') return true;
+  if (raw === 'false' || raw === '0' || raw === 'no') return false;
+  return undefined; // 认不出来的值当没设，不猜
+}
+
 export function isDeepenEnabled(): boolean {
-  const raw = globalThis.process.env.ENABLE_DEEPEN_AGENT?.trim().toLowerCase();
-  return raw === 'true' || raw === '1' || raw === 'yes';
+  if (readFlag('DISABLE_DEEPEN_AGENT') === true) return false;
+  const explicit = readFlag('ENABLE_DEEPEN_AGENT');
+  if (explicit !== undefined) return explicit;
+  return true; // 默认开
 }
 
-/** 服务端实际读到的原始值。用来把"没设"和"设错了"区分开。 */
+/** 当前状态的人话说明，只在被关掉时用得上。 */
 export function describeDeepenFlag(): string {
-  const raw = globalThis.process.env.ENABLE_DEEPEN_AGENT;
-  if (raw === undefined) return '未设置——服务进程的环境里没有这个变量';
-  return `已设置，服务端读到的值是 ${JSON.stringify(raw)}`;
+  if (readFlag('DISABLE_DEEPEN_AGENT') === true) {
+    return '被 DISABLE_DEEPEN_AGENT 显式关闭了';
+  }
+  if (readFlag('ENABLE_DEEPEN_AGENT') === false) {
+    return '被 ENABLE_DEEPEN_AGENT=false 显式关闭了';
+  }
+  return '默认开启';
 }
 
-// 与 read-document-content.ts 里那行 [OCR] 同样的用意：环境变量在服务进程里
-// 到底是什么值，启动时打一次，省得改没改成只能靠猜。
-console.log(
-  `[DEEPEN] enabled=${isDeepenEnabled()} raw=${JSON.stringify(
-    globalThis.process.env.ENABLE_DEEPEN_AGENT ?? null
-  )}`
-);
+// 与 read-document-content.ts 里那行 [OCR] 同样的用意：启动时打一次实际状态，
+// 省得开没开只能靠猜。
+console.log(`[DEEPEN] enabled=${isDeepenEnabled()}（${describeDeepenFlag()}）`);
 
 /**
  * 指向现有网关的客户端。

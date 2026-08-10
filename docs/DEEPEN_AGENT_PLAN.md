@@ -1,7 +1,8 @@
 # 深挖旁路：一个真正需要 Agent 的地方
 
 状态：方案｜2026-08-08
-定位：**学习性质的独立旁路**，默认关闭，不进入 `/api/classify` 主链路。
+定位：**独立旁路**，不进入 `/api/classify` 主链路。默认开启（2026-08-09 由默认关闭改为默认开启，
+理由见 agent.ts 里 isDeepenEnabled 的说明：安全性来自工具清单和判定器，不来自这个开关）。
 
 ---
 
@@ -234,7 +235,7 @@ loop:
 新增  POST /api/deepen  { projectId, sourcePath }
 改动  invokeChatCompletion 支持 tools / tool_calls
 改动  前端：rebuild 报告里每条 deepenSuggestion 加「深挖这份」按钮
-开关  ENABLE_DEEPEN_AGENT，默认关
+开关  默认开；DISABLE_DEEPEN_AGENT=true 或 ENABLE_DEEPEN_AGENT=false 可关掉
 ```
 
 `/api/deepen` 的返回除了新结论，还要带**完整执行轨迹**：调了哪些工具、读了哪几份

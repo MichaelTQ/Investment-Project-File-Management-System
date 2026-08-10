@@ -10,7 +10,8 @@ import type { ModelCallDiagnostics } from '../chat-completions';
  *    `decideStageWithModel`，判断权仍然只有一个出口。见 {@link DeepenResult.decision}。
  * 2. **只读不写。** 深挖过程中抽到的新事实**不写回项目档案**，只在本次会话内使用。
  *    写入必须走用户确认过的正常归档流程。
- * 3. **默认关闭。** 由 ENABLE_DEEPEN_AGENT 控制，见 agent.ts。
+ * 3. **默认开启，可用 DISABLE_DEEPEN_AGENT 关掉。** 安全性不靠这个开关兜底——
+ *    工具清单里没有写操作，判断权也不在这里，见 agent.ts 里的说明。
  */
 
 /** 编排用的模型。实测 mini 就能挑对文件（第 6.6 节），没必要上 pro。 */
