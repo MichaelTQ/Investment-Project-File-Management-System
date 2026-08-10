@@ -35,9 +35,33 @@ import {
  * - **默认关闭。** ENABLE_DEEPEN_AGENT=true 才启用。
  */
 
+/**
+ * 深挖是否启用。
+ *
+ * **环境变量的值永远是字符串**，跟布尔值 `true` 比恒为 false，怎么设都不会生效。
+ * 这里容忍常见写法：大小写、首尾空格、`1`/`yes`。变量可能来自 shell、平台面板或
+ * `.env` 三个地方，写成 `TRUE` 或末尾多一个空格是常事，严格相等会让人对着一句
+ * "未启用"排查半天，而问题只是一个空格。
+ */
 export function isDeepenEnabled(): boolean {
-  return globalThis.process.env.ENABLE_DEEPEN_AGENT === 'true';
+  const raw = globalThis.process.env.ENABLE_DEEPEN_AGENT?.trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
 }
+
+/** 服务端实际读到的原始值。用来把"没设"和"设错了"区分开。 */
+export function describeDeepenFlag(): string {
+  const raw = globalThis.process.env.ENABLE_DEEPEN_AGENT;
+  if (raw === undefined) return '未设置——服务进程的环境里没有这个变量';
+  return `已设置，服务端读到的值是 ${JSON.stringify(raw)}`;
+}
+
+// 与 read-document-content.ts 里那行 [OCR] 同样的用意：环境变量在服务进程里
+// 到底是什么值，启动时打一次，省得改没改成只能靠猜。
+console.log(
+  `[DEEPEN] enabled=${isDeepenEnabled()} raw=${JSON.stringify(
+    globalThis.process.env.ENABLE_DEEPEN_AGENT ?? null
+  )}`
+);
 
 /**
  * 指向现有网关的客户端。

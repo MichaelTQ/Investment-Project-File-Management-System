@@ -1,7 +1,11 @@
 import { HeaderUtils } from 'coze-coding-dev-sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
-import { isDeepenEnabled, runDeepen } from '@/lib/classification/deepen/agent';
+import {
+  describeDeepenFlag,
+  isDeepenEnabled,
+  runDeepen,
+} from '@/lib/classification/deepen/agent';
 import { matchSpecTerm } from '@/lib/classification/naming-spec';
 import { getProject } from '@/lib/storage';
 
@@ -20,8 +24,12 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     if (!isDeepenEnabled()) {
+      // 把服务端实际读到的值一并返回。"没设"和"设了但服务进程没看见"是两种完全
+      // 不同的毛病，只说一句"未启用"会让人反复确认自己明明设过了。
       return NextResponse.json(
-        { error: '深挖功能未启用（需要设置 ENABLE_DEEPEN_AGENT=true）' },
+        {
+          error: `深挖功能未启用。需要 ENABLE_DEEPEN_AGENT=true，当前${describeDeepenFlag()}。注意变量要在**启动服务的那个进程**里，改完要重启服务。`,
+        },
         { status: 403 }
       );
     }
