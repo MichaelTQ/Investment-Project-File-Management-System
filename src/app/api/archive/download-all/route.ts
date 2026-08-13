@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listArchivedFiles, getFileDownloadStream, getProject } from "@/lib/storage";
 import { buildZipEntryPaths, buildZipFileName } from "@/lib/archive-zip";
+import { FOLDER_STRUCTURE } from "@/lib/folder-structure";
 import AdmZip from "adm-zip";
 
 export const runtime = "nodejs";
@@ -45,7 +46,14 @@ async function buildZipResponse(params: {
     );
   }
 
-  const entryPaths = buildZipEntryPaths(files, basePath ? { basePath } : {});
+  const entryPaths = buildZipEntryPaths(files, {
+    // 没指定文件夹时（整项目、跨层级勾选）把根目录钉在归档树的根上，不去猜公共前缀：
+    // 选中的文件常常凑巧都落在同一个分组层（比如全在"基金投资及投资执行"下），
+    // 按公共前缀砍就会把项目名那一层连带砍掉。
+    basePath: basePath ?? [FOLDER_STRUCTURE.name],
+    // 归档路径第一段对所有项目都是"投资项目档案"，换成项目名才认得出是哪个项目的包。
+    rootLabel: project.name,
+  });
 
   const zip = new AdmZip();
   const failed: string[] = [];

@@ -20,14 +20,34 @@ const file = (id: string, folderPath: string[], archivedName: string) => ({
   archivedName,
 });
 
-test('整个项目：根目录是项目名，阶段和子文件夹层级原样保留', () => {
-  const entries = buildZipEntryPaths([
-    file('a', ['佰特微', '2-尽职调查'], '法律尽调报告.pdf'),
-    file('b', ['佰特微', '3-投资决策', '上会材料'], '上会申请表.pdf'),
-  ]);
+test('整个项目：根目录换成项目名，阶段和子文件夹层级原样保留', () => {
+  // 归档路径第一段永远是固定的"投资项目档案"，八个项目的包会长得一模一样，
+  // 所以这一层要换成项目名——原来的一键下载全部就是这么做的，不能丢。
+  const entries = buildZipEntryPaths(
+    [
+      file('a', ['投资项目档案', '基金投资及投资执行', '尽职调查'], '法律尽调报告.pdf'),
+      file('b', ['投资项目档案', '基金投资及投资执行', '投资决策', '上会材料'], '上会申请表.pdf'),
+    ],
+    { basePath: ['投资项目档案'], rootLabel: '佰特微' }
+  );
 
-  assert.equal(entries.get('a'), '佰特微/2-尽职调查/法律尽调报告.pdf');
-  assert.equal(entries.get('b'), '佰特微/3-投资决策/上会材料/上会申请表.pdf');
+  assert.equal(entries.get('a'), '佰特微/基金投资及投资执行/尽职调查/法律尽调报告.pdf');
+  assert.equal(
+    entries.get('b'),
+    '佰特微/基金投资及投资执行/投资决策/上会材料/上会申请表.pdf'
+  );
+});
+
+test('下载子文件夹时根目录是那个文件夹本身，不会被项目名顶替', () => {
+  const entries = buildZipEntryPaths(
+    [file('a', ['投资项目档案', '基金投资及投资执行', '尽职调查'], '法律尽调报告.pdf')],
+    {
+      basePath: ['投资项目档案', '基金投资及投资执行', '尽职调查'],
+      rootLabel: '佰特微',
+    }
+  );
+
+  assert.equal(entries.get('a'), '尽职调查/法律尽调报告.pdf');
 });
 
 test('单个文件夹：basePath 指定的那一层成为包的根目录', () => {
@@ -61,13 +81,38 @@ test('文件夹里只有一个子文件夹时也不会把用户点的那层弄�
 });
 
 test('跨层级勾选：分属不同阶段的文件保留各自完整路径', () => {
-  const entries = buildZipEntryPaths([
-    file('a', ['佰特微', '1-项目立项'], '立项报告.pdf'),
-    file('b', ['佰特微', '2-尽职调查', '法律'], '法律尽调报告.pdf'),
+  const entries = buildZipEntryPaths(
+    [
+      file('a', ['投资项目档案', '基金投资及投资执行', '项目立项'], '立项报告.pdf'),
+      file('b', ['投资项目档案', '投后管理'], '年度投后管理报告.pdf'),
+    ],
+    { basePath: ['投资项目档案'], rootLabel: '佰特微' }
+  );
+
+  assert.equal(entries.get('a'), '佰特微/基金投资及投资执行/项目立项/立项报告.pdf');
+  assert.equal(entries.get('b'), '佰特微/投后管理/年度投后管理报告.pdf');
+});
+
+test('选中的文件凑巧全在同一个分组层下时，项目名那一层不会被吃掉', () => {
+  // 八个阶段里有五个挂在"基金投资及投资执行"下面，所以"全选"或随手勾几个，公共前缀
+  // 很容易就落到这个分组层——那时若按公共前缀砍，压缩包根目录会变成分组层的名字，
+  // 项目名彻底消失。所以根目录必须显式钉在归档树根上，不能靠推断。
+  const paths = [
+    ['投资项目档案', '基金投资及投资执行', '项目立项'],
+    ['投资项目档案', '基金投资及投资执行', '尽职调查'],
+  ];
+  assert.deepEqual(longestCommonPrefix(paths), [
+    '投资项目档案',
+    '基金投资及投资执行',
   ]);
 
-  assert.equal(entries.get('a'), '佰特微/1-项目立项/立项报告.pdf');
-  assert.equal(entries.get('b'), '佰特微/2-尽职调查/法律/法律尽调报告.pdf');
+  const entries = buildZipEntryPaths(
+    [file('a', paths[0], '立项报告.pdf'), file('b', paths[1], '财务尽调报告.pdf')],
+    { basePath: ['投资项目档案'], rootLabel: '佰特微' }
+  );
+
+  assert.equal(entries.get('a'), '佰特微/基金投资及投资执行/项目立项/立项报告.pdf');
+  assert.equal(entries.get('b'), '佰特微/基金投资及投资执行/尽职调查/财务尽调报告.pdf');
 });
 
 test('basePath 不能覆盖全部选中文件时忽略它，退回公共前缀', () => {

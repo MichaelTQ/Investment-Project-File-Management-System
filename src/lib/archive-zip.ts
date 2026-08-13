@@ -49,10 +49,13 @@ function startsWith(path: string[], prefix: string[]): boolean {
  * @param basePath 指定包的根目录对应哪一段归档路径。下载单个文件夹时传它——不传就靠
  *   公共前缀猜，而"只含一个子文件夹的文件夹"会被猜深一层，把用户点的那层弄丢。
  *   如果有文件不在 basePath 之下（勾选跨了分支），basePath 会被忽略，退回自动推断。
+ * @param rootLabel 归档路径的第一段是固定的"投资项目档案"，八个项目下载出来的压缩包会
+ *   长得一模一样。当包的根目录正好是这一段时，把它换成项目名。只在这种情况下生效：
+ *   下载某个子文件夹时根目录是那个文件夹自己，不该被改名。
  */
 export function buildZipEntryPaths(
   files: ZipSourceFile[],
-  options: { basePath?: string[] } = {}
+  options: { basePath?: string[]; rootLabel?: string } = {}
 ): Map<string, string> {
   const entries = new Map<string, string>();
   if (files.length === 0) return entries;
@@ -74,6 +77,10 @@ export function buildZipEntryPaths(
 
   for (const file of files) {
     const segments = file.folderPath.slice(stripCount).map(sanitizeSegment);
+    // 根目录还是归档路径的第一段（"投资项目档案"）时才换名，换成项目名。
+    if (stripCount === 0 && options.rootLabel && segments.length > 0) {
+      segments[0] = sanitizeSegment(options.rootLabel);
+    }
     const fileName = sanitizeSegment(file.archivedName);
     let entryPath = [...segments, fileName].join("/");
 
