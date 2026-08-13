@@ -45,7 +45,13 @@
 - 项目记忆面板可展开查看每份文件的事实类型、抽取/校正状态、完整度、来源、警告和 Agent 结论；扫描件类型为 `unknown/other` 但文件名或标题明确指向章程、股东会决议、增资协议、交割/缴款文件、尽调报告或合规审查表时，可进行带警告的保守类型恢复；
 - 公司章程 Agent 除关联章程外，还会检索股东会决议和增资协议，并用“注册资本由 A 增至 B”与当前章程资本进行关系判断；
 - 待归档文件不进入正式项目 Context；归档成功后才写入事实并标记 Context 待更新，页面后台请求再生成新 Context 版本。删除单个归档文件时从已验证项目快照移除对应事实并将 Context 标记为待刷新，避免已删除文件重新进入项目记忆；
-- 君柔 Agent shadow 评测中明确建议 6 份且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按类别策略继续转人工；
+- ~~君柔 Agent shadow 评测中明确建议 6 份且 6/6 命中，错误自主建议为 0；其中投资合规性审查表按类别策略继续转人工；~~
+  **⚠️ 这个 6/6 不能当作系统准确率，不要再引用。** 两个原因叠加：
+  (1) **答案泄漏**——评测把带目录前缀的路径当输入喂进去，而目录名就是答案（`投资决策/公司章程.pdf` 的正确答案正是"投资决策"）。6 份里只有合规性审查表那份路径不含阶段名，
+  只有它是真凭内容判对的。详见 `docs/RETIRED_AGENT_ARCHITECTURE.md` 第 8 节的实测：只把路径字符串丢进关键词表、不给任何文件内容也能得分。
+  (2) **用的不是线上那套**——报告自己写明文字识别用 macOS Vision OCR、事实抽取用规则适配器，都是替代品，所以它描述的不是线上系统。
+  修法（未做）：评测输入只给叶子文件名，去掉目录前缀（`src/lib/classification/source-path.ts` 的 `leafName()`，线上提示词已在用，漏的是评测这一侧），然后用线上抽取器重跑。
+  在那之前没有可信的准确率数字。评测资产已移出版本库，见 `evaluation/README.md`（本地目录，不在 git 里）。
 - Agent 调度层使用确定性规则，模型调用数为 0；前置 `DocumentFacts` 抽取仍可能调用一次 Coze LLM；
 - 已实现 `project-context-synthesizer-v5`：使用当前有效的 `DocumentFacts`，在约 32,000 字符预算内优先选择本轮变更、上一版证据和强关联事实；直接调用 Chat Completions，显式设置 3072 输出 tokens、120 秒超时和 JSON 模式，并保留输入/输出字符数、token、`finish_reason` 与耗时。Prompt、生成 Schema 和本地压缩使用一致的数量/长度限制，模型返回合法但过长的 JSON 时不重复调用；只有 JSON/Schema 错误时最多紧凑重试一次，两次都失败才生成确定性规则 Context；
 - 项目记忆已由追加式历史对象改为每项目逻辑 `snapshot`，并通过轻量 `revision` 对象校验进程缓存；Coze 自动改写上传 key 时使用返回的真实 key 回读验证，版本未变化不下载完整快照，旧历史只在新快照验证后清理。新增/移动/删除路径记录在 Context 生命周期变更清单中，供下一次重建优先选取或排除证据；
@@ -67,7 +73,7 @@
 - 开发阶段继续使用 Coze 提供的原有运行环境，不更换 Supabase 连接；
 - 当前没有需要迁移的重要业务数据；
 - 不在 Coze 代管的 Supabase 上尝试执行数据库结构迁移；
-- `PERSIST_PROJECT_MEMORY_SHADOW` 保持关闭（不写 Coze Supabase 新表）；开发验证使用 Coze S3 持久化 shadow mode 和 `tests/fixtures` 中的君柔数据；
+- `PERSIST_PROJECT_MEMORY_SHADOW` 保持关闭（不写 Coze Supabase 新表）；开发验证使用 Coze S3 持久化 shadow mode 和 `evaluation/fixtures` 中的君柔数据；
 - 最终真实上线前，由项目所有者注册自有 Supabase，一次性部署基础表与 Agent 项目记忆表，再切换环境变量。
 
 在上述决策被明确修改前，后续开发不得要求 Coze 环境存在 `project_contexts`、`project_events`、`document_facts` 或 `classification_decisions` 表。

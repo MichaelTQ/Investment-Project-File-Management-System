@@ -13,7 +13,7 @@
     "test:facts": "node --import tsx --test tests/document-facts.test.ts",
     "test:llm-stage": "node --import tsx --test tests/llm-stage-decision.test.ts",
     "test:consistency": "node --import tsx --test tests/archive-consistency.test.ts",
-    "test:fixtures": "node --import tsx --test tests/junrou-fixtures.test.ts",
+    "test:fixtures": "node --import tsx --test evaluation/junrou-fixtures.test.ts",
     "ts-check": "tsc -p tsconfig.json",
     "validate": "pnpm dlx concurrently --group --names lint-tsc,lint-build,lint-style \"pnpm ts-check\" \"pnpm lint:build\" \"pnpm lint:style\""
   },
