@@ -236,7 +236,10 @@ export async function GET(request: NextRequest) {
       return new NextResponse(new Uint8Array(result.buffer), {
         headers: {
           "Content-Type": result.mimeType,
-          "Content-Disposition": `attachment; filename="${encodeURIComponent(result.fileName)}"`,
+          // 归档名几乎都是中文，必须走 RFC 5987 的 filename*，否则浏览器会把
+          // percent-encoding 当字面量，存下来是一串 %E4%BD%B0…
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+          "Content-Length": String(result.buffer.length),
         },
       });
     }

@@ -40,7 +40,7 @@ import {
   ChevronRight, ChevronDown, Loader2, Brain, Zap,
   Plus, Trash2, Download, Archive, Building2, Clock, X,
   History, ArrowRightLeft, MoreHorizontal, Pencil, Eye, RefreshCw,
-  Pause, Play, Square, FolderUp, Search
+  Pause, Play, Square, FolderUp, Search, Check, Minus, ListChecks
 } from 'lucide-react';
 import { parseSourceLocation } from '@/lib/archive-subpath';
 import { MAX_PROJECT_NOTES_LENGTH } from '@/lib/classification/project-notes';
@@ -1746,19 +1746,114 @@ function collectNodeFileIds(node: ArchiveTreeNode): string[] {
   return node.children?.flatMap(collectNodeFileIds) || [];
 }
 
-function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, onRenameNode, onExtractFacts, setCtxMenu }: {
+/** 从 Content-Disposition 里取服务端给的文件名（走的是 RFC 5987 的 filename*）。 */
+function parseFileNameFromResponse(response: Response, fallback: string): string {
+  const disposition = response.headers.get('Content-Disposition') || '';
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim());
+    } catch {
+      // 解不开就用兜底名，不值得为此让整个下载失败。
+    }
+  }
+  const plain = disposition.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1].trim() : fallback;
+}
+
+/**
+ * 把一个响应体真正存成本地文件。
+ *
+ * 之前单个文件的"下载"是 window.open 到接口上，而那个接口带 download 参数时返回的是
+ * 一段 JSON（里面才是签名 URL），于是浏览器只是开了个新标签页把 JSON 显示出来，什么
+ * 都没存下。改成显式取 blob、造一个临时 <a> 点它——这样中文文件名、失败提示都可控。
+ */
+async function saveResponseAsFile(response: Response, fallbackName: string) {
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = parseFileNameFromResponse(response, fallbackName);
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // 立刻 revoke 会让部分浏览器来不及开始下载。
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** 从失败响应里挖出后端写的中文错误信息。 */
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json();
+    return [data?.error, data?.details].filter(Boolean).join('：') || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+type SelectState = 'none' | 'some' | 'all';
+
+/** 三态勾选框：文件夹里只选了一部分时要显示成半选，不能和全选长得一样。 */
+function SelectBox({ state, onToggle, label }: {
+  state: SelectState;
+  onToggle: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state === 'all' ? true : state === 'some' ? 'mixed' : false}
+      aria-label={label}
+      title={label}
+      onClick={(event) => {
+        // 文件夹整行是折叠开关，勾选框不能顺带把它折起来。
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={`size-3.5 shrink-0 rounded-[3px] border flex items-center justify-center transition-colors ${
+        state === 'none'
+          ? 'border-input hover:border-primary'
+          : 'bg-primary border-primary text-primary-foreground'
+      }`}
+    >
+      {state === 'all' && <Check className="size-3" strokeWidth={3} />}
+      {state === 'some' && <Minus className="size-3" strokeWidth={3} />}
+    </button>
+  );
+}
+
+function ArchiveTreeItem({ node, level, onDownload, onDownloadNode, onDeleteNode, onMoveNode, onRenameNode, onExtractFacts, setCtxMenu, selection }: {
   node: ArchiveTreeNode;
   level: number;
   onDownload: (fileId: string) => void;
+  /** 打包下载这个节点（文件夹或单个文件）下的全部文件。 */
+  onDownloadNode: (node: ArchiveTreeNode) => void;
   onExtractFacts: (node: ArchiveTreeNode) => void;
   onDeleteNode: (node: ArchiveTreeNode) => void;
   onMoveNode: (node: ArchiveTreeNode) => void;
   onRenameNode: (node: ArchiveTreeNode) => void;
   setCtxMenu: (v: CtxMenuState) => void;
+  /** 勾选模式关掉时为 null，此时整棵树不显示勾选框。 */
+  selection: {
+    selectedIds: Set<string>;
+    onToggleFiles: (fileIds: string[], selected: boolean) => void;
+  } | null;
 }) {
   const [isOpen, setIsOpen] = useState(level < 2);
   const hasChildren = node.children && node.children.length > 0;
-  const fileCount = collectNodeFileIds(node).length;
+  const nodeFileIds = collectNodeFileIds(node);
+  const fileCount = nodeFileIds.length;
+
+  // 勾选状态是从"这个子树里有多少文件被选中"算出来的，不单独存一份文件夹的选中标记：
+  // 存两份就要考虑父子同步，而跨层级勾选下这种同步一定会漏。
+  const selectedCount = selection
+    ? nodeFileIds.reduce((count, id) => count + (selection.selectedIds.has(id) ? 1 : 0), 0)
+    : 0;
+  const selectState: SelectState =
+    selectedCount === 0 ? 'none' : selectedCount === fileCount ? 'all' : 'some';
+  const toggleSelection = () =>
+    selection?.onToggleFiles(nodeFileIds, selectState !== 'all');
 
   if (node.type === 'file' && node.file) {
     const meta = `${(node.file.fileSize / 1024).toFixed(1)} KB · ${new Date(node.file.archivedAt).toLocaleDateString('zh-CN')} · 置信度 ${node.file.confidence}%`;
@@ -1780,6 +1875,13 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
         }}
       >
         <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
+        {selection && (
+          <SelectBox
+            state={selectState}
+            onToggle={toggleSelection}
+            label={`选择 ${node.file.archivedName}`}
+          />
+        )}
         {/* 文件没有折叠箭头，补一个同宽占位，让文件图标与同级文件夹图标对齐、向右缩进 */}
         <span aria-hidden className="w-3.5 shrink-0" />
         <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
@@ -1821,6 +1923,20 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
           action: () => onMoveNode(node),
         }]
       : []),
+    ...(fileCount > 0
+      ? [{
+          label: `下载文件夹（${fileCount} 个文件）`,
+          icon: <Download className="h-3.5 w-3.5 mr-2" />,
+          action: () => onDownloadNode(node),
+        }]
+      : []),
+    ...(selection
+      ? [{
+          label: selectState === 'all' ? '取消勾选整个文件夹' : '勾选整个文件夹',
+          icon: <ListChecks className="h-3.5 w-3.5 mr-2" />,
+          action: toggleSelection,
+        }]
+      : []),
     {
       label: `删除文件夹（${fileCount} 个文件）`,
       icon: <Trash2 className="h-3.5 w-3.5 mr-2 text-destructive" />,
@@ -1840,10 +1956,24 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
         }}
       >
         <span aria-hidden className="shrink-0" style={{ width: `${level * 14}px` }} />
+        {selection && fileCount > 0 && (
+          <SelectBox
+            state={selectState}
+            onToggle={toggleSelection}
+            label={`选择文件夹 ${node.name} 内的 ${fileCount} 个文件`}
+          />
+        )}
+        {selection && fileCount === 0 && <span aria-hidden className="size-3.5 shrink-0" />}
         {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         {isOpen ? <FolderOpen className="h-3.5 w-3.5 text-primary shrink-0" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
         <span className="text-xs font-medium truncate">{node.name}</span>
-        {fileCount > 0 && <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">{fileCount}</Badge>}
+        {fileCount > 0 && (
+          <Badge variant="outline" className="ml-auto text-[10px] px-1 py-0 shrink-0">
+            {selectedCount > 0 && selectedCount < fileCount
+              ? `${selectedCount}/${fileCount}`
+              : fileCount}
+          </Badge>
+        )}
       </div>
       {isOpen && hasChildren && (
         <div>
@@ -1853,11 +1983,13 @@ function ArchiveTreeItem({ node, level, onDownload, onDeleteNode, onMoveNode, on
               node={child}
               level={level + 1}
               onDownload={onDownload}
+              onDownloadNode={onDownloadNode}
               onDeleteNode={onDeleteNode}
               onMoveNode={onMoveNode}
               onRenameNode={onRenameNode}
               onExtractFacts={onExtractFacts}
               setCtxMenu={setCtxMenu}
+              selection={selection}
             />
           ))}
         </div>
@@ -1893,6 +2025,15 @@ function ArchivedFilesList({
   const [tree, setTree] = useState<ArchiveTreeNode[]>(archiveTree);
   const [files, setFiles] = useState<ArchivedFile[]>(archivedFiles);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  /** 单个文件下载、打包下载共用的进度与错误提示。 */
+  const [downloadState, setDownloadState] = useState<{
+    label: string;
+    status: 'running' | 'error';
+    message: string;
+  } | null>(null);
+  /** 勾选模式：默认关，开了才在树上显示勾选框，避免平时误点。 */
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [extractResult, setExtractResult] = useState<{
     fileName: string;
     status: 'running' | 'done' | 'error';
@@ -1921,8 +2062,115 @@ function ArchivedFilesList({
     setFiles(archivedFiles);
   }, [archiveTree, archivedFiles]);
 
-  const handleDownload = (fileId: string) => {
-    window.open(`/api/archive?download=${fileId}&id=${fileId}`, '_blank');
+  // 文件被删掉或移走后，勾选集合里可能还留着已经不存在的 id——那样"已选 N 个"会虚高，
+  // 打包时后端也会因为找不到而少打几个文件。每次列表变化都按最新的文件清一遍。
+  useEffect(() => {
+    setSelectedIds(prev => {
+      if (prev.size === 0) return prev;
+      const alive = new Set(archivedFiles.map(file => file.id));
+      const next = new Set([...prev].filter(id => alive.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [archivedFiles]);
+
+  /** 单个文件：直接取文件流存盘，不打包。 */
+  const handleDownload = async (fileId: string) => {
+    const file = files.find(item => item.id === fileId);
+    const fallbackName = file?.archivedName || '归档文件';
+    setDownloadState({ label: fallbackName, status: 'running', message: '正在下载…' });
+    try {
+      const response = await fetch(`/api/archive?id=${encodeURIComponent(fileId)}`);
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, `下载失败（HTTP ${response.status}）`));
+      }
+      await saveResponseAsFile(response, fallbackName);
+      setDownloadState(null);
+    } catch (error) {
+      setDownloadState({
+        label: fallbackName,
+        status: 'error',
+        message: error instanceof Error ? error.message : '下载失败，请重试',
+      });
+    }
+  };
+
+  /**
+   * 打包下载一批文件，压缩包里保留归档树的层级。
+   *
+   * basePath 指的是"包的根目录对应界面上的哪一层"：下载单个文件夹时传该文件夹的路径，
+   * 解压出来就是这个文件夹本身；跨层级勾选时不传，后端退回按公共前缀推断，于是从项目
+   * 名那一层开始把整条路径都保留下来。
+   */
+  const downloadZip = async (params: {
+    fileIds: string[];
+    label: string;
+    basePath?: string[];
+  }) => {
+    const { fileIds, label, basePath } = params;
+    if (fileIds.length === 0) return;
+    setDownloadState({
+      label,
+      status: 'running',
+      message: `正在打包 ${fileIds.length} 个文件…`,
+    });
+    try {
+      const response = await fetch('/api/archive/download-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, fileIds, basePath, label }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, `打包下载失败（HTTP ${response.status}）`));
+      }
+      const skipped = Number(response.headers.get('X-Archive-Skipped-Count') || 0);
+      await saveResponseAsFile(response, `${label}.zip`);
+      if (skipped > 0) {
+        setDownloadState({
+          label,
+          status: 'error',
+          message: `已下载，但有 ${skipped} 个文件读取失败，未包含在压缩包里。`,
+        });
+      } else {
+        setDownloadState(null);
+      }
+    } catch (error) {
+      setDownloadState({
+        label,
+        status: 'error',
+        message: error instanceof Error ? error.message : '打包下载失败，请重试',
+      });
+    }
+  };
+
+  const handleDownloadNode = (node: ArchiveTreeNode) => {
+    const fileIds = collectNodeFileIds(node);
+    if (fileIds.length === 0) return;
+    if (node.type === 'file') {
+      void handleDownload(fileIds[0]);
+      return;
+    }
+    void downloadZip({
+      fileIds,
+      label: node.name,
+      basePath: node.folderPath,
+    });
+  };
+
+  const handleDownloadSelected = () => {
+    const fileIds = [...selectedIds];
+    if (fileIds.length === 0) return;
+    void downloadZip({ fileIds, label: `所选${fileIds.length}个文件` });
+  };
+
+  const toggleFilesSelected = (fileIds: string[], selected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      for (const id of fileIds) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
   };
 
   const getOperationTarget = (node: ArchiveTreeNode): ArchiveOperationTarget | null => {
@@ -2024,6 +2272,10 @@ function ArchivedFilesList({
       }
 
       const deletedIds = new Set(ids);
+      setSelectedIds(prev => {
+        if (prev.size === 0) return prev;
+        return new Set([...prev].filter(id => !deletedIds.has(id)));
+      });
       setFiles(prev => prev.filter(file => !deletedIds.has(file.id)));
       setTree(prev => ids.reduce(
         (currentTree, fileId) => removeFileFromTree(currentTree, fileId),
@@ -2220,23 +2472,104 @@ function ArchivedFilesList({
           </div>
         </div>
       )}
+      {downloadState && (
+        <div
+          className={`mb-2 rounded-md border p-2 text-xs ${
+            downloadState.status === 'error'
+              ? 'border-destructive/40 bg-destructive/5 text-destructive'
+              : 'border-blue-200 bg-blue-50 text-blue-800'
+          }`}
+        >
+          <div className="flex items-start gap-1.5">
+            {downloadState.status === 'running' ? (
+              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : (
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="break-all font-medium">{downloadState.label}</p>
+              <p className="mt-0.5 break-words leading-4">{downloadState.message}</p>
+            </div>
+            {downloadState.status === 'error' && (
+              <button
+                className="shrink-0 opacity-60 hover:opacity-100"
+                onClick={() => setDownloadState(null)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <span className="text-xs text-muted-foreground">共 {files.length} 个文件</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 shrink-0"
-          onClick={handleDownloadAll}
-          disabled={downloadingAll}
-        >
-          {downloadingAll ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Download className="h-3.5 w-3.5" />
-          )}
-          一键下载全部
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant={selectionMode ? 'secondary' : 'outline'}
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => {
+              setSelectionMode(prev => !prev);
+              // 退出勾选模式时把选中状态一起丢掉：留着的话下次进来会莫名其妙地
+              // 带着上次的勾选，而那时树可能已经变了。
+              if (selectionMode) setSelectedIds(new Set());
+            }}
+          >
+            <ListChecks className="h-3.5 w-3.5" />
+            {selectionMode ? '退出勾选' : '勾选下载'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={handleDownloadAll}
+            disabled={downloadingAll}
+          >
+            {downloadingAll ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            一键下载全部
+          </Button>
+        </div>
       </div>
+      {selectionMode && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5">
+          <span className="text-xs text-muted-foreground">
+            已选 {selectedIds.size} / {files.length} 个文件
+          </span>
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelectedIds(new Set(files.map(file => file.id)))}
+              disabled={selectedIds.size === files.length}
+            >
+              全选
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelectedIds(new Set())}
+              disabled={selectedIds.size === 0}
+            >
+              清空
+            </Button>
+            <Button
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={handleDownloadSelected}
+              disabled={selectedIds.size === 0 || downloadState?.status === 'running'}
+            >
+              <Download className="h-3.5 w-3.5" />
+              打包下载所选
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="overflow-x-auto border rounded-lg p-2 bg-muted/20">
         {tree.map((node, idx) => (
           <ArchiveTreeItem
@@ -2244,11 +2577,17 @@ function ArchivedFilesList({
             node={node}
             level={0}
             onDownload={handleDownload}
+            onDownloadNode={handleDownloadNode}
             onDeleteNode={handleDelete}
             onMoveNode={handleMoveRequest}
             onRenameNode={handleRenameRequest}
             onExtractFacts={handleExtractArchivedFacts}
             setCtxMenu={setCtxMenu}
+            selection={
+              selectionMode
+                ? { selectedIds, onToggleFiles: toggleFilesSelected }
+                : null
+            }
           />
         ))}
       </div>
