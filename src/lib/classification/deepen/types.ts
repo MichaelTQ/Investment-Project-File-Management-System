@@ -52,6 +52,17 @@ export interface DeepenTraceRound {
   finishReason: string | null;
 }
 
+/**
+ * 编排方式。同一套工具、同一套预算、同一个判定器，只有控制流不同。
+ *
+ * `loop`  —— 手写的 while 循环（线上默认，见 loop.ts）。
+ * `graph` —— LangGraph 状态机（见 graph.ts）。
+ *
+ * 留两套不是为了炫技，是为了**能做对照**：编排层换掉之后，同一份假模型、同一组断言
+ * 必须还能过。测试就是这么写的（tests/deepen-agent.test.ts 对两者各跑一遍）。
+ */
+export type DeepenOrchestrator = 'loop' | 'graph';
+
 /** 停止原因。区分"想清楚了"和"被预算掐断"，评测时这两者不能混。 */
 export type DeepenStopReason =
   /** 模型自己认为取证够了 */
@@ -69,6 +80,8 @@ export interface DeepenParams {
   projectId: string;
   /** 要深挖的那份文件。 */
   sourcePath: string;
+  /** 用哪套编排。不传则取 DEEPEN_ORCHESTRATOR，缺省 loop。 */
+  orchestrator?: DeepenOrchestrator;
   projectName?: string;
   /** 项目负责人填写的归档口径，透传给判定器。 */
   projectNotes?: string;
@@ -79,6 +92,8 @@ export interface DeepenParams {
 
 export interface DeepenResult {
   sourcePath: string;
+  /** 这次实际跑的是哪套编排。写进结果里，轨迹才说得清是谁跑出来的。 */
+  orchestrator: DeepenOrchestrator;
   /**
    * 最终结论。**由 `decideStageWithModel` 产出，不是本模块自己判的。**
    *

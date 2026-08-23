@@ -180,6 +180,8 @@ interface MinimalDecisionResult {
  */
 interface DeepenResult {
   sourcePath: string;
+  /** 这次实际跑的是哪套编排。同一套工具和预算，只有控制流不同。 */
+  orchestrator: 'loop' | 'graph';
   decision: {
     stage: string | null;
     folder: ArchiveFolder | null;
@@ -223,6 +225,17 @@ const DEEPEN_STOP_LABEL: Record<DeepenResult['stopReason'], string> = {
   round_budget: '轮数用尽',
   timeout: '超时中断',
   error: '出错中断',
+};
+
+/**
+ * 编排方式的人话名字。
+ *
+ * 摆在界面上不是为了炫技，是因为**两套编排必须能当场对照**：同一份文件、同一套工具和
+ * 预算，换个控制流跑出来的轨迹应该一样。不一样就是有一套写错了。
+ */
+const ORCHESTRATOR_LABEL: Record<DeepenResult['orchestrator'], string> = {
+  loop: '手写循环',
+  graph: 'LangGraph',
 };
 
 interface ClassifyResult {
@@ -629,6 +642,7 @@ function ExtractableRow({
 function DeepenPanel({
   state,
   onClose,
+  onRerun,
 }: {
   state: {
     sourcePath: string;
@@ -637,6 +651,8 @@ function DeepenPanel({
     result?: DeepenResult;
   };
   onClose: () => void;
+  /** 换另一套编排重跑同一份文件。 */
+  onRerun: (orchestrator: 'loop' | 'graph') => void;
 }) {
   const [showTrace, setShowTrace] = useState(false);
   const result = state.result;
@@ -672,6 +688,18 @@ function DeepenPanel({
         <div className="mt-2 space-y-2 border-t border-sky-200 pt-2">
           {/* 停下来的原因要显眼：「想清楚了」和「预算用尽被掐断」完全是两回事 */}
           <p className="text-[10px] text-sky-700">
+            编排：{ORCHESTRATOR_LABEL[result.orchestrator]}
+            <button
+              className="ml-1 underline hover:text-sky-900"
+              onClick={() =>
+                onRerun(result.orchestrator === 'graph' ? 'loop' : 'graph')
+              }
+            >
+              换
+              {ORCHESTRATOR_LABEL[result.orchestrator === 'graph' ? 'loop' : 'graph']}
+              重跑
+            </button>
+            {' ｜ '}
             停止原因：{DEEPEN_STOP_LABEL[result.stopReason]}
             {result.gatheredFacts.length > 0 && (
               <>
@@ -3956,7 +3984,7 @@ export default function Home() {
    * 可能跑几十秒。结果只展示不落库——采纳与否仍走正常的人工确认。
    */
   const handleDeepen = useCallback(
-    async (sourcePath: string) => {
+    async (sourcePath: string, orchestrator?: 'loop' | 'graph') => {
       if (!selectedProjectId) return;
       const leaf = sourcePath.split(/[/\\]/).pop() ?? sourcePath;
       setDeepenState({
@@ -3968,7 +3996,12 @@ export default function Home() {
         const response = await fetch('/api/deepen', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectId: selectedProjectId, sourcePath }),
+          // orchestrator 不传时由服务端决定，前端不假设默认值是哪个。
+          body: JSON.stringify({
+            projectId: selectedProjectId,
+            sourcePath,
+            ...(orchestrator ? { orchestrator } : {}),
+          }),
         });
         const data = await response.json().catch(() => null);
         if (!response.ok) {
@@ -3978,7 +4011,7 @@ export default function Home() {
         setDeepenState({
           sourcePath,
           status: 'done',
-          message: `《${leaf}》深挖完成：${result.roundCount} 轮、读了 ${result.extractCount} 份、${(result.totalDurationMs / 1000).toFixed(1)} 秒`,
+          message: `《${leaf}》深挖完成：${ORCHESTRATOR_LABEL[result.orchestrator]} ｜ ${result.roundCount} 轮、读了 ${result.extractCount} 份、${(result.totalDurationMs / 1000).toFixed(1)} 秒`,
           result,
         });
       } catch (error) {
@@ -5910,6 +5943,9 @@ export default function Home() {
                   <DeepenPanel
                     state={deepenState}
                     onClose={() => setDeepenState(null)}
+                    onRerun={orchestrator =>
+                      handleDeepen(deepenState.sourcePath, orchestrator)
+                    }
                   />
                 )}
 

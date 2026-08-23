@@ -206,6 +206,8 @@ src/
 - `COZE_BUCKET_NAME`: S3 存储桶名称
 - `ENABLE_DOCUMENT_FACTS_SHADOW`: 是否默认启用结构化文档事实抽取（默认关闭）
 - `ENABLE_CLASSIFICATION_AGENT_SHADOW`: 是否默认运行 LangGraph 分类 Agent（默认关闭）
+- `DEEPEN_ORCHESTRATOR`: 深挖旁路用哪套编排，`loop`（默认，手写循环）或 `graph`（LangGraph）；也可按请求传 `orchestrator`
+- `DISABLE_DEEPEN_AGENT`: 关掉深挖旁路（深挖默认开启）
 - `PERSIST_PROJECT_MEMORY_SHADOW`: 是否将 shadow 事实和分类决策写入 Supabase（默认关闭；启用前必须执行 `0001_agent_context.sql`）
 
 ### 开发环境约束

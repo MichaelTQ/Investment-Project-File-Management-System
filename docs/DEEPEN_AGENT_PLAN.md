@@ -230,12 +230,14 @@ loop:
 ## 7. 接口与开关
 
 ```
-新增  src/lib/classification/deepen/{agent.ts, tools.ts, types.ts}
+新增  src/lib/classification/deepen/{shared.ts, loop.ts, graph.ts, index.ts, tools.ts, types.ts}
+      （agent.ts 保留为兼容层，只做 re-export）
 新增  src/lib/classification/read-document-content.ts   （从 classify 路由抽出）
 新增  POST /api/deepen  { projectId, sourcePath }
 改动  invokeChatCompletion 支持 tools / tool_calls
 改动  前端：rebuild 报告里每条 deepenSuggestion 加「深挖这份」按钮
 开关  默认开；DISABLE_DEEPEN_AGENT=true 或 ENABLE_DEEPEN_AGENT=false 可关掉
+开关  DEEPEN_ORCHESTRATOR=loop|graph 选编排，缺省 loop；也可按请求传 orchestrator
 ```
 
 `/api/deepen` 的返回除了新结论，还要带**完整执行轨迹**：调了哪些工具、读了哪几份
@@ -280,3 +282,79 @@ loop:
 第 2 步是分水岭，前面是搬砖，后面是调提示词和边界。**第 3 步才验证真正的赌注**——
 多轮链式取证（读完 A 才知道要读 B）。那个不成立的话，深挖相对于"一次性把所有事实
 喂给模型"就没有额外价值。
+
+---
+
+## 10. 第二套编排：LangGraph（2026-08-23）
+
+### 和第 6 节那句"不引框架"是什么关系
+
+第 6 节的判断到今天仍然成立，而且**正是因为它成立，现在才可以引框架**。
+
+那一节的理由不是"框架不好"，是"你还不知道框架替你做了什么"。上一次装
+`@langchain/langgraph` 的结果是编排层零模型调用（见
+[RETIRED_AGENT_ARCHITECTURE.md](RETIRED_AGENT_ARCHITECTURE.md) 第 5 节）——五个节点
+的结构感掩盖了"这里其实没有决策"这个事实。
+
+现在的前提不一样了：循环已经手写出来跑通，边界、预算、停止原因分类全都清楚。
+在这个基础上再引 LangGraph，**它替我做了什么、值不值，是可以逐条对照出来的**——
+这正是第 6 节想要的那个状态。
+
+### 拆法
+
+关键是 `tools.ts` **一行都没改**。`DEEPEN_TOOLS` 是 OpenAI 格式的 JSON schema，
+`runDeepenTool` 是纯派发函数，两者都不认识任何编排框架。同理提示词、预算、判定器
+交接、结果装配全部抽进 `shared.ts`。
+
+```
+types.ts    预算、停止原因、结果结构（含 orchestrator 字段）
+tools.ts    五个只读工具                    ← 未改动
+shared.ts   客户端 / 提示词 / 单轮模型调用 / 工具执行 / 预算收尾 / 结果装配
+loop.ts     编排一：手写 while              ← 线上默认
+graph.ts    编排二：LangGraph StateGraph
+index.ts    runDeepen() 按 orchestrator 派发
+agent.ts    兼容层，re-export（route 和测试的 import 不用动）
+```
+
+**两套编排之间只剩控制流的差别。** 这不是洁癖——差别只剩一处，跑出来的差异才说得清
+是编排带来的；否则就变成在比两份各自写的消息拼装代码。
+
+### 三个刻意的决定
+
+**一、默认仍是手写循环。** `DEEPEN_ORCHESTRATOR` 缺省 `loop`。它是线上跑过的那套，
+换默认值要有实测依据，不能因为另一种写法更时髦就换。
+
+**二、LangGraph 是动态引入的。** `graph.ts` 里 `await import('@langchain/langgraph')`，
+默认路径根本不加载这个包，包体积和冷启动都不受影响。
+
+**三、没用 ToolNode。** ToolNode 不管预算，而"这份文件值不值得读"是这条链路唯一在做
+的决策。预算判定必须和工具执行在同一个节点里——触顶时才能就地把收尾提示追加进上下文，
+让模型说清还缺什么，而不是被硬切断。
+
+顺带一个容易踩的坑：**图的 `recursionLimit` 必须宽于业务预算**。反过来的话先触发的是
+框架的保护，停止原因会变成 `error`，评测里就再也分不清"读够了自己停"和"被框架掐断"。
+`tests/deepen-agent.test.ts` 里有一条测试专门钉这个。
+
+### 验收标准就一条
+
+**同一份假模型、同一组断言，两套编排都必须过。**
+
+`tests/deepen-agent.test.ts` 对 `['loop', 'graph']` 各跑一遍全部 8 条行为测试，再加
+两条只有对照才测得出来的：
+
+- 两套在同一脚本下产生相同的 `stopReason` / `roundCount` / `extractCount` / 轨迹形状；
+- graph 的递归上限不会先于业务预算触发。
+
+跑法：
+
+```bash
+node --import tsx --test tests/deepen-agent.test.ts
+```
+
+全部离线，不联网、不读客户档案。
+
+### 界面上能当场对照
+
+深挖面板会显示这次跑的是哪套编排，旁边一个「换 LangGraph 重跑 / 换手写循环重跑」。
+摆出来不是为了炫技，是因为**两套的轨迹应该一样，不一样就是有一套写错了**——把它放在
+用户看得见的地方，等于给这个等价关系加了一道日常巡检。
