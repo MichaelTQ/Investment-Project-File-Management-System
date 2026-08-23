@@ -151,12 +151,22 @@ export interface DeepenDeps {
   createClient: () => OpenAI;
   loadArchive: typeof loadMinimalArchive;
   decide: typeof decideStageWithModel;
+  /**
+   * 执行一次工具调用。默认就是真的工具。
+   *
+   * 之所以也留成接缝：**最贵的那个工具（读扫描件）会真的去 S3 取原件、真的调视觉
+   * 模型**，测试里没法跑。而"读取预算用尽后怎么收尾"恰恰是这条链路最该被测的分支之一
+   * ——一次针对自己的变异测试暴露了这个洞：把 graph 里的预算提醒整行注释掉，18 条
+   * 测试竟然全绿。补上这个接缝之后才测得到。
+   */
+  runTool?: typeof runDeepenTool;
 }
 
 export const defaultDeps: DeepenDeps = {
   createClient: createGatewayClient,
   loadArchive: loadMinimalArchive,
   decide: decideStageWithModel,
+  runTool: runDeepenTool,
 };
 
 /** 一次深挖的全部可变状态。两种编排都在它上面工作。 */
@@ -170,6 +180,8 @@ export interface DeepenSession {
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   client: OpenAI;
   budgetWarned: boolean;
+  /** 执行工具用的函数，来自 DeepenDeps。两套编排共用。 */
+  runTool: typeof runDeepenTool;
 }
 
 export function emptyResult(
@@ -236,6 +248,7 @@ export async function openSession(
       target,
       client: deps.createClient(),
       budgetWarned: false,
+      runTool: deps.runTool ?? runDeepenTool,
       messages: [
         { role: 'system', content: buildSystemPrompt() },
         { role: 'user', content: buildUserPrompt(leafName(params.sourcePath)) },
@@ -290,7 +303,7 @@ export async function runToolCalls(
   for (const call of message.tool_calls ?? []) {
     if (call.type !== 'function') continue;
     const toolStartedAt = Date.now();
-    const outcome = await runDeepenTool(
+    const outcome = await session.runTool(
       call.function.name,
       call.function.arguments ?? '',
       session.context
