@@ -715,6 +715,14 @@ function DeepenPanel({
             )}
           </p>
 
+          {/* 出错或回退的原因要摆在最前面：用户点的是 LangGraph、实际跑的是手写循环，
+              不说清楚的话他会以为自己看到的是另一套的结果。 */}
+          {result.error && (
+            <p className="rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-[10px] text-amber-800">
+              {result.error}
+            </p>
+          )}
+
           {result.closingNote && (
             <div>
               <p className="font-medium">取证结论</p>

@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 
+import { runDeepenLoop } from './loop';
 import {
   callModel,
   closeSession,
@@ -10,6 +11,7 @@ import {
   runToolCalls,
   type DeepenDeps,
   type DeepenSession,
+  type LangGraphRuntime,
 } from './shared';
 import {
   DEEPEN_BUDGET,
@@ -47,6 +49,16 @@ import {
  * 都不受影响。
  */
 
+/**
+ * 默认的 LangGraph 加载器。
+ *
+ * 动态 import 而不是顶部静态 import：默认走手写循环时这个包根本不会被加载。
+ * 配合 next.config.ts 里的 serverExternalPackages，它也不进构建产物。
+ */
+async function loadLangGraph(): Promise<LangGraphRuntime> {
+  return import('@langchain/langgraph');
+}
+
 /** 图节点之间传递的、驱动路由的那几个值。 */
 interface GraphState {
   round: number;
@@ -73,8 +85,28 @@ export async function runDeepenGraph(
   }
   const session: DeepenSession = opened.session;
 
-  // 默认路径不加载这个包。
-  const { Annotation, END, START, StateGraph } = await import('@langchain/langgraph');
+  /**
+   * 取 LangGraph 运行时。**拿不到就回退到手写循环，绝不让整条深挖挂掉。**
+   *
+   * 这不是防御性编程的洁癖，是上线第一天踩出来的：这个包是后加的，平台上的依赖只在
+   * 构建步骤安装，热更新不重装——结果第二套编排把整个页面带崩了。可选的对照实验
+   * 不该有这种权力。
+   *
+   * 回退时把原因写进 error 一并返回，界面上看得见。悄悄换一套跑比报错更糟：用户
+   * 明明点的是 LangGraph，拿到的却是另一套的结果而毫不知情。
+   */
+  let runtime: LangGraphRuntime;
+  try {
+    runtime = await (deps.loadGraphRuntime ?? loadLangGraph)();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const fallback = await runDeepenLoop(params, deps);
+    return {
+      ...fallback,
+      error: `LangGraph 编排不可用，已回退到手写循环。原因：${reason}。依赖只在构建步骤安装，重新构建一次即可。`,
+    };
+  }
+  const { Annotation, END, START, StateGraph } = runtime;
 
   const State = Annotation.Root({
     round: Annotation<number>({ reducer: (_, next) => next, default: () => 0 }),

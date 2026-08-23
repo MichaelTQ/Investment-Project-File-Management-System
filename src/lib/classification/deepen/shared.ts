@@ -160,7 +160,20 @@ export interface DeepenDeps {
    * 测试竟然全绿。补上这个接缝之后才测得到。
    */
   runTool?: typeof runDeepenTool;
+  /**
+   * 加载 LangGraph 运行时。默认就是真的动态 import。
+   *
+   * 留成接缝是为了能测"依赖装不上时会怎样"——那条路一旦写错，代价是整条深挖
+   * 不可用，而它偏偏是最难在本地复现的一种故障。
+   */
+  loadGraphRuntime?: () => Promise<LangGraphRuntime>;
 }
+
+/** graph.ts 真正用到的那几个 LangGraph 导出。只声明用到的，别的不关心。 */
+export type LangGraphRuntime = Pick<
+  typeof import('@langchain/langgraph'),
+  'Annotation' | 'END' | 'START' | 'StateGraph'
+>;
 
 export const defaultDeps: DeepenDeps = {
   createClient: createGatewayClient,
