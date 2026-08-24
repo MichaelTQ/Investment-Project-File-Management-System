@@ -1,0 +1,949 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-24",
+  "stages": [
+    "立项前",
+    "项目立项",
+    "尽职调查",
+    "投资决策",
+    "投资实施"
+  ],
+  "labeledByMeaning": {
+    "source-folder": "答案来自源目录的五阶段文件夹名"
+  },
+  "entries": [
+    {
+      "project": "君柔",
+      "file": "1君柔-股东协议.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/1君柔-股东协议.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "1营业执照.pdf",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/1营业执照.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "2君柔-增资协议.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/2君柔-增资协议.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "3加入协议-中山致远.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/3加入协议-中山致远.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "4加入协议--中山远道壹号.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/4加入协议--中山远道壹号.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "5中山致远望睿交割确认函.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/5中山致远望睿交割确认函.pdf",
+      "evidence": [
+        "文件标题为交割确认函",
+        "确认增资协议项下交割条件",
+        "形成于投资协议签署之后"
+      ],
+      "verifiedAt": "2026-08-01",
+      "verifiedBy": "业务负责人"
+    },
+    {
+      "project": "君柔",
+      "file": "6君柔科技-公司章程.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/6君柔科技-公司章程.pdf",
+      "evidence": [
+        "注册资本为13.04027万元",
+        "新增上海九合深远、中山致远望睿和中山远道壹号等投资方",
+        "股东结构与2026年4月10日股东会决议批准的增资后结构一致",
+        "与交易前章程相比注册资本和持股比例均发生变化"
+      ],
+      "verifiedAt": "2026-08-01",
+      "verifiedBy": "业务负责人"
+    },
+    {
+      "project": "君柔",
+      "file": "7君柔科技-股东会决议.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/7君柔科技-股东会决议.pdf",
+      "evidence": [
+        "2026年4月10日形成",
+        "批准本次增资、交易文件和章程修改",
+        "列明增资后注册资本及股东结构"
+      ],
+      "verifiedAt": "2026-08-01",
+      "verifiedBy": "业务负责人"
+    },
+    {
+      "project": "君柔",
+      "file": "8中山致远望睿缴款通知书.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/8中山致远望睿缴款通知书.pdf",
+      "evidence": [
+        "文件明确为缴款通知书",
+        "要求致远望睿基金支付1,000万元增资款",
+        "引用增资协议和加入协议"
+      ],
+      "verifiedAt": "2026-08-01",
+      "verifiedBy": "业务负责人"
+    },
+    {
+      "project": "君柔",
+      "file": "9致远望睿出资证明书➕股东名册.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/9致远望睿出资证明书➕股东名册.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "NDA国创致远私募股权基金管理有限公司保密协议.pdf",
+      "answer": "立项前",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "立项前/NDA国创致远私募股权基金管理有限公司保密协议.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "【最终版】君柔科技-投资建议书.pptx",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/【最终版】君柔科技-投资建议书.pptx"
+    },
+    {
+      "project": "君柔",
+      "file": "九合-出资证明书.pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/九合-出资证明书.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "公司章程.pdf",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/公司章程.pdf",
+      "evidence": [
+        "注册资本为11.73624万元",
+        "股东结构中尚未出现上海九合深远、中山致远望睿和中山远道壹号",
+        "内容与增资协议记载的交易前股权结构一致"
+      ],
+      "verifiedAt": "2026-08-01",
+      "verifiedBy": "业务负责人"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔-风控尽调报告.pdf",
+      "answer": "尽职调查",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/君柔-风控尽调报告.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔投委会决议.pdf",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/君柔投委会决议.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔科技-立项报告v6.pptx",
+      "answer": "项目立项",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/君柔科技-立项报告v6.pptx"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔科技_Teaser_202603(1).pptx",
+      "answer": "项目立项",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/君柔科技_Teaser_202603(1).pptx"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔科技_专家委员会表决结果(1).pdf",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/君柔科技_专家委员会表决结果(1).pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔科技_立项会纪要.pdf",
+      "answer": "项目立项",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/君柔科技_立项会纪要.pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔科技_立项表决结果(1).pdf",
+      "answer": "项目立项",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/君柔科技_立项表决结果(1).pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "君柔立项申请.png",
+      "answer": "项目立项",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/君柔立项申请.png"
+    },
+    {
+      "project": "君柔",
+      "file": "深圳君柔科技有限公司投资尽职调查报告(1).docx",
+      "answer": "尽职调查",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/深圳君柔科技有限公司投资尽职调查报告(1).docx"
+    },
+    {
+      "project": "君柔",
+      "file": "电子回单.png",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/电子回单.png"
+    },
+    {
+      "project": "君柔",
+      "file": "致远望睿出资证明书➕股东名册(2).pdf",
+      "answer": "投资实施",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/致远望睿出资证明书➕股东名册(2).pdf"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202504至202512.xls",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202504至202512.xls"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202601至202601.xls",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_利润表_202601至202601.xls"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202504至202512.xls",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202504至202512.xls"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202601至202601.xls",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.1/君柔25.4月-26.1月资料/深圳君柔科技有限公司_资产负债表_202601至202601.xls"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.2/深圳君柔科技有限公司_明细账_2025年04月至2026年01月.xls",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.2/深圳君柔科技有限公司_明细账_2025年04月至2026年01月.xls"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.2/科目余额表_深圳君柔科技有限公司_2025年04月至2025年12月.xlsx",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.2/科目余额表_深圳君柔科技有限公司_2025年04月至2025年12月.xlsx"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.2/科目余额表_深圳君柔科技有限公司_2026年01月.xlsx",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.2/科目余额表_深圳君柔科技有限公司_2026年01月.xlsx"
+    },
+    {
+      "project": "君柔",
+      "file": "财务资料/4.3/君柔信用报告.pdf",
+      "answer": "投资决策",
+      "set": "dev",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/财务资料/4.3/君柔信用报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、中山致远&佰特微-投资合同书.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/1、中山致远&佰特微-投资合同书.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2022.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2022.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2023.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2023.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2024.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2024.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2025.6.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/11、存货明细表/存货收发存汇总表_2025.6.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2022.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2022.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2023.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2023.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2024.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2024.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2025.6.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/13、固定资产清单（含折旧、摊销计提明细表）/折旧明细表_2025.6.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2022.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2022.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2023.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2023.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2024.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2024.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2025.6.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/14、开发支出按类别统计的明细表/研发项目&费用类型明细表2025.6.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2022.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2022.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2023.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2023.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2024.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2024.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2025.6.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/15、长期待摊费用摊销明细表/长期待摊摊销明细表_2025.6.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/18、按客户维度&产品维度收入和毛利明细表/收入明细表2022.1-2025.6月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/18、按客户维度&产品维度收入和毛利明细表/收入明细表2022.1-2025.6月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2022.1-12月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2022.1-12月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2023.1-12月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2023.1-12月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2024.1-12月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2024.1-12月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2025.1-6月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/1、末级科目余额表/科目余额表_2025.1-6月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/20、销售台账/佰特微收款台账2024.1-2025.6.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/20、销售台账/佰特微收款台账2024.1-2025.6.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/20、销售台账/销售台账_2023.1-2025.6月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/20、销售台账/销售台账_2023.1-2025.6月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/21、主要产品BOM成本/1、产品生产成本（批量）核算汇总表.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/21、主要产品BOM成本/1、产品生产成本（批量）核算汇总表.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2022年度合并财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2022年度合并财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2022年度财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2022年度财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2023年度合并财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2023年度合并财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2023年度财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2023年度财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2024年度合并财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2024年度合并财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2024年度财审报告.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微-2024年度财审报告.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微财报-2025年6期.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/2、合并及单体财务报表/深圳佰特微财报-2025年6期.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2022年度.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2022年度.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2023年度.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2023年度.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2024年度.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2024年度.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2025.1-6月.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/3、财务序时明细账/序时账_2025.1-6月.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2022年度_佰特微.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2022年度_佰特微.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2023年度_佰特微.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2023年度_佰特微.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2024年度_佰特微.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表2024年度_佰特微.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表月（季）度申报2025年6月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/企业所得税申报表月（季）度申报2025年6月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税及附加税费申报（一般纳税人适用）2025.6.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税及附加税费申报（一般纳税人适用）2025.6.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2022.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2022.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2023.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2023.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2024.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2024.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2025.03月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/5、增值税申报表、所得税申报表/增值税申报表2025.03月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/6、财政补贴的资料/佰特微政府补贴明细表-2024.12.xlsx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/6、财政补贴的资料/佰特微政府补贴明细表-2024.12.xlsx"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/中行2025.06月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/中行2025.06月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2022年12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2022年12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2023年12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2023年12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2024年12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2024年12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2025年06月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/招行2025年06月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2022.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2022.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2023.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2023.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2024.12月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2024.12月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2025.06月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/民生2025.06月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/7、银行对账单/浦发2025.06月.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/7、银行对账单/浦发2025.06月.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "1、天士力FA财务尽调资料2025.7/佰特微-天士力尽调补充清单.docx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/1、天士力FA财务尽调资料2025.7/佰特微-天士力尽调补充清单.docx"
+    },
+    {
+      "project": "佰特微",
+      "file": "2、佰特微股东会决议.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/2、佰特微股东会决议.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "3、中山致远&佰特微-公司章程.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/3、中山致远&佰特微-公司章程.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "4、中山致远&佰特微-董事会决议.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/4、中山致远&佰特微-董事会决议.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "5、中山致远&佰特微-投资合同之补充协议补充协议2026.7.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/5、中山致远&佰特微-投资合同之补充协议补充协议2026.7.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "6、中山致远&佰特微-书面确认函.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/6、中山致远&佰特微-书面确认函.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "7、中山致远&佰特微-付款通知书.pdf",
+      "answer": "投资实施",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资实施/7、中山致远&佰特微-付款通知书.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "f5da3da1-1c9c-45b3-85ba-81d85e2a08d4.png",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/f5da3da1-1c9c-45b3-85ba-81d85e2a08d4.png"
+    },
+    {
+      "project": "佰特微",
+      "file": "【最终版】佰特微 尽调报告3.19.2.docx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/【最终版】佰特微 尽调报告3.19.2.docx"
+    },
+    {
+      "project": "佰特微",
+      "file": "【最终版】佰特微法律尽调报告20260320-更新.pdf",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/【最终版】佰特微法律尽调报告20260320-更新.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "【最终版】深圳佰特微医疗B轮投资建议书V3.pptx",
+      "answer": "尽职调查",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "尽职调查/【最终版】深圳佰特微医疗B轮投资建议书V3.pptx"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微B轮投委会决议(2).pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微B轮投委会决议(2).pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微_专家委员会表决结果.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微_专家委员会表决结果.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微医疗_中山基金立项报告.pptx",
+      "answer": "项目立项",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/佰特微医疗_中山基金立项报告.pptx"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微医疗_立项会纪要.pdf",
+      "answer": "项目立项",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/佰特微医疗_立项会纪要.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微合伙人会议投票盖章+签字.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微合伙人会议投票盖章+签字.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微合规性审查表.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微合规性审查表.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微投决会表决结果.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微投决会表决结果.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微立项申请.png",
+      "answer": "项目立项",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/佰特微立项申请.png"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微立项表决结果.pdf",
+      "answer": "项目立项",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/佰特微立项表决结果.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微章程-章程2024.11.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微章程-章程2024.11.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "佰特微营业执照正本.pdf",
+      "answer": "投资决策",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "投资决策/佰特微营业执照正本.pdf"
+    },
+    {
+      "project": "佰特微",
+      "file": "深圳佰特微医疗科技公司 BP 2025-11.pptx",
+      "answer": "项目立项",
+      "set": "final",
+      "labeledBy": "source-folder",
+      "sourcePath": "项目立项/深圳佰特微医疗科技公司 BP 2025-11.pptx"
+    }
+  ],
+  "note": "评测集限定为源目录已按五阶段归好的两个项目(君柔=调优集, 佰特微=验收集)。其中 5 条附业务负责人 2026-08-01 验收的判断依据。"
+}
