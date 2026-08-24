@@ -1,0 +1,2299 @@
+<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+  <Created>2006-09-16T00:00:00Z</Created>
+  <LastSaved>2019-01-20T13:36:55Z</LastSaved>
+  <Version>15.0</Version>
+ </DocumentProperties>
+ <OfficeDocumentSettings xmlns="urn:schemas-microsoft-com:office:office">
+  <AllowPNG/>
+  <RemovePersonalInformation/>
+  <PixelsPerInch>96</PixelsPerInch>
+ </OfficeDocumentSettings>
+ <ExcelWorkbook xmlns="urn:schemas-microsoft-com:office:excel">
+  <WindowHeight>16880</WindowHeight>
+  <WindowWidth>28160</WindowWidth>
+  <WindowTopX>240</WindowTopX>
+  <WindowTopY>460</WindowTopY>
+  <TabRatio>600</TabRatio>
+  <ProtectStructure>False</ProtectStructure>
+  <ProtectWindows>False</ProtectWindows>
+ </ExcelWorkbook>
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Borders/>
+   <Font ss:FontName="DengXian" x:CharSet="134" ss:Size="11" ss:Color="#000000"/>
+   <Interior/>
+   <NumberFormat/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s62">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Bottom" ss:WrapText="1"/>
+   <Borders/>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Color="#000000"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s63">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+   <Borders/>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Color="#000000"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s64">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"
+     ss:Color="#000000"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"
+     ss:Color="#000000"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"
+     ss:Color="#000000"/>
+   </Borders>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Color="#000000" ss:Bold="1"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s65">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Bottom" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Size="9" ss:Color="#000000"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s66">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Bottom" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Size="9" ss:Color="#000000"/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s67">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Bottom" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+   </Borders>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Size="9" ss:Color="#000000"/>
+   <NumberFormat ss:Format="#,##0.00_ "/>
+   <Protection/>
+  </Style>
+  <Style ss:ID="s69">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Top" ss:WrapText="1"/>
+   <Borders/>
+   <Font ss:FontName="微软雅黑" x:CharSet="134" ss:Size="14" ss:Color="#000000"
+    ss:Bold="1"/>
+   <Protection/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="利润表04月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-04</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表05月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-05</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,000.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,000.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.90</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.90</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.90</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表06月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-06</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,000.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.02</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.02</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.02</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.02</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.02</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.02</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表07月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-07</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,000.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.02</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-2,000.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表08月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-08</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,000.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.88</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.02</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">969.42</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">969.42</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">969.42</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表09月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-09</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">3,023.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">1,023.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.73</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.15</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.15</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-58.58</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-1,028.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-58.58</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-1,028.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-58.58</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-1,028.00</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表10月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-10</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,970.30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">46,030.91</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">43,007.91</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">1.63</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.90</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,067.39</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,008.81</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,067.39</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,008.81</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,067.39</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-43,008.81</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表11月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-11</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">25,148.52</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">22,178.22</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">61,574.07</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">15,543.16</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">10.33</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">8.70</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-0.17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-36,441.03</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">6,626.36</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-36,441.03</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">6,626.36</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-36,441.03</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">6,626.36</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+ <Worksheet ss:Name="利润表12月">
+  <Table ss:ExpandedColumnCount="40" ss:ExpandedRowCount="500" x:FullColumns="1"
+   x:FullRows="1" ss:DefaultColumnWidth="53" ss:DefaultRowHeight="15">
+   <Column ss:AutoFitWidth="0" ss:Width="223"/>
+   <Column ss:AutoFitWidth="0" ss:Width="30"/>
+   <Column ss:AutoFitWidth="0" ss:Width="134" ss:Span="1"/>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:MergeAcross="3" ss:StyleID="s69"><Data ss:Type="String">利润表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">纳税人识别号：91440300MAEFDW7K2F</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">会小企02表</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s62"><Data ss:Type="String">核算单位：深圳君柔科技有限公司</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="s62"><Data ss:Type="String">2025-12</Data></Cell>
+    <Cell ss:StyleID="s63"><Data ss:Type="String">单位：元</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s64"><Data ss:Type="String">项目</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">行次</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本年累计金额</Data></Cell>
+    <Cell ss:StyleID="s64"><Data ss:Type="String">本月金额</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">一、营业收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">1</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">203,366.34</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">178,217.82</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业成本</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">2</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">18,843.36</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">18,843.36</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税金及附加</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">3</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：消费税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">4</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">营业税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">5</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城市维护建设税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">6</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">资源税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">7</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">土地增值税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">8</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">城镇土地使用税、房产税、车船税、印花税</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">9</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">5.15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">教育费附加、矿产资源补偿费、排污费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">10</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">销售费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">11</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：商品维修费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">12</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">广告费和业务宣传费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">13</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">管理费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">14</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">348,318.03</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">286,743.96</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：开办费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">15</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">业务招待费</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">16</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">研究费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">17</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">财务费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">18</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-205.21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-215.54</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：利息费用（收入以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-247.41</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-247.24</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：投资收益（损失以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">20</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">二、营业利润（亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">21</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-163,594.99</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-127,153.96</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">加：营业外收入</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">22</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,034.19</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">2,034.19</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：政府补助</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">23</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：营业外支出</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">24</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">其中：坏账损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">25</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期债券投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">26</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">无法收回的长期股权投资损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">27</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">自然灾害等不可抗力因素造成的损失</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">28</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">税收滞纳金</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">29</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">三、利润总额（亏损总额以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">30</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-161,560.80</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-125,119.77</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">减：所得税费用</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">31</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">0.00</Data></Cell>
+   </Row>
+   <Row ss:AutoFitHeight="0" ss:Height="23">
+    <Cell ss:StyleID="s65"><Data ss:Type="String">四、净利润（净亏损以“-”号填列）</Data></Cell>
+    <Cell ss:StyleID="s66"><Data ss:Type="String">32</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-161,560.80</Data></Cell>
+    <Cell ss:StyleID="s67"><Data ss:Type="String">-125,119.77</Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup>
+    <Header x:Margin="0.3"/>
+    <Footer x:Margin="0.3"/>
+    <PageMargins x:Bottom="0.75" x:Left="0.7" x:Right="0.7" x:Top="0.75"/>
+   </PageSetup>
+   <Unsynced/>
+   <Print>
+    <ValidPrinterInfo/>
+    <PaperSizeIndex>9</PaperSizeIndex>
+    <HorizontalResolution>180</HorizontalResolution>
+    <VerticalResolution>180</VerticalResolution>
+   </Print>
+   <PageLayoutZoom>0</PageLayoutZoom>
+   <Selected/>
+   <Panes>
+    <Pane>
+     <Number>3</Number>
+     <ActiveRow>12</ActiveRow>
+     <ActiveCol>3</ActiveCol>
+    </Pane>
+   </Panes>
+   <ProtectObjects>False</ProtectObjects>
+   <ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>
+
