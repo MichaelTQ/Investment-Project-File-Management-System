@@ -18,7 +18,7 @@
  * - projectNotes（项目负责人填的归档口径）为空。
  * - 不跑 /api/deepen。它是人工触发的旁路，且只取证不判阶段，另行评测。
  */
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync, existsSync, mkdirSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 
 import { leafName } from '../src/lib/classification/source-path';
@@ -70,17 +70,50 @@ interface Row {
   error?: string;
 }
 
-function requireEnv() {
-  const missing = ['COZE_INTEGRATION_MODEL_BASE_URL', 'COZE_WORKLOAD_IDENTITY_API_KEY'].filter(
-    k => !process.env[k]?.trim()
-  );
-  if (missing.length) {
-    console.error(
-      `\n缺少环境变量：${missing.join('、')}\n` +
-        `没有它们调不了模型。跑之前先 export，或写进 .env 后用 --env-file=.env 启动。\n`
+/** 跑之前把会白烧一轮的前提全查掉：环境变量、样本目录、报告目录。 */
+function preflight(entries: Answer[]) {
+  const problems: string[] = [];
+
+  const baseUrl = process.env.COZE_INTEGRATION_MODEL_BASE_URL?.trim() ?? '';
+  const apiKey = process.env.COZE_WORKLOAD_IDENTITY_API_KEY?.trim() ?? '';
+  if (!baseUrl) problems.push('缺少 COZE_INTEGRATION_MODEL_BASE_URL');
+  else if (!/^https?:\/\//.test(baseUrl))
+    problems.push(`COZE_INTEGRATION_MODEL_BASE_URL 不是合法 URL（当前是 "${baseUrl}"）——占位符要换成真实地址`);
+  if (!apiKey) problems.push('缺少 COZE_WORKLOAD_IDENTITY_API_KEY');
+  else if (apiKey === '...' || apiKey.length < 8)
+    problems.push('COZE_WORKLOAD_IDENTITY_API_KEY 看起来是占位符，要换成真实密钥');
+
+  // 样本目录：客户档案在 .gitignore 里，换一台机器克隆下来是空的。
+  const missingFiles: string[] = [];
+  for (const project of [...new Set(entries.map(e => e.project))]) {
+    const dir = join(ROOT, PROJECT_DIR[project]);
+    if (!existsSync(dir)) {
+      problems.push(`样本目录不存在：${PROJECT_DIR[project]}/（客户档案不进版本库，需从源目录拷到本机）`);
+      continue;
+    }
+    for (const e of entries.filter(x => x.project === project)) {
+      if (!existsSync(join(dir, e.file))) missingFiles.push(`${PROJECT_DIR[project]}/${e.file}`);
+    }
+  }
+  if (missingFiles.length) {
+    problems.push(
+      `answers.json 里有 ${missingFiles.length} 份文件在本机找不到，前几个：\n` +
+        missingFiles.slice(0, 5).map(f => `      ${f}`).join('\n')
     );
+  }
+
+  mkdirSync(join(ROOT, 'evaluation/reports'), { recursive: true });
+
+  if (problems.length) {
+    console.error('\n跑不了，先解决这些：\n' + problems.map(p => `  ✗ ${p}`).join('\n') + '\n');
     process.exit(1);
   }
+}
+
+/** 中文字符按两格宽算，否则表格会错位。 */
+function pad(text: string, width: number): string {
+  const w = [...text].reduce((a, c) => a + (/[\u2E80-\uFFFF]/.test(c) ? 2 : 1), 0);
+  return text + ' '.repeat(Math.max(0, width - w));
 }
 
 const percent = (num: number, den: number) => (den === 0 ? '  -  ' : `${((num / den) * 100).toFixed(1)}%`);
@@ -90,7 +123,6 @@ async function main() {
   const limitArg = process.argv.find(a => a.startsWith('--limit='));
   const limit = limitArg ? Number(limitArg.split('=')[1]) : Infinity;
   const targetSet = wantFinal ? 'final' : 'dev';
-  requireEnv();
 
   const answers: { entries: Answer[] } = JSON.parse(
     readFileSync(join(ROOT, 'evaluation/answers.json'), 'utf8')
@@ -100,6 +132,7 @@ async function main() {
     console.error(`answers.json 里没有 set=${targetSet} 的条目`);
     process.exit(1);
   }
+  preflight(entries);
 
   const projects = [...new Set(entries.map(e => e.project))];
   console.log(
@@ -120,6 +153,14 @@ async function main() {
       sourcePaths: leaves,
       customHeaders: {},
     });
+    if (normalized.status !== 'success') {
+      console.error(
+        `\n[${project}] 文件名归一调用失败，评测中止。\n` +
+          '  线上遇到这个会降级成"全部走事实链路"继续跑，但评测不能这么做——\n' +
+          '  第①段没跑，短路那条路一份都测不到，出来的数字描述的不是线上链路。\n'
+      );
+      process.exit(1);
+    }
     const matches = leaves.map((_, i) => matchSpecTerm(normalized.terms[i]));
     const counts = matches.reduce(
       (acc, m) => ({ ...acc, [m.kind]: acc[m.kind] + 1 }),
@@ -252,7 +293,7 @@ function report(rows: Row[], targetSet: string) {
     const hit = truth.filter(r => r.predicted === s).length;
     const note = truth.length === 0 ? '  无样本' : truth.length < 3 ? '  样本不足' : '';
     push(
-      `${s.padEnd(10, '　')} ${String(truth.length).padStart(4)}   ` +
+      `${pad(s, 12)} ${String(truth.length).padStart(4)}   ` +
         (note
           ? `  -       -    ${note}`
           : `${percent(hit, truth.length).padStart(6)}   ${percent(hit, pred.length).padStart(6)}`)
@@ -268,7 +309,7 @@ function report(rows: Row[], targetSet: string) {
     const ok = sub.filter(r => r.predicted === r.expected).length;
     const avg = sub.reduce((a, r) => a + r.ms, 0) / sub.length / 1000;
     const name = { naming_rule: '命名规范短路', facts: '读内容+OCR', error: '失败' }[p];
-    push(`${name.padEnd(12, '　')} ${String(sub.length).padStart(4)}   ${percent(ok, sub.length).padStart(6)}   ${avg.toFixed(1)}s`);
+    push(`${pad(name, 14)} ${String(sub.length).padStart(4)}   ${percent(ok, sub.length).padStart(6)}   ${avg.toFixed(1)}s`);
   }
 
   const undecided = rows.filter(r => r.predicted === null && r.path !== 'error');
